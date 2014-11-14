@@ -8,6 +8,7 @@ The baseline code for Air Quality Egg version 2 WildFire firmware
 * https://github.com/WickedDevice/WildFire
 * https://github.com/WickedDevice/WildFire_CC3000_Library
 * https://github.com/WickedDevice/WildFire_CC3000_MDNS
+* https://github.com/WickedDevice/TinyWatchdog
 * https://github.com/WickedDevice/LMP91000
 * https://github.com/stevemarple/MCP342x
 * https://github.com/nethoncho/Arduino-DHT22
