@@ -14,3 +14,4 @@ The baseline code for Air Quality Egg version 2 WildFire firmware
 * https://github.com/WickedDevice/WildFire_PubSubClient
 * https://github.com/WickedDevice/SHT25
 * https://github.com/WickedDevice/WildFire_SPIFlash
+* https://github.com/PaulStoffregen/Time
