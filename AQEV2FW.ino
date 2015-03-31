@@ -6,6 +6,7 @@
 #include <TinyWatchdog.h>
 #include <MCP342x.h>
 #include <LMP91000.h>
+#include <WildFire_SPIFlash.h>
 
 #define AQEV2FW_VERSION "0.1"
 
@@ -14,6 +15,7 @@ WildFire_CC3000 cc3000;
 TinyWatchdog tinywdt;
 LMP91000 lmp91000;
 MCP342x mcp342x;
+WildFire_SPIFlash flash;
 
 void setup(){
   Serial.begin(115200);
