@@ -12,4 +12,4 @@ The baseline code for Air Quality Egg version 2 WildFire firmware
 * https://github.com/WickedDevice/LMP91000
 * https://github.com/stevemarple/MCP342x
 * ... an MQTT Library
-* ... an SHT25 Library
+* https://github.com/WickedDevice/SHT25
