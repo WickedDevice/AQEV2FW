@@ -264,7 +264,7 @@ uint8_t configModeStateMachine(char b){
   }
   else if(b == 0x0D || b == 0x0A){ // carriage return or new line is also special
     if(strlen(buf) > 0){
-      buf[buf_idx++] = 0x0D; // line terminator
+      buf[buf_idx++] = '\r'; // force line terminator '\r'
       line_terminated = true;      
     }
     Serial.println(); // echo the character
@@ -277,12 +277,15 @@ uint8_t configModeStateMachine(char b){
     Serial.print(b); // echo the character
   }
   
+  
+  // process the data currently stored in the buffer
   if(received_init_code){
     
   }
-  else if(line_terminated){
-    // we are looking for an exact match to the string
-    // "AQECFG\r"   
+  else if(line_terminated){ 
+    // before we receive the init code, the only things
+    // we are looking for are an exact match to the strings
+    // "AQE\r" or "aqe\r"
     
     if((strncmp("aqe\r", buf, 4) == 0) || (strncmp("AQE\r", buf, 4) == 0)){
       received_init_code = true;
@@ -293,6 +296,7 @@ uint8_t configModeStateMachine(char b){
       Serial.print(F("Error: Expecting Config Mode Unlock Code (\"aqe\"), but received \""));
       Serial.print(buf);
       Serial.println(F("\""));
+      prompt();
       buf[0] = '\0';
       buf_idx = 0;
     }
@@ -302,7 +306,7 @@ uint8_t configModeStateMachine(char b){
 }
 
 void prompt(void){
-  Serial.print("AQE>:"); 
+  Serial.print(F("AQE>: ")); 
 }
 
 // Gas Sensor Slot Selection
