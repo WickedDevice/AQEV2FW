@@ -9,6 +9,7 @@
 #include <LMP91000.h>
 #include <WildFire_SPIFlash.h>
 #include <Time.h>
+#include <CapacitativeSensor.h>
 #include <util/crc16.h>
 
 #define AQEV2FW_VERSION "0.1"
@@ -20,6 +21,7 @@ LMP91000 lmp91000;
 MCP342x mcp342x;
 SHT25 sht25;
 WildFire_SPIFlash flash;
+CapacitiveSensor touch = CapacitiveSensor(A1, A0);
 
 // the software's operating mode
 #define MODE_CONFIG      (1)
