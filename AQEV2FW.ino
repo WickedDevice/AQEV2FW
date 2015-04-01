@@ -36,13 +36,15 @@ uint8_t mode = MODE_OPERATIONAL;
 #define CONFIG_MODE_GOT_EXIT         (2)
 
 char * commands[] = {
-  
+  "setmac",
+  0
 };
 
-void get_mac_address(char * arg);
+void set_mac_address(char * arg);
 
 void (*command_functions[])(char * arg) = {
-  
+  set_mac_address,
+  0
 };
 
 // tiny watchdog timer intervals
@@ -91,27 +93,45 @@ void setup(){
   Serial.println();
   
   if(mode == MODE_CONFIG){
+    const uint16_t idle_timeout_period_ms = 1000*60*2; // 2 minutes
+    uint16_t idle_time_ms = 0;
     Serial.println(F("-~=* In CONFIG Mode *=~-"));
     prompt();
     for(;;){
+      unsigned long current_millis = millis();
+            
       // stuck in this loop until the command line receives an exit command
       if(Serial.available()){
+        idle_time_ms = 0;
         // if you get serial traffic, pass it along to the configModeStateMachine for consumption
         if(CONFIG_MODE_GOT_EXIT == configModeStateMachine(Serial.read())){
           break;
         }
-      }        
+      }
+
+      // pet the watchdog once a ssecond
+      if(current_millis - previous_tinywdt_millis >= tinywdt_interval) {
+        idle_time_ms += tinywdt_interval;
+        tinywdt.pet();
+        previous_tinywdt_millis = current_millis;
+      }            
+      
+      if(idle_time_ms >= idle_timeout_period_ms){
+        Serial.println(F("Idle time expired, exiting CONFIG mode."));
+        break;
+      }
     }
   }
-  else{
-    Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
-    // Try and Connect to the Network
-    
-    // If connected, Check for Firmware Updates
-    
-    // If connected, Get Network Time
-    
-  }
+
+  
+  Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
+  // Try and Connect to the Network
+  
+  // If connected, Check for Firmware Updates
+  
+  // If connected, Get Network Time
+  
+  
   
   // re-check for valid configuration
   if(!checkConfigIntegrity()){
@@ -342,6 +362,12 @@ uint8_t configModeStateMachine(char b){
         
         // command with argument was received, determine if it's valid
         // and if so, call the appropriate command processing function
+        for(uint8_t ii = 0; commands[ii] != 0; ii++){
+          if(strncmp(commands[ii], buf, strlen(buf)) == 0){
+            command_functions[ii](first_arg);
+            break; 
+          }
+        }
         
       }
       else if(strlen(buf) > 0){
@@ -383,6 +409,12 @@ uint8_t configModeStateMachine(char b){
 
 void prompt(void){
   Serial.print(F("AQE>: ")); 
+}
+
+// command processing function implementations
+void set_mac_address(char * arg){
+  Serial.print("Set MAC Address to ");
+  Serial.println(arg);
 }
 
 // Gas Sensor Slot Selection
