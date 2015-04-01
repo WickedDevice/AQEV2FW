@@ -31,9 +31,19 @@ LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
 uint8_t mode = MODE_OPERATIONAL; 
 
 // the config mode state machine's return values
-#define CONFIG_MODE_NOTHING  (0)
-#define CONFIG_MODE_GOT_INIT (1)
-#define CONFIG_MODE_GOT_EXIT (2)
+#define CONFIG_MODE_NOTHING_SPECIAL  (0)
+#define CONFIG_MODE_GOT_INIT         (1)
+#define CONFIG_MODE_GOT_EXIT         (2)
+
+char * commands[] = {
+  
+};
+
+void get_mac_address(char * arg);
+
+void (*command_functions[])(char * arg) = {
+  
+};
 
 // tiny watchdog timer intervals
 unsigned long previous_tinywdt_millis = 0;
@@ -82,6 +92,7 @@ void setup(){
   
   if(mode == MODE_CONFIG){
     Serial.println(F("-~=* In CONFIG Mode *=~-"));
+    prompt();
     for(;;){
       // stuck in this loop until the command line receives an exit command
       if(Serial.available()){
@@ -229,6 +240,14 @@ void initializeHardware(void){
   }    
   
   selectNoSlot(); 
+  
+  Serial.print(F("CC3000 Initialization..."));
+  if (cc3000.begin()){
+    Serial.println(F("OK."));
+  }
+  else{
+    Serial.println(F("Failed."));
+  }  
 }
 
 boolean checkConfigIntegrity(void){
@@ -244,8 +263,9 @@ uint8_t configModeStateMachine(char b){
   static char buf[64] = {0}; // buffer to hold commands / data
   static uint8_t buf_idx = 0;  // current number of bytes in buf  
   boolean line_terminated = false;
-  uint8_t ret = CONFIG_MODE_NOTHING;
-
+  char * first_arg = 0;
+  uint8_t ret = CONFIG_MODE_NOTHING_SPECIAL;
+  
   //  Serial.print('[');
   //  if(isprint(b)) Serial.print((char) b);
   //  Serial.print(']');
@@ -263,10 +283,7 @@ uint8_t configModeStateMachine(char b){
     }
   }
   else if(b == 0x0D || b == 0x0A){ // carriage return or new line is also special
-    if(strlen(buf) > 0){
-      buf[buf_idx++] = '\r'; // force line terminator '\r'
-      buf[buf_idx] = '\0';       
-    }
+    buf[buf_idx] = '\0'; // force terminator do not advance write pointer    
     line_terminated = true;     
     Serial.println(); // echo the character
   }
@@ -288,42 +305,60 @@ uint8_t configModeStateMachine(char b){
 
     // Serial.print("buf = ");
     // Serial.println(buf);
-    if((strncmp("exit\r", buf, 5) == 0) || (strncmp("EXIT\r", buf, 5) == 0)){      
+       
+    if((strncmp("exit", buf, 5) == 0) || (strncmp("EXIT", buf, 5) == 0)){      
       ret = CONFIG_MODE_GOT_EXIT;
     }
     else{
       // the string must have one, and only one, space in it
       uint8_t num_spaces = 0;
-      char * p;
-      char * first_arg = 0;
-      for(p = buf; *p != '\0'; p++){
+      char * p;      
+      for(p = buf; *p != '\0'; p++){ // all lines are terminated by '\r' above
         if(*p == ' '){
           num_spaces++;
         }
         
-        if(num_spaces > 1){
-          // only one space is allowed, error 
-          
-          break;
-        } 
-        else if((num_spaces == 1) && (first_arg == 0) && (*p != ' ')){
+        if((num_spaces == 1) && (*p == ' ')){
+          // if this is the first space encountered, null the original string here
+          // in order to mark the first argument string
+          *p = '\0';
+        }
+        else if((num_spaces > 0) && (first_arg == 0) && (*p != ' ')){
+          // if we are beyond the first space, 
+          // and have not encountered the beginning of the first argument
+          // and this character is not a space, it is by definition
+          // the beginning of the first argument, so mark it as such
           first_arg = p;
-        }               
+        }
       }
-    }
-    
-    if(p != 0){
       
-    }
+      if(first_arg != 0){ 
+        //Serial.print(F("Received Command: \""));
+        //Serial.print(buf);
+        //Serial.print(F("\" with Argument: \""));
+        //Serial.print(first_arg);
+        //Serial.print(F("\""));
+        //Serial.println();
+        
+        // command with argument was received, determine if it's valid
+        // and if so, call the appropriate command processing function
+        
+      }
+      else if(strlen(buf) > 0){
+        Serial.print(F("Error: Argument expected for command \""));
+        Serial.print(buf);
+        Serial.println(F("\", but none was received"));
+      }      
+    }    
   }
   else if(line_terminated){ 
     // before we receive the init code, the only things
     // we are looking for are an exact match to the strings
     // "AQE\r" or "aqe\r"
     
-    if((strncmp("aqe\r", buf, 4) == 0) || (strncmp("AQE\r", buf, 4) == 0)){
+    if((strncmp("aqe", buf, 3) == 0) || (strncmp("AQE", buf, 3) == 0)){
       received_init_code = true;
-      ret = CONFIG_MODE_GOT_INIT;  
+      ret = CONFIG_MODE_GOT_INIT;
     }
     else if(strlen(buf) > 0){
       Serial.print(F("Error: Expecting Config Mode Unlock Code (\"aqe\"), but received \""));
@@ -334,10 +369,14 @@ uint8_t configModeStateMachine(char b){
   
   // clean up the buffer if you got a line termination
   if(line_terminated){
-    prompt();
+    if(ret == CONFIG_MODE_NOTHING_SPECIAL){
+      prompt(); 
+    }
     buf[0] = '\0';
-    buf_idx = 0;    
+    buf_idx = 0;       
   }
+  
+  
   
   return ret;
 }
