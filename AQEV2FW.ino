@@ -9,7 +9,8 @@
 #include <LMP91000.h>
 #include <WildFire_SPIFlash.h>
 #include <Time.h>
-#include <CapacitativeSensor.h>
+#include <CapacitiveSensor.h>
+#include <LiquidCrystal.h>
 #include <util/crc16.h>
 
 #define AQEV2FW_VERSION "0.1"
@@ -22,6 +23,7 @@ MCP342x mcp342x;
 SHT25 sht25;
 WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A1, A0);
+LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
 
 // the software's operating mode
 #define MODE_CONFIG      (1)
@@ -104,6 +106,36 @@ void initializeHardware(void){
   Serial.print(F("Tiny Watchdog Initialization..."));
   tinywdt.begin(500, 60000);
   Serial.println(F("OK."));
+ 
+  // Initialize the LCD
+  byte upArrow[8] = {
+          B00100,
+          B01110,
+          B11111,
+          B00100,
+          B00100,
+          B00100,
+          B00100,
+          B00100
+  };  
+  
+  byte downArrow[8] = {
+          B00100,
+          B00100,
+          B00100,
+          B00100,
+          B00100,
+          B11111,
+          B01110,
+          B00100
+  };   
+  
+  pinMode(A6, OUTPUT);
+  backlightOn();
+  
+  lcd.createChar(0, upArrow);  
+  lcd.createChar(1, downArrow);   
+  lcd.begin(16, 2);  
   
   // Initialize SPI Flash
   Serial.print(F("SPI Flash Initialization..."));
@@ -210,16 +242,24 @@ boolean configModeStateMachine(char b){
 
 // Gas Sensor Slot Selection
 void selectNoSlot(void){
-        digitalWrite(9, LOW);
-        digitalWrite(10, LOW);  
+  digitalWrite(9, LOW);
+  digitalWrite(10, LOW);  
 }
 
 void selectSlot1(void){
-        selectNoSlot();
-        digitalWrite(10, HIGH);    
+  selectNoSlot();
+  digitalWrite(10, HIGH);    
 }
 
 void selectSlot2(void){
-        selectNoSlot();
-        digitalWrite(9, HIGH);        
+  selectNoSlot();
+  digitalWrite(9, HIGH);        
+}
+
+void backlightOn(void){
+  digitalWrite(A6, HIGH);
+}
+
+void backlightOff(void){
+  digitalWrite(A6, LOW);  
 }
