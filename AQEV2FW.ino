@@ -30,6 +30,11 @@ LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
 #define MODE_OPERATIONAL (2)
 uint8_t mode = MODE_OPERATIONAL; 
 
+// the config mode state machine's return values
+#define CONFIG_MODE_NOTHING  (0)
+#define CONFIG_MODE_GOT_INIT (1)
+#define CONFIG_MODE_GOT_EXIT (2)
+
 // tiny watchdog timer intervals
 unsigned long previous_tinywdt_millis = 0;
 const long tinywdt_interval = 1000;
@@ -38,12 +43,6 @@ void setup(){
   // initialize hardware
   initializeHardware();
   
-  Serial.println(F(" +------------------------------------+"));
-  Serial.println(F(" |   Welcome to Air Quality Egg 2.0   |"));
-  Serial.println(F(" |        Firmware Version " AQEV2FW_VERSION "        |"));
-  Serial.println(F(" +------------------------------------+"));  
-  Serial.println();
-  
   // check for initial integrity of configuration in eeprom
   if(!checkConfigIntegrity()){
     mode = MODE_CONFIG;
@@ -51,9 +50,10 @@ void setup(){
   else{
     // if the appropriate escape sequence is received within 5 seconds
     // go into config mode
+    const long startup_time_period = 9000;
     long start = millis();
     long min_over = 100;
-    while(millis() < start + 6000){ // can get away with this sort of thing at start up
+    while(millis() < start + startup_time_period){ // can get away with this sort of thing at start up
        if(Serial.available()){
          if(configModeStateMachine(Serial.read())){
            mode = MODE_CONFIG;
@@ -63,7 +63,7 @@ void setup(){
        
        // output a countdown to the Serial Monitor
        if(millis() - start >= min_over){
-         Serial.print((5500 - min_over) / 1000);
+         Serial.print((startup_time_period - 500 - min_over) / 1000);
          Serial.print(F("..."));
          min_over += 1000;
        }
@@ -73,6 +73,7 @@ void setup(){
   
   if(mode == MODE_CONFIG){
     Serial.println(F("-~= In CONFIG Mode =~-"));
+    
   }
   else{
     Serial.println(F("-~= In OPERATIONAL Mode =~-"));
@@ -93,6 +94,13 @@ void loop(){
 void initializeHardware(void){
   wf.begin();
   Serial.begin(115200);  
+  
+  Serial.println(F(" +------------------------------------+"));
+  Serial.println(F(" |   Welcome to Air Quality Egg 2.0   |"));
+  Serial.println(F(" |        Firmware Version " AQEV2FW_VERSION "        |"));
+  Serial.println(F(" +------------------------------------+"));  
+  Serial.println();  
+  
   Wire.begin();
   
   // Initialize slot select pins
@@ -136,7 +144,12 @@ void initializeHardware(void){
   lcd.createChar(0, upArrow);  
   lcd.createChar(1, downArrow);   
   lcd.begin(16, 2);  
-  
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(F("Air Quality Egg"));
+  lcd.setCursor(3, 1);
+  lcd.print(F("Version 2"));
+   
   // Initialize SPI Flash
   Serial.print(F("SPI Flash Initialization..."));
   if(flash.initialize()){
@@ -148,8 +161,12 @@ void initializeHardware(void){
   
   // Initialize SHT25
   Serial.print(F("SHT25 Initization..."));
-  sht25.begin();
-  Serial.println(F("OK."));   
+  if(sht25.begin()){
+    Serial.println(F("OK."));   
+  }
+  else{
+    Serial.println(F("Failed.")); 
+  }
   
   // Initialize NO2 Sensor
   Serial.print(F("NO2 Sensor Initization..."));
@@ -188,12 +205,13 @@ boolean checkConfigIntegrity(void){
 
 // this state machine receives bytes and 
 // returns true if the function is in config mode
-boolean configModeStateMachine(char b){
+uint8_t configModeStateMachine(char b){
   static boolean received_init_code = false;
   const char buf_max_write_idx = 62; // [63] must always have a null-terminator
   static char buf[64] = {0}; // buffer to hold commands / data
   static uint8_t buf_idx = 0;  // current number of bytes in buf  
   boolean line_terminated = false;
+  uint8_t ret = CONFIG_MODE_NOTHING;
 
   //  Serial.print('[');
   //  if(isprint(b)) Serial.print((char) b);
@@ -223,13 +241,15 @@ boolean configModeStateMachine(char b){
   }
   else if(line_terminated){
     // we are looking for an exact match to the string
-    // "AQECFG\r"
-    if(strncmp("AQECFG\r", buf, 7) == 0){
+    // "AQECFG\r"   
+    
+    if((strncmp("aqe\r", buf, 4) == 0) || (strncmp("AQE\r", buf, 4) == 0)){
       received_init_code = true;
+      ret = CONFIG_MODE_GOT_INIT;
     }
     else{
       buf[buf_idx-1] = '\0'; // buf_idx is certainly >= 1, and the last character buffered is a newline
-      Serial.print(F("Error: Expecting Config Mode Unlock Code (\"AQECFG\"), but received \""));
+      Serial.print(F("Error: Expecting Config Mode Unlock Code (\"aqe\"), but received \""));
       Serial.print(buf);
       Serial.println(F("\""));
       buf[0] = '\0';
@@ -237,7 +257,7 @@ boolean configModeStateMachine(char b){
     }
   }
   
-  return received_init_code;
+  return ret;
 }
 
 // Gas Sensor Slot Selection
