@@ -265,22 +265,56 @@ uint8_t configModeStateMachine(char b){
   else if(b == 0x0D || b == 0x0A){ // carriage return or new line is also special
     if(strlen(buf) > 0){
       buf[buf_idx++] = '\r'; // force line terminator '\r'
-      line_terminated = true;      
+      buf[buf_idx] = '\0';       
     }
+    line_terminated = true;     
     Serial.println(); // echo the character
-    prompt();    
   }
   else if((buf_idx <= buf_max_write_idx) && isprint(b)){
     // otherwise if there's space and the character is 'printable' add it to the buffer
     // silently drop all other non-printable characters
     buf[buf_idx++] = b;
+    buf[buf_idx] = '\0';
     Serial.print(b); // echo the character
   }
   
   
   // process the data currently stored in the buffer
-  if(received_init_code){
+  if(received_init_code && line_terminated){
+    // with the exeption of the command "exit"
+    // commands are always of the form <command> <argument>
+    // they are minimally parsed here and delegated to 
+    // callback functions that take the argument as a string   
+
+    // Serial.print("buf = ");
+    // Serial.println(buf);
+    if((strncmp("exit\r", buf, 5) == 0) || (strncmp("EXIT\r", buf, 5) == 0)){      
+      ret = CONFIG_MODE_GOT_EXIT;
+    }
+    else{
+      // the string must have one, and only one, space in it
+      uint8_t num_spaces = 0;
+      char * p;
+      char * first_arg = 0;
+      for(p = buf; *p != '\0'; p++){
+        if(*p == ' '){
+          num_spaces++;
+        }
+        
+        if(num_spaces > 1){
+          // only one space is allowed, error 
+          
+          break;
+        } 
+        else if((num_spaces == 1) && (first_arg == 0) && (*p != ' ')){
+          first_arg = p;
+        }               
+      }
+    }
     
+    if(p != 0){
+      
+    }
   }
   else if(line_terminated){ 
     // before we receive the init code, the only things
@@ -289,17 +323,20 @@ uint8_t configModeStateMachine(char b){
     
     if((strncmp("aqe\r", buf, 4) == 0) || (strncmp("AQE\r", buf, 4) == 0)){
       received_init_code = true;
-      ret = CONFIG_MODE_GOT_INIT;
+      ret = CONFIG_MODE_GOT_INIT;  
     }
-    else{
-      buf[buf_idx-1] = '\0'; // buf_idx is certainly >= 1, and the last character buffered is a newline
+    else if(strlen(buf) > 0){
       Serial.print(F("Error: Expecting Config Mode Unlock Code (\"aqe\"), but received \""));
       Serial.print(buf);
       Serial.println(F("\""));
-      prompt();
-      buf[0] = '\0';
-      buf_idx = 0;
     }
+  }
+  
+  // clean up the buffer if you got a line termination
+  if(line_terminated){
+    prompt();
+    buf[0] = '\0';
+    buf_idx = 0;    
   }
   
   return ret;
