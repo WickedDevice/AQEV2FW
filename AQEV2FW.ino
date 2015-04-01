@@ -53,9 +53,16 @@ void setup(){
     const long startup_time_period = 9000;
     long start = millis();
     long min_over = 100;
+    boolean got_serial_input = false;
     while(millis() < start + startup_time_period){ // can get away with this sort of thing at start up
        if(Serial.available()){
-         if(configModeStateMachine(Serial.read())){
+         if(got_serial_input == false){
+           Serial.println();                      
+         }
+         got_serial_input = true;         
+
+         start = millis(); // reset the timeout
+         if(CONFIG_MODE_GOT_INIT == configModeStateMachine(Serial.read())){
            mode = MODE_CONFIG;
            break;
          }
@@ -63,8 +70,10 @@ void setup(){
        
        // output a countdown to the Serial Monitor
        if(millis() - start >= min_over){
-         Serial.print((startup_time_period - 500 - min_over) / 1000);
-         Serial.print(F("..."));
+         if(got_serial_input == false){
+           Serial.print((startup_time_period - 500 - min_over) / 1000);
+           Serial.print(F("..."));
+         }
          min_over += 1000;
        }
     }    
@@ -72,12 +81,36 @@ void setup(){
   Serial.println();
   
   if(mode == MODE_CONFIG){
-    Serial.println(F("-~= In CONFIG Mode =~-"));
-    
+    Serial.println(F("-~=* In CONFIG Mode *=~-"));
+    for(;;){
+      // stuck in this loop until the command line receives an exit command
+      if(Serial.available()){
+        // if you get serial traffic, pass it along to the configModeStateMachine for consumption
+        if(CONFIG_MODE_GOT_EXIT == configModeStateMachine(Serial.read())){
+          break;
+        }
+      }        
+    }
   }
   else{
-    Serial.println(F("-~= In OPERATIONAL Mode =~-"));
+    Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
+    // Try and Connect to the Network
+    
+    // If connected, Check for Firmware Updates
+    
+    // If connected, Get Network Time
+    
   }
+  
+  // re-check for valid configuration
+  if(!checkConfigIntegrity()){
+    Serial.println(F("Resetting prior to Loop because of invalid configuration"));
+    tinywdt.force_reset();     
+  }
+  else{
+    Serial.println(F("Beginning main Loop")); 
+  }
+  
 }
 
 void loop(){
@@ -226,14 +259,22 @@ uint8_t configModeStateMachine(char b){
     if(buf_idx > 0){
       buf_idx--;
       buf[buf_idx] = '\0'; 
+      Serial.print(b); // echo the character      
     }
   }
   else if(b == 0x0D || b == 0x0A){ // carriage return or new line is also special
-    buf[buf_idx++] = 0x0D; // line terminator
-    line_terminated = true;
+    if(strlen(buf) > 0){
+      buf[buf_idx++] = 0x0D; // line terminator
+      line_terminated = true;      
+    }
+    Serial.println(); // echo the character
+    prompt();    
   }
   else if((buf_idx <= buf_max_write_idx) && isprint(b)){
+    // otherwise if there's space and the character is 'printable' add it to the buffer
+    // silently drop all other non-printable characters
     buf[buf_idx++] = b;
+    Serial.print(b); // echo the character
   }
   
   if(received_init_code){
@@ -258,6 +299,10 @@ uint8_t configModeStateMachine(char b){
   }
   
   return ret;
+}
+
+void prompt(void){
+  Serial.print("AQE>:"); 
 }
 
 // Gas Sensor Slot Selection
