@@ -123,9 +123,9 @@ void setup(){
     long min_over = 100;
     boolean got_serial_input = false;
     Serial.println(F("Enter 'aqe' for CONFIG mode."));
-    Serial.print(F("OPERATIONAL mode will automatically begin after "));
+    Serial.print(F("OPERATIONAL mode automatically begins after "));
     Serial.print(startup_time_period/1000);
-    Serial.println(F(" seconds without keyboard input."));
+    Serial.println(F(" secs of no input."));
     while(millis() < start + startup_time_period){ // can get away with this sort of thing at start up
        if(Serial.available()){
          if(got_serial_input == false){
@@ -156,9 +156,9 @@ void setup(){
     const uint32_t idle_timeout_period_ms = 1000UL * 60UL * 5UL; // 5 minutes
     uint32_t idle_time_ms = 0;
     Serial.println(F("-~=* In CONFIG Mode *=~-"));
-    Serial.print(F("OPERATIONAL mode will automatically begin after "));
+    Serial.print(F("OPERATIONAL mode begins automatically after "));
     Serial.print((idle_timeout_period_ms / 1000UL) / 60UL);
-    Serial.println(F(" minutes without keyboard input.")); 
+    Serial.println(F(" mins without input.")); 
     Serial.println(F("Enter 'help' for a list of available commands, "));
     Serial.println(F("      ...or 'help <cmd>' for help on a specific command"));
     prompt();
@@ -576,9 +576,9 @@ void help_menu(char * arg){
       Serial.println(F("                 performs 'init mac'"));      
       Serial.println(F("                 performs 'security wpa2'"));
       Serial.println(F("                 clears the SSID from memory"));
-      Serial.println(F("                 clears the Network Password from memory"));      
-      Serial.println(F("      mac - retrieves the mac address from"));
-      Serial.println(F("            EEPROM and assigns it to the CC3000"));      
+      Serial.println(F("                 clears the Network Password from memory"));
+      Serial.println(F("      mac      - retrieves the mac address from"));
+      Serial.println(F("                 EEPROM and assigns it to the CC3000"));
     }
     else if(strncmp("setmac", arg, 6) == 0){
       Serial.println(F("setmac <address>"));
