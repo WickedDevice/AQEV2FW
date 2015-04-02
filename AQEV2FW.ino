@@ -549,6 +549,8 @@ void print_eeprom_value(char * arg){
   }
 }
 
+// goes into the CC3000 and stores the 
+// MAC address from it in the EEPROM
 void initialize_eeprom_value(char * arg){
   if(strncmp(arg, "mac", 3) == 0){
     uint8_t _mac_address[6];
@@ -582,8 +584,6 @@ void restore(char * arg){
   }  
 }
 
-// goes into the CC3000 and stores the 
-// MAC address from it in the EEPROM
 void set_mac_address(char * arg){
   uint8_t _mac_address[6] = {0}; 
   char tmp[32] = {0};
@@ -605,13 +605,18 @@ void set_mac_address(char * arg){
     token = strtok(NULL, ":");
   }
   
-  if (!cc3000.setMacAddress(_mac_address)){
-     Serial.println(F("Error: Failed to write MAC address to CC3000"));
-  }  
-  else{ // cc3000 mac address accepted
-    eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
-    recomputeAndStoreConfigChecksum();   
+  if(num_tokens == 6){
+    if (!cc3000.setMacAddress(_mac_address)){
+       Serial.println(F("Error: Failed to write MAC address to CC3000"));
+    }  
+    else{ // cc3000 mac address accepted
+      eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
+      recomputeAndStoreConfigChecksum();   
+    } 
   }
+  else{
+    Serial.println(F("Error: MAC address must contain 6 bytes, with each separated by ':'")); 
+  } 
 }
 
 void recomputeAndStoreConfigChecksum(void){
