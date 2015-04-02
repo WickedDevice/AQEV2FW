@@ -39,6 +39,7 @@ uint8_t mode = MODE_OPERATIONAL;
                                                  // more parameters follow, address relative to each other so they don't overlap                                                 
 #define EEPROM_CONNECT_METHOD (EEPROM_MAC_ADDRESS - 1) // connection method encoded as a single byte value 
 #define EEPROM_SSID           (EEPROM_CONNECT_METHOD - 32) // ssid string, up to 32 characters (one of which is a null terminator)
+#define EEPROM_NETWORK_PWD    (EEPROM_SSID - 32) // network password, up to 32 characters (one of which is a null terminator)
 #define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
 
 // valid connection methods
@@ -54,6 +55,7 @@ void restore(char * arg);
 void set_mac_address(char * arg);
 void set_connection_method(char * arg);
 void set_ssid(char * arg);
+void set_network_password(char * arg);
 
 // Note to self:
 //   When implementing a new parameter, ask yourself:
@@ -80,6 +82,7 @@ char * commands[] = {
   "setmac ",  
   "method ",
   "ssid   ",
+  "pwd    ",
   0
 };
 
@@ -90,6 +93,7 @@ void (*command_functions[])(char * arg) = {
   set_mac_address,
   set_connection_method,
   set_ssid,
+  set_network_password,
   0
 };
 
@@ -536,6 +540,7 @@ void help_menu(char * arg){
       Serial.println(F("      mac - the MAC address of the cc3000"));
       Serial.println(F("      method - the Wi-Fi connection method"));
       Serial.println(F("      ssid - the Wi-Fi SSID to connect to"));
+      Serial.println(F("      pwd - lol, sorry, that's not happening!"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));      
     }
@@ -551,6 +556,7 @@ void help_menu(char * arg){
       Serial.println(F("      defaults - performs 'method direct'"));
       Serial.println(F("                 performs 'init mac'"));      
       Serial.println(F("                 clears the SSID from memory"));
+      Serial.println(F("                 clears the Network Password from memory"));      
       Serial.println(F("      mac - retrieves the mac address from"));
       Serial.println(F("            EEPROM and assigns it to the CC3000"));      
     }
@@ -565,6 +571,15 @@ void help_menu(char * arg){
       Serial.println(F("      direct - use parameters entered in CONFIG mode"));
       Serial.println(F("      smartconfig - use smart config process [not yet supported]"));      
       Serial.println(F("      pfod - use pfodWifiConnect config process  [not yet supported]"));            
+    }    
+    else if(strncmp("ssid", arg, 4) == 0){
+      Serial.println(F("ssid <string>"));
+      Serial.println(F("   <string> is the SSID of the network the device should connect to."));
+    }
+    else if(strncmp("pwd", arg, 3) == 0){
+      Serial.println(F("pwd <string>"));
+      Serial.println(F("   <string> is the network password for "));
+      Serial.println(F("      the SSID that the device should connect to."));
     }    
     else{
       Serial.print(F("Error: There is no help available for command \""));
@@ -655,6 +670,8 @@ void restore(char * arg){
     configInject("init mac\r");
     configInject("method direct\r");
     eeprom_write_block(blank, (void *) EEPROM_SSID, 32); // clear the SSID
+    eeprom_write_block(blank, (void *) EEPROM_NETWORK_PWD, 32); // clear the Network Password
+    recomputeAndStoreConfigChecksum();
     Serial.println();
   }
   else if(strncmp(arg, "mac", 3) == 0){
@@ -740,6 +757,21 @@ void set_ssid(char * arg){
   else{
     Serial.println(F("Error: SSID must be less than 32 characters in length"));
   }
+}
+
+void set_network_password(char * arg){
+  // we've reserved 32-bytes of EEPROM for a network password
+  // so the argument's length must be <= 31
+  char password[32] = {0};
+  uint16_t len = strlen(arg);
+  if(len < 32){
+    strncpy(password, arg, len);
+    eeprom_write_block(password, (void *) EEPROM_NETWORK_PWD, 32);
+    recomputeAndStoreConfigChecksum();
+  }
+  else{
+    Serial.println(F("Error: SSID must be less than 32 characters in length"));
+  }  
 }
 
 void recomputeAndStoreConfigChecksum(void){
