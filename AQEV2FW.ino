@@ -35,14 +35,28 @@ uint8_t mode = MODE_OPERATIONAL;
 #define CONFIG_MODE_GOT_INIT         (1)
 #define CONFIG_MODE_GOT_EXIT         (2)
 
+#define EEPROM_MAC_ADDRESS    (E2END + 1 - 6)    // i.e. the last 6-bytes of EEPROM
+                                                 // more parameters here, address relative to each other so they don't overlap                                                 
+#define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
+
+
+void print_eeprom_value(char * arg);
+void initialize_eeprom_value(char * arg);
+void restore(char * arg);
+void set_mac_address(char * arg);
+
 char * commands[] = {
+  "get",
+  "init",
+  "restore",  
   "setmac",
   0
 };
 
-void set_mac_address(char * arg);
-
 void (*command_functions[])(char * arg) = {
+  print_eeprom_value,
+  initialize_eeprom_value,
+  restore,
   set_mac_address,
   0
 };
@@ -60,7 +74,7 @@ void setup(){
     mode = MODE_CONFIG;
   }  
   else{
-    // if the appropriate escape sequence is received within 5 seconds
+    // if the appropriate escape sequence is received within 8 seconds
     // go into config mode
     const long startup_time_period = 9000;
     long start = millis();
@@ -271,8 +285,14 @@ void initializeHardware(void){
 }
 
 boolean checkConfigIntegrity(void){
-  
-  return true;
+  uint16_t computed_crc = computeConfigChecksum();
+  uint16_t stored_crc = eeprom_read_word((const uint16_t *) EEPROM_CRC_CHECKSUM);  
+  if(computed_crc == stored_crc){
+    return true;
+  }
+  else{
+    return false; 
+  }
 }
 
 // this state machine receives bytes and 
@@ -402,8 +422,6 @@ uint8_t configModeStateMachine(char b){
     buf_idx = 0;       
   }
   
-  
-  
   return ret;
 }
 
@@ -412,9 +430,104 @@ void prompt(void){
 }
 
 // command processing function implementations
+void print_eeprom_value(char * arg){  
+  if(strncmp(arg, "mac", 3) == 0){
+    uint8_t _mac_address[6] = {0};
+    // retrieve the value from EEPROM
+    eeprom_read_block(_mac_address, (const void *) EEPROM_MAC_ADDRESS, 6);
+    
+    // print the stored value, formatted
+    for(uint8_t ii = 0; ii < 6; ii++){
+      if(_mac_address[ii] < 0x10){
+        Serial.print(F("0"));
+      }
+      Serial.print(_mac_address[ii], HEX);
+      
+      // only print colons after the first 5 values
+      if(ii < 5){
+        Serial.print(F(":"));  
+      }
+    }
+  }
+  else{
+    Serial.print(F("Error: Unexpected Variable Name \""));
+    Serial.print(arg);
+    Serial.println(F("\""));
+  }
+}
+
+void initialize_eeprom_value(char * arg){
+  if(strncmp(arg, "mac", 3) == 0){
+    uint8_t _mac_address[6];
+    if(!cc3000.getMacAddress(_mac_address)){
+      Serial.println(F("Error: Could not retrieve MAC address from CC3000"));    
+    }
+    else{
+      eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
+    }   
+  }
+  else{
+    Serial.print(F("Error: Unexpected Variable Name \""));
+    Serial.print(arg);
+    Serial.println(F("\""));
+  }
+}
+
+void restore(char * arg){
+  if(strncmp(arg, "mac", 3) == 0){
+    uint8_t _mac_address[6] = {0};
+    eeprom_read_block(_mac_address, (const void *) EEPROM_MAC_ADDRESS, 6);
+    if (!cc3000.setMacAddress(_mac_address)){
+       Serial.println(F("Error: Failed to restore MAC address to CC3000"));
+    }
+  } 
+  else{
+    Serial.print(F("Error: Unexpected Variable Name \""));
+    Serial.print(arg);
+    Serial.println(F("\""));
+  }  
+}
+
+// goes into the CC3000 and stores the 
+// MAC address from it in the EEPROM
 void set_mac_address(char * arg){
-  Serial.print("Set MAC Address to ");
-  Serial.println(arg);
+  uint8_t _mac_address[6] = {0}; 
+  char tmp[32] = {0};
+  strncpy(tmp, arg, 31); // copy the string so you don't mutilate the argument
+  char * token = strtok(tmp, ":");
+  uint8_t num_tokens = 0;
+  
+  // parse the argument string, expected to be of the form ab:01:33:51:c8:77
+  while(token != NULL){
+    if((strlen(token) == 2) && isxdigit(token[0]) && isxdigit(token[1]) && (num_tokens < 6)){
+      _mac_address[num_tokens++] = atoi(token);
+    }
+    else{
+      Serial.print(F("Error: MAC address parse error on input \""));
+      Serial.print(arg);
+      Serial.println(F("\""));
+      return; // return early
+    }
+    token = strtok(NULL, ":");
+  }
+  
+  eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
+  if (!cc3000.setMacAddress(_mac_address)){
+     Serial.println(F("Error: Failed to restore MAC address to CC3000"));
+  }  
+}
+
+void recomputeAndStoreConfigChecksum(void){
+  uint16_t crc = computeConfigChecksum();
+  eeprom_write_word((uint16_t *) EEPROM_CRC_CHECKSUM, crc);
+}
+
+uint16_t computeConfigChecksum(void){
+  uint16_t crc = 0;
+  for(uint16_t address = EEPROM_CRC_CHECKSUM + 1; address <= E2END; address++){
+    crc = _crc16_update(crc, eeprom_read_byte((const uint8_t *) address));
+  }
+  return crc;  
 }
 
 // Gas Sensor Slot Selection
