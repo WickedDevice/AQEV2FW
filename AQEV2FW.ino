@@ -40,16 +40,19 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
 
 
+
+void help_menu(char * arg);
 void print_eeprom_value(char * arg);
 void initialize_eeprom_value(char * arg);
 void restore(char * arg);
 void set_mac_address(char * arg);
 
 char * commands[] = {
-  "get",
-  "init",
+  "help   ",
+  "get    ",
+  "init   ",
   "restore",  
-  "setmac",
+  "setmac ",  
   0
 };
 
@@ -356,9 +359,9 @@ uint8_t configModeStateMachine(char b){
     // Serial.print("buf = ");
     // Serial.println(buf);
        
-    if((strncmp("exit", buf, 5) == 0) || (strncmp("EXIT", buf, 5) == 0)){      
+    if((strncmp("exit", buf, 4) == 0) || (strncmp("EXIT", buf, 4) == 0)){      
       ret = CONFIG_MODE_GOT_EXIT;
-    }
+    }    
     else{
       // the string must have one, and only one, space in it
       uint8_t num_spaces = 0;
@@ -382,7 +385,11 @@ uint8_t configModeStateMachine(char b){
         }
       }
       
-      if(first_arg != 0){ 
+      // deal with commands that can legitimately have no arguments first
+      if((strncmp("help", buf, 4) == 0) || (strncmp("HELP", buf, 4) == 0)){  
+        help_menu(first_arg);
+      }      
+      else if(first_arg != 0){ 
         //Serial.print(F("Received Command: \""));
         //Serial.print(buf);
         //Serial.print(F("\" with Argument: \""));
@@ -440,6 +447,28 @@ void prompt(void){
 }
 
 // command processing function implementations
+void help_menu(char * arg){
+  const uint8_t commands_per_line = 3;
+  const uint8_t first_dynamic_command_index = 2;
+  if(arg == 0){
+    // list the commands that are legal
+    Serial.print(F("1. help  \t2. exit  \t"));
+    for(uint8_t ii = 0, jj = first_dynamic_command_index; commands[ii] != 0; ii++, jj++){
+      if((jj % commands_per_line) == 0){
+        Serial.println();
+      }
+      Serial.print(jj + 1);
+      Serial.print(". ");
+      Serial.print(commands[ii]);
+      Serial.print('\t');       
+    } 
+    Serial.println();
+  }
+  else{
+    
+  }
+}
+
 void print_eeprom_value(char * arg){  
   if(strncmp(arg, "mac", 3) == 0){
     uint8_t _mac_address[6] = {0};
