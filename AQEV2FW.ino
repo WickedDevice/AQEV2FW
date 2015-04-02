@@ -41,6 +41,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_SSID           (EEPROM_CONNECT_METHOD - 32) // ssid string, up to 32 characters (one of which is a null terminator)
 #define EEPROM_NETWORK_PWD    (EEPROM_SSID - 32) // network password, up to 32 characters (one of which is a null terminator)
 #define EEPROM_SECURITY_MODE  (EEPROM_NETWORK_PWD - 1) // security mode encoded as a single byte value, consistent with the CC3000 library
+#define EEPROM_STATIC_IP_ADDRESS (EEPROM_SECURITY_MODE - 4) // static ipv4 address, 4 bytes - 0.0.0.0 indicates use DHCP
 #define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
 
 // valid connection methods
@@ -58,6 +59,8 @@ void set_connection_method(char * arg);
 void set_ssid(char * arg);
 void set_network_password(char * arg);
 void set_network_security_mode(char * arg);
+void set_static_ip_address(char * arg);
+void use_command(char * arg);
 
 // Note to self:
 //   When implementing a new parameter, ask yourself:
@@ -86,6 +89,8 @@ char * commands[] = {
   "ssid    ",
   "pwd     ",
   "security",
+  "staticip",
+  "use     ",
   0
 };
 
@@ -98,6 +103,8 @@ void (*command_functions[])(char * arg) = {
   set_ssid,
   set_network_password,
   set_network_security_mode,
+  set_static_ip_address,
+  use_command,
   0
 };
 
@@ -543,8 +550,8 @@ void help_menu(char * arg){
     // we have an argument, so the user is asking for some specific usage instructions
     // as they pertain to this command
     if(strncmp("help", arg, 4) == 0){
-      Serial.println(F("help <arg>"));
-      Serial.println(F("   <arg> is any legal command keyword"));
+      Serial.println(F("help <param>"));
+      Serial.println(F("   <param> is any legal command keyword"));
       Serial.println(F("   result: usage instructions are printed"));
       Serial.println(F("           for the command named <arg>"));     
     }
@@ -560,6 +567,7 @@ void help_menu(char * arg){
       Serial.println(F("      ssid - the Wi-Fi SSID to connect to"));
       Serial.println(F("      pwd - lol, sorry, that's not happening!"));
       Serial.println(F("      security - the Wi-Fi security mode"));
+      Serial.println(F("      staticip - the Wi-Fi IP-address mode"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));      
     }
@@ -575,6 +583,7 @@ void help_menu(char * arg){
       Serial.println(F("      defaults - performs 'method direct'"));
       Serial.println(F("                 performs 'init mac'"));      
       Serial.println(F("                 performs 'security wpa2'"));
+      Serial.println(F("                 performs 'use dhcp'"));
       Serial.println(F("                 clears the SSID from memory"));
       Serial.println(F("                 clears the Network Password from memory"));
       Serial.println(F("      mac      - retrieves the mac address from"));
@@ -613,6 +622,18 @@ void help_menu(char * arg){
       Serial.println(F("      wep  - the network WEP security"));
       Serial.println(F("      wpa  - the network WPA Personal security"));  
       Serial.println(F("      wpa2 - the network WPA2 Personal security"));        
+    }
+    else if(strncmp("staticip", arg, 8) == 0){
+      Serial.println(F("staticip <address>"));
+      Serial.println(F("   <address> is an IPv4 address of the form:"));
+      Serial.println(F("                192.168.1.152"));
+      Serial.println(F("   result: The entered IPv4 address will be used by the CC3000"));
+      Serial.println(F("   note:   To configure DHCP use command 'use dhcp'"));
+    }
+    else if(strncmp("use", arg, 3) == 0){
+      Serial.println(F("use <param>"));
+      Serial.println(F("   <param> is one of:"));
+      Serial.println(F("      dhcp - wipes the Static IP address from the EEPROM"));
     }
     else{
       Serial.print(F("Error: There is no help available for command \""));
@@ -700,6 +721,22 @@ void print_eeprom_value(char * arg){
         break;   
     }    
   }  
+  else if(strncmp(arg, "staticip", 8) == 0){
+    uint8_t ip[4] = {0};
+    uint8_t noip[4] = {0};
+    eeprom_read_block(ip, (const void *) EEPROM_STATIC_IP_ADDRESS, 4);
+    if(memcmp(ip, noip, 4) == 0){
+      Serial.println(F("Configured for DHCP"));      
+    }
+    else{
+      Serial.print(F("Configured for Static IP Address: "));
+      for(uint8_t ii = 0; ii < 3; ii++){
+        Serial.print(ip[ii], DEC);
+        Serial.print(F("."));
+      } 
+      Serial.println(ip[3], DEC);
+    }
+  }
   else{
     Serial.print(F("Error: Unexpected Variable Name \""));
     Serial.print(arg);
@@ -734,6 +771,7 @@ void restore(char * arg){
     configInject("init mac\r");
     configInject("method direct\r");
     configInject("security wpa2\r");
+    configInject("use dhcp\r");
     eeprom_write_block(blank, (void *) EEPROM_SSID, 32); // clear the SSID
     eeprom_write_block(blank, (void *) EEPROM_NETWORK_PWD, 32); // clear the Network Password
     recomputeAndStoreConfigChecksum();
@@ -868,6 +906,63 @@ void set_network_security_mode(char * arg){
   if(valid){
     recomputeAndStoreConfigChecksum();
   }    
+}
+
+void set_static_ip_address(char * arg){
+  uint8_t _ip_address[4] = {0}; 
+  char tmp[32] = {0};
+  strncpy(tmp, arg, 31); // copy the string so you don't mutilate the argument
+  char * token = strtok(tmp, ".");
+  uint8_t num_tokens = 0;
+  
+  // parse the argument string, expected to be of the form 192.168.1.52
+  while(token != NULL){
+    uint8_t tokenlen = strlen(token);
+    if((tokenlen < 4) && (num_tokens < 4)){
+      for(uint8_t ii = 0; ii < tokenlen; ii++){
+        if(!isdigit(token[ii])){
+          Serial.println(F("Error: Static IP address octets must be integer values"));
+          return;
+        }
+      }
+      uint32_t octet = (uint8_t) strtoul(token, NULL, 10);
+      if(octet < 256){
+        _ip_address[num_tokens++] = octet;
+      }
+      else{
+        Serial.println(F("Error: Static IP address octets must be less between 0 and 255 inclusive."));
+        return; 
+      }
+    }
+    else{
+      Serial.print(F("Error: Static IP address parse error on input \""));
+      Serial.print(arg);
+      Serial.println(F("\""));
+      return; // return early
+    }
+    token = strtok(NULL, ".");
+  }
+  
+  if(num_tokens == 4){
+    eeprom_write_block(_ip_address, (void *) EEPROM_STATIC_IP_ADDRESS, 4);
+    recomputeAndStoreConfigChecksum();   
+  }
+  else{
+    Serial.println(F("Error: Static IP Address must contain 4 valid octets separated by '.'")); 
+  }   
+}
+
+void use_command(char * arg){
+  const uint8_t noip[4] = {0};
+  if(strncmp("dhcp", arg, 3) == 0){
+    eeprom_write_block(noip, (void *) EEPROM_STATIC_IP_ADDRESS, 4);
+    recomputeAndStoreConfigChecksum();    
+  }
+  else{
+    Serial.print(F("Error: Invalid parameter provided to use - \""));
+    Serial.print(arg);
+    Serial.println("\""); 
+  }
 }
 
 void recomputeAndStoreConfigChecksum(void){
