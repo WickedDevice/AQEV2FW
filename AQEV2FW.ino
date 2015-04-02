@@ -35,23 +35,32 @@ uint8_t mode = MODE_OPERATIONAL;
 #define CONFIG_MODE_GOT_INIT         (1)
 #define CONFIG_MODE_GOT_EXIT         (2)
 
-#define EEPROM_MAC_ADDRESS    (E2END + 1 - 6)    // i.e. the last 6-bytes of EEPROM
-                                                 // more parameters here, address relative to each other so they don't overlap                                                 
+#define EEPROM_MAC_ADDRESS    (E2END + 1 - 6)    // MAC address, i.e. the last 6-bytes of EEPROM
+                                                 // more parameters follow, address relative to each other so they don't overlap                                                 
+#define EEPROM_CONNECT_METHOD (EEPROM_MAC_ADDRESS - 1) // connection method encoded as a single byte value                                         
 #define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
 
-
+// valid connection methods
+// only DIRECT is supported initially
+#define CONNECT_METHOD_DIRECT        (0)
+#define CONNECT_METHOD_SMARTCONFIG   (1)
+#define CONNECT_METHOD_PFOD          (2)
 
 void help_menu(char * arg);
 void print_eeprom_value(char * arg);
 void initialize_eeprom_value(char * arg);
 void restore(char * arg);
 void set_mac_address(char * arg);
+void set_connection_method(char * arg);
 
+// these are padded with spaces
+// in order to ease printing as a table
 char * commands[] = {
   "get    ",
   "init   ",
   "restore",  
   "setmac ",  
+  "method ",
   0
 };
 
@@ -60,6 +69,7 @@ void (*command_functions[])(char * arg) = {
   initialize_eeprom_value,
   restore,
   set_mac_address,
+  set_connection_method,
   0
 };
 
@@ -74,10 +84,7 @@ void setup(){
   // check for initial integrity of configuration in eeprom
   if(!checkConfigIntegrity()){
     Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
-    configModeStateMachine('a');
-    configModeStateMachine('q');
-    configModeStateMachine('e');
-    configModeStateMachine('\r');
+    configInject("aqe\r");
     mode = MODE_CONFIG;
   }  
   else{
@@ -95,7 +102,7 @@ void setup(){
          got_serial_input = true;         
 
          start = millis(); // reset the timeout
-         if(CONFIG_MODE_GOT_INIT == configModeStateMachine(Serial.read())){
+         if(CONFIG_MODE_GOT_INIT == configModeStateMachine(Serial.read(), false)){
            mode = MODE_CONFIG;
            break;
          }
@@ -125,7 +132,7 @@ void setup(){
       if(Serial.available()){
         idle_time_ms = 0;
         // if you get serial traffic, pass it along to the configModeStateMachine for consumption
-        if(CONFIG_MODE_GOT_EXIT == configModeStateMachine(Serial.read())){
+        if(CONFIG_MODE_GOT_EXIT == configModeStateMachine(Serial.read(), false)){
           break;
         }
       }
@@ -309,7 +316,7 @@ boolean checkConfigIntegrity(void){
 
 // this state machine receives bytes and 
 // returns true if the function is in config mode
-uint8_t configModeStateMachine(char b){
+uint8_t configModeStateMachine(char b, boolean reset_buffers){
   static boolean received_init_code = false;
   const char buf_max_write_idx = 62; // [63] must always have a null-terminator
   static char buf[64] = {0}; // buffer to hold commands / data
@@ -317,6 +324,10 @@ uint8_t configModeStateMachine(char b){
   boolean line_terminated = false;
   char * first_arg = 0;
   uint8_t ret = CONFIG_MODE_NOTHING_SPECIAL;
+  
+  if(reset_buffers){
+    buf_idx = 0;
+  }
   
   //  Serial.print('[');
   //  if(isprint(b)) Serial.print((char) b);
@@ -451,6 +462,16 @@ void prompt(void){
 }
 
 // command processing function implementations
+void configInject(char * str){
+  boolean reset_buffers = true;
+  while(*str != '\0'){
+    configModeStateMachine(*str++, reset_buffers);
+    if(reset_buffers){
+      reset_buffers = false;
+    }
+  }  
+}
+
 void lowercase(char * str){
   uint8_t len = strlen(str);
   if(len < 255){ // guard against an infinite loop
@@ -505,6 +526,8 @@ void help_menu(char * arg){
     else if(strncmp("restore", arg, 7) == 0){
       Serial.println(F("restore <param>"));
       Serial.println(F("   <param> is one of:"));
+      Serial.println(F("      defaults - performs 'method direct'"));
+      Serial.println(F("                 performs 'init mac'"));      
       Serial.println(F("      mac - retrieves the mac address from"));
       Serial.println(F("            EEPROM and assigns it to the CC3000"));      
     }
@@ -512,7 +535,13 @@ void help_menu(char * arg){
       Serial.println(F("restore <address>"));
       Serial.println(F("   <address> is a MAC address of the form:"));
       Serial.println(F("                08:ab:73:DA:8f:00"));
-
+    }
+    else if(strncmp("method", arg, 6) == 0){
+      Serial.println(F("method <type>"));
+      Serial.println(F("   <type> is one of:"));
+      Serial.println(F("      direct - use parameters entered in CONFIG mode"));
+      Serial.println(F("      smartconfig - use smart config process [not yet supported]"));      
+      Serial.println(F("      pfod - use pfodWifiConnect config process  [not yet supported]"));            
     }    
     else{
       Serial.print(F("Error: There is no help available for command \""));
@@ -570,7 +599,13 @@ void initialize_eeprom_value(char * arg){
 }
 
 void restore(char * arg){
-  if(strncmp(arg, "mac", 3) == 0){
+  if(strncmp(arg, "defaults", 8) == 0){
+    prompt();
+    configInject("init mac\r");
+    configInject("method direct\r");
+    Serial.println();
+  }
+  else if(strncmp(arg, "mac", 3) == 0){
     uint8_t _mac_address[6] = {0};
     eeprom_read_block(_mac_address, (const void *) EEPROM_MAC_ADDRESS, 6);
     if (!cc3000.setMacAddress(_mac_address)){
@@ -617,6 +652,27 @@ void set_mac_address(char * arg){
   else{
     Serial.println(F("Error: MAC address must contain 6 bytes, with each separated by ':'")); 
   } 
+}
+
+void set_connection_method(char * arg){
+  lowercase(arg);
+  boolean valid = true;
+  if(strncmp(arg, "direct", 6) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_CONNECT_METHOD, CONNECT_METHOD_DIRECT);
+  }
+  else if(strncmp(arg, "smartconfig", 11) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_CONNECT_METHOD, CONNECT_METHOD_SMARTCONFIG);
+  }
+  else if(strncmp(arg, "pfod", 4) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_CONNECT_METHOD, CONNECT_METHOD_PFOD);
+  }
+  else{
+    valid = false; 
+  }
+  
+  if(valid){
+    recomputeAndStoreConfigChecksum();
+  }
 }
 
 void recomputeAndStoreConfigChecksum(void){
