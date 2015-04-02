@@ -118,10 +118,14 @@ void setup(){
   else{
     // if the appropriate escape sequence is received within 8 seconds
     // go into config mode
-    const long startup_time_period = 9000;
+    const long startup_time_period = 12000;
     long start = millis();
     long min_over = 100;
     boolean got_serial_input = false;
+    Serial.println(F("Enter 'aqe' for CONFIG mode."));
+    Serial.print(F("OPERATIONAL mode will automatically begin after "));
+    Serial.print(startup_time_period/1000);
+    Serial.println(F(" seconds without keyboard input."));
     while(millis() < start + startup_time_period){ // can get away with this sort of thing at start up
        if(Serial.available()){
          if(got_serial_input == false){
@@ -149,9 +153,14 @@ void setup(){
   Serial.println();
   
   if(mode == MODE_CONFIG){
-    const uint16_t idle_timeout_period_ms = 1000*60*2; // 2 minutes
-    uint16_t idle_time_ms = 0;
+    const uint32_t idle_timeout_period_ms = 1000UL * 60UL * 5UL; // 5 minutes
+    uint32_t idle_time_ms = 0;
     Serial.println(F("-~=* In CONFIG Mode *=~-"));
+    Serial.print(F("OPERATIONAL mode will automatically begin after "));
+    Serial.print((idle_timeout_period_ms / 1000UL) / 60UL);
+    Serial.println(F(" minutes without keyboard input.")); 
+    Serial.println(F("Enter 'help' for a list of available commands, "));
+    Serial.println(F("      ...or 'help <cmd>' for help on a specific command"));
     prompt();
     for(;;){
       unsigned long current_millis = millis();
@@ -403,6 +412,7 @@ uint8_t configModeStateMachine(char b, boolean reset_buffers){
     // Serial.println(buf);
        
     if(strncmp("exit", lower_buf, 4) == 0){      
+      Serial.println(F("Exiting CONFIG mode..."));
       ret = CONFIG_MODE_GOT_EXIT;
     }    
     else{
@@ -517,13 +527,13 @@ void help_menu(char * arg){
   
   if(arg == 0){
     // list the commands that are legal
-    Serial.print(F("1. help  \t2. exit  \t"));
+    Serial.print(F("help    \texit    \t"));
     for(uint8_t ii = 0, jj = first_dynamic_command_index; commands[ii] != 0; ii++, jj++){
       if((jj % commands_per_line) == 0){
         Serial.println();
       }
-      Serial.print(jj + 1);
-      Serial.print(". ");
+      //Serial.print(jj + 1);
+      //Serial.print(". ");
       Serial.print(commands[ii]);
       Serial.print('\t');       
     } 
@@ -537,6 +547,10 @@ void help_menu(char * arg){
       Serial.println(F("   <arg> is any legal command keyword"));
       Serial.println(F("   result: usage instructions are printed"));
       Serial.println(F("           for the command named <arg>"));     
+    }
+    else if(strncmp("exit", arg, 4) == 0){
+      Serial.println(F("exit"));
+      Serial.println(F("   exits CONFIG mode and begins OPERATIONAL mode."));
     }
     else if(strncmp("get", arg, 3) == 0){
       Serial.println(F("get <param>"));
@@ -567,9 +581,14 @@ void help_menu(char * arg){
       Serial.println(F("            EEPROM and assigns it to the CC3000"));      
     }
     else if(strncmp("setmac", arg, 6) == 0){
-      Serial.println(F("restore <address>"));
+      Serial.println(F("setmac <address>"));
       Serial.println(F("   <address> is a MAC address of the form:"));
       Serial.println(F("                08:ab:73:DA:8f:00"));
+      Serial.println(F("   result: The entered MAC address is assigned to the CC3000"));
+      Serial.println(F("           but is NOT stored in the EEPROM, so that 'restore mac'"));
+      Serial.println(F("           can subsequently be used to undo this command."));            
+      Serial.println(F("   note:   If you DO want to store the newly configured MAC in EEPROM,"));
+      Serial.println(F("           follow this command by 'init mac'."));                  
     }
     else if(strncmp("method", arg, 6) == 0){
       Serial.println(F("method <type>"));
@@ -649,7 +668,12 @@ void print_eeprom_value(char * arg){
   else if(strncmp(arg, "ssid", 4) == 0){
     char ssid[32] = {0};
     eeprom_read_block(ssid, (const void *) EEPROM_SSID, 32);
-    Serial.println(ssid);
+    if(strlen(ssid) == 0){
+      Serial.println(F("No SSID currently configured."));
+    }
+    else{
+      Serial.println(ssid);
+    }
   }
   else if(strncmp(arg, "security", 8) == 0){
     uint8_t security = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);    
@@ -755,8 +779,8 @@ void set_mac_address(char * arg){
        Serial.println(F("Error: Failed to write MAC address to CC3000"));
     }  
     else{ // cc3000 mac address accepted
-      eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
-      recomputeAndStoreConfigChecksum();   
+      // eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
+      // recomputeAndStoreConfigChecksum();   
     } 
   }
   else{
