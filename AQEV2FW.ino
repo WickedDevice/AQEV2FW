@@ -40,6 +40,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_CONNECT_METHOD (EEPROM_MAC_ADDRESS - 1) // connection method encoded as a single byte value 
 #define EEPROM_SSID           (EEPROM_CONNECT_METHOD - 32) // ssid string, up to 32 characters (one of which is a null terminator)
 #define EEPROM_NETWORK_PWD    (EEPROM_SSID - 32) // network password, up to 32 characters (one of which is a null terminator)
+#define EEPROM_SECURITY_MODE  (EEPROM_NETWORK_PWD - 1) // security mode encoded as a single byte value, consistent with the CC3000 library
 #define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
 
 // valid connection methods
@@ -56,6 +57,7 @@ void set_mac_address(char * arg);
 void set_connection_method(char * arg);
 void set_ssid(char * arg);
 void set_network_password(char * arg);
+void set_network_security_mode(char * arg);
 
 // Note to self:
 //   When implementing a new parameter, ask yourself:
@@ -76,13 +78,14 @@ void set_network_password(char * arg);
 // in order to ease printing as a table
 // string comparisons should use strncmp rather than strcmp
 char * commands[] = {
-  "get    ",
-  "init   ",
-  "restore",  
-  "setmac ",  
-  "method ",
-  "ssid   ",
-  "pwd    ",
+  "get     ",
+  "init    ",
+  "restore ",  
+  "setmac  ",  
+  "method  ",
+  "ssid    ",
+  "pwd     ",
+  "security",
   0
 };
 
@@ -94,6 +97,7 @@ void (*command_functions[])(char * arg) = {
   set_connection_method,
   set_ssid,
   set_network_password,
+  set_network_security_mode,
   0
 };
 
@@ -541,6 +545,7 @@ void help_menu(char * arg){
       Serial.println(F("      method - the Wi-Fi connection method"));
       Serial.println(F("      ssid - the Wi-Fi SSID to connect to"));
       Serial.println(F("      pwd - lol, sorry, that's not happening!"));
+      Serial.println(F("      security - the Wi-Fi security mode"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));      
     }
@@ -555,6 +560,7 @@ void help_menu(char * arg){
       Serial.println(F("   <param> is one of:"));
       Serial.println(F("      defaults - performs 'method direct'"));
       Serial.println(F("                 performs 'init mac'"));      
+      Serial.println(F("                 performs 'security wpa2'"));
       Serial.println(F("                 clears the SSID from memory"));
       Serial.println(F("                 clears the Network Password from memory"));      
       Serial.println(F("      mac - retrieves the mac address from"));
@@ -581,6 +587,14 @@ void help_menu(char * arg){
       Serial.println(F("   <string> is the network password for "));
       Serial.println(F("      the SSID that the device should connect to."));
     }    
+    else if(strncmp("security", arg, 8) == 0){
+      Serial.println(F("security <mode>"));
+      Serial.println(F("   <mode> is one of:"));
+      Serial.println(F("      open - the network is unsecured"));
+      Serial.println(F("      wep  - the network WEP security"));
+      Serial.println(F("      wpa  - the network WPA Personal security"));  
+      Serial.println(F("      wpa2 - the network WPA2 Personal security"));        
+    }
     else{
       Serial.print(F("Error: There is no help available for command \""));
       Serial.print(arg);
@@ -630,12 +644,38 @@ void print_eeprom_value(char * arg){
         Serial.println(F("]"));
         break;   
     }
+    
   }
   else if(strncmp(arg, "ssid", 4) == 0){
     char ssid[32] = {0};
     eeprom_read_block(ssid, (const void *) EEPROM_SSID, 32);
     Serial.println(ssid);
   }
+  else if(strncmp(arg, "security", 8) == 0){
+    uint8_t security = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);    
+    switch(security){
+      case WLAN_SEC_UNSEC:
+        Serial.println(F("Open"));
+        break;
+      case WLAN_SEC_WEP:
+        Serial.println(F("WEP"));
+        break;
+      case WLAN_SEC_WPA:
+        Serial.println(F("WPA"));
+        break;
+      case WLAN_SEC_WPA2:
+        Serial.println(F("WPA2"));
+        break;
+      default:
+        Serial.print(F("Error: Unknown security mode code [0x"));
+        if(security < 0x10){
+          Serial.print(F("0")); 
+        }
+        Serial.print(security, HEX);
+        Serial.println(F("]"));
+        break;   
+    }    
+  }  
   else{
     Serial.print(F("Error: Unexpected Variable Name \""));
     Serial.print(arg);
@@ -669,6 +709,7 @@ void restore(char * arg){
     prompt();
     configInject("init mac\r");
     configInject("method direct\r");
+    configInject("security wpa2\r");
     eeprom_write_block(blank, (void *) EEPROM_SSID, 32); // clear the SSID
     eeprom_write_block(blank, (void *) EEPROM_NETWORK_PWD, 32); // clear the Network Password
     recomputeAndStoreConfigChecksum();
@@ -736,6 +777,10 @@ void set_connection_method(char * arg){
     eeprom_write_byte((uint8_t *) EEPROM_CONNECT_METHOD, CONNECT_METHOD_PFOD);
   }
   else{
+    Serial.print(F("Error: Invalid connection method entered - \""));
+    Serial.print(arg);
+    Serial.println(F("\""));
+    Serial.println(F("       valid options are: 'direct', 'smartconfig', and 'pfod'"));
     valid = false; 
   }
   
@@ -772,6 +817,33 @@ void set_network_password(char * arg){
   else{
     Serial.println(F("Error: SSID must be less than 32 characters in length"));
   }  
+}
+
+void set_network_security_mode(char * arg){
+  boolean valid = true;
+  if(strncmp("open", arg, 4) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_SECURITY_MODE, WLAN_SEC_UNSEC);
+  }
+  else if(strncmp("wep", arg, 3) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_SECURITY_MODE, WLAN_SEC_WEP);
+  }
+  else if(strncmp("wpa2", arg, 4) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_SECURITY_MODE, WLAN_SEC_WPA2);
+  }  
+  else if(strncmp("wpa", arg, 3) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_SECURITY_MODE, WLAN_SEC_WPA);
+  }
+  else{
+    Serial.print(F("Error: Invalid security mode entered - \""));
+    Serial.print(arg);
+    Serial.println(F("\""));
+    Serial.println(F("       valid options are: 'open', 'wep', 'wpa', and 'wpa2'"));
+    valid = false;
+  }
+  
+  if(valid){
+    recomputeAndStoreConfigChecksum();
+  }    
 }
 
 void recomputeAndStoreConfigChecksum(void){
