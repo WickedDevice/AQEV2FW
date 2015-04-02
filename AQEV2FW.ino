@@ -624,9 +624,12 @@ void help_menu(char * arg){
       Serial.println(F("                 performs 'restore cocal'"));
       Serial.println(F("                 clears the SSID from memory"));
       Serial.println(F("                 clears the Network Password from memory"));
-      Serial.println(F("      mac      - retrieves the mac address from"));
-      Serial.println(F("                 BACKUP, assigns it to the Config EEPROM, "));
+      Serial.println(F("      mac      - retrieves the mac address from BACKUP"));
       Serial.println(F("                 and assigns it to the CC3000, via a 'setmac' command"));
+      Serial.println(F("      ospwd    - restores the OpenSensors.io password from BACKUP "));    
+      Serial.println(F("      key      - restores the Private Key from BACKUP "));    
+      Serial.println(F("      no2cal   - restores the NO2 calibration parameters from BACKUP "));    
+      Serial.println(F("      cocal    - restores the CO calibration parameters from BACKUP "));          
     }
     else if(strncmp("setmac", arg, 6) == 0){
       Serial.println(F("setmac <address>"));
@@ -688,8 +691,8 @@ void help_menu(char * arg){
       Serial.println(F("      ospwd    - backs up the OpenSensors.io password"));
       Serial.println(F("      mac      - backs up the CC3000 MAC address"));
       Serial.println(F("      key      - backs up the 256-bit private key"));
-      Serial.println(F("      no2cal   - backs up the NO2 sensor calibration values"));
-      Serial.println(F("      cocal    - backs up the CO sensor calibration values"));
+      Serial.println(F("      no2cal   - backs up the NO2 calibration parameters"));
+      Serial.println(F("      cocal    - backs up the CO calibration parameters"));
       Serial.println(F("      all      - does all of the above"));
     }
     else{
