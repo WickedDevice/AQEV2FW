@@ -42,6 +42,26 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_NETWORK_PWD    (EEPROM_SSID - 32) // network password, up to 32 characters (one of which is a null terminator)
 #define EEPROM_SECURITY_MODE  (EEPROM_NETWORK_PWD - 1) // security mode encoded as a single byte value, consistent with the CC3000 library
 #define EEPROM_STATIC_IP_ADDRESS (EEPROM_SECURITY_MODE - 4) // static ipv4 address, 4 bytes - 0.0.0.0 indicates use DHCP
+#define EEPROM_OPENSENSORSIO_PWD (EEPROM_STATIC_IP_ADDRESS - 32) // password for opensensors.io, up to 32 characters (one of which is a null terminator)
+#define EEPROM_NO2_CAL_SLOPE (EEPROM_OPENSENSORSIO_PWD - 4) // float value, 4-bytes, the slope applied to the sensor
+#define EEPROM_NO2_CAL_OFFSET (EEPROM_NO2_CAL_SLOPE - 4) // float value, 4-btyes, the offset applied to the sensor
+#define EEPROM_CO_CAL_SLOPE (EEPROM_NO2_CAL_OFFSET - 4) // float value, 4-bytes, the slope applied to the sensor
+#define EEPROM_CO_CAL_OFFSET (EEPROM_CO_CAL_SLOPE - 4) // float value, 4-btyes, the offset applied to the sensor
+#define EEPROM_PRIVATE_KEY (EEPROM_CO_CAL_OFFSET - 4) // 32-bytes of Random Data (256-bits)
+//  /\
+//   L Add values up here by subtracting offsets to previously added values
+//   * ... and make suer the addresses don't collide and start overlapping!
+//   T Add values down here by adding offsets to previously added values
+//  \/
+
+#define EEPROM_BACKUP_PRIVATE_KEY (EEPROM_CO_CAL_OFFSET + 4)
+#define EEPROM_BACKUP_CO_CAL_OFFSET (EEPROM_CO_CAL_SLOPE + 4)
+#define EEPROM_BACKUP_CO_CAL_SLOPE (EEPROM_NO2_CAL_OFFSET + 4)
+#define EEPROM_BACKUP_NO2_CAL_OFFSET (EEPROM_NO2_CAL_SLOPE + 4)
+#define EEPROM_BACKUP_NO2_CAL_SLOPE (EEPROM_BACKUP_OPENSENSORSIO_PWD + 32)
+#define EEPROM_BACKUP_OPENSENSORSIO_PWD (EEPROM_BACKUP_MAC_ADDRESS + 6)
+#define EEPROM_BACKUP_MAC_ADDRESS (EEPROM_BACKUP_CHECK + 1) // backup parameters are added here offset from the EEPROM_CRC_CHECKSUM
+#define EEPROM_BACKUP_CHECK   (EEPROM_CRC_CHECKSUM + 2) // this value should contain the value 0x55 if backup has ever happened
 #define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
 
 // valid connection methods
@@ -61,6 +81,8 @@ void set_network_password(char * arg);
 void set_network_security_mode(char * arg);
 void set_static_ip_address(char * arg);
 void use_command(char * arg);
+void set_opensensorsio_password(char * arg);
+void backup(char * arg);
 
 // Note to self:
 //   When implementing a new parameter, ask yourself:
@@ -91,6 +113,8 @@ char * commands[] = {
   "security",
   "staticip",
   "use     ",
+  "ospwd   ",
+  "backup  ",
   0
 };
 
@@ -105,6 +129,8 @@ void (*command_functions[])(char * arg) = {
   set_network_security_mode,
   set_static_ip_address,
   use_command,
+  set_opensensorsio_password,
+  backup,
   0
 };
 
@@ -459,13 +485,20 @@ uint8_t configModeStateMachine(char b, boolean reset_buffers){
         
         // command with argument was received, determine if it's valid
         // and if so, call the appropriate command processing function
+        boolean command_found = false;
         for(uint8_t ii = 0; commands[ii] != 0; ii++){
           if(strncmp(commands[ii], lower_buf, strlen(buf)) == 0){
             command_functions[ii](first_arg);
+            command_found = true;
             break; 
           }
         }
         
+        if(!command_found){
+          Serial.print(F("Error: Unknown command \""));
+          Serial.print(buf);
+          Serial.println(F("\""));
+        }        
       }
       else if(strlen(buf) > 0){
         Serial.print(F("Error: Argument expected for command \""));
@@ -567,7 +600,8 @@ void help_menu(char * arg){
       Serial.println(F("      ssid - the Wi-Fi SSID to connect to"));
       Serial.println(F("      pwd - lol, sorry, that's not happening!"));
       Serial.println(F("      security - the Wi-Fi security mode"));
-      Serial.println(F("      staticip - the Wi-Fi IP-address mode"));
+      Serial.println(F("      ipmode - the Wi-Fi IP-address mode"));
+      Serial.println(F("      ospwd - lol, sorry, that's not happening either!"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));      
     }
@@ -581,23 +615,27 @@ void help_menu(char * arg){
       Serial.println(F("restore <param>"));
       Serial.println(F("   <param> is one of:"));
       Serial.println(F("      defaults - performs 'method direct'"));
-      Serial.println(F("                 performs 'init mac'"));      
       Serial.println(F("                 performs 'security wpa2'"));
       Serial.println(F("                 performs 'use dhcp'"));
+      Serial.println(F("                 performs 'restore mac'"));
+      Serial.println(F("                 performs 'restore ospwd'"));
+      Serial.println(F("                 performs 'restore key'"));
+      Serial.println(F("                 performs 'restore no2cal'"));
+      Serial.println(F("                 performs 'restore cocal'"));
       Serial.println(F("                 clears the SSID from memory"));
       Serial.println(F("                 clears the Network Password from memory"));
       Serial.println(F("      mac      - retrieves the mac address from"));
-      Serial.println(F("                 EEPROM and assigns it to the CC3000"));
+      Serial.println(F("                 BACKUP, assigns it to the Config EEPROM, "));
+      Serial.println(F("                 and assigns it to the CC3000, via a 'setmac' command"));
     }
     else if(strncmp("setmac", arg, 6) == 0){
       Serial.println(F("setmac <address>"));
       Serial.println(F("   <address> is a MAC address of the form:"));
       Serial.println(F("                08:ab:73:DA:8f:00"));
-      Serial.println(F("   result: The entered MAC address is assigned to the CC3000"));
-      Serial.println(F("           but is NOT stored in the EEPROM, so that 'restore mac'"));
-      Serial.println(F("           can subsequently be used to undo this command."));            
-      Serial.println(F("   note:   If you DO want to store the newly configured MAC in EEPROM,"));
-      Serial.println(F("           follow this command by 'init mac'."));                  
+      Serial.println(F("   result:  The entered MAC address is assigned to the CC3000"));
+      Serial.println(F("            and is stored in the EEPROM."));
+      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
+      Serial.println(F("            from connecting to your network."));
     }
     else if(strncmp("method", arg, 6) == 0){
       Serial.println(F("method <type>"));
@@ -634,6 +672,25 @@ void help_menu(char * arg){
       Serial.println(F("use <param>"));
       Serial.println(F("   <param> is one of:"));
       Serial.println(F("      dhcp - wipes the Static IP address from the EEPROM"));
+    }
+    else if(strncmp("ospwd", arg, 5) == 0){
+      Serial.println(F("ospwd <string>"));
+      Serial.println(F("   <string> is the password the device will use to connect "));
+      Serial.println(F("      to OpenSensors.io."));      
+      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));      
+      Serial.println(F("            probably not be using this command."));
+      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
+      Serial.println(F("            from publishing data to the internet."));
+    }
+    else if(strncmp("backup", arg, 3) == 0){
+      Serial.println(F("backup <param>"));
+      Serial.println(F("   <param> is one of:"));
+      Serial.println(F("      ospwd    - backs up the OpenSensors.io password"));
+      Serial.println(F("      mac      - backs up the CC3000 MAC address"));
+      Serial.println(F("      key      - backs up the 256-bit private key"));
+      Serial.println(F("      no2cal   - backs up the NO2 sensor calibration values"));
+      Serial.println(F("      cocal    - backs up the CO sensor calibration values"));
+      Serial.println(F("      all      - does all of the above"));
     }
     else{
       Serial.print(F("Error: There is no help available for command \""));
@@ -721,7 +778,7 @@ void print_eeprom_value(char * arg){
         break;   
     }    
   }  
-  else if(strncmp(arg, "staticip", 8) == 0){
+  else if(strncmp(arg, "ipmode", 6) == 0){
     uint8_t ip[4] = {0};
     uint8_t noip[4] = {0};
     eeprom_read_block(ip, (const void *) EEPROM_STATIC_IP_ADDRESS, 4);
@@ -766,29 +823,79 @@ void initialize_eeprom_value(char * arg){
 
 void restore(char * arg){
   char blank[32] = {0};
-  if(strncmp(arg, "defaults", 8) == 0){
+  uint8_t tmp[32] = {0};
+  boolean valid = true;
+  
+  uint8_t backup_check = eeprom_read_byte((const uint8_t *) EEPROM_BACKUP_CHECK);
+  
+  if(backup_check != 0x55){
+    Serial.println(F("Error: At least one 'backup' operation must be performed "));
+    Serial.println(F("       prior to executing a 'restore' operation."));    
+    return;
+  }
+  
+  if(strncmp(arg, "defaults", 8) == 0){        
     prompt();
-    configInject("init mac\r");
+    configInject("restore mac\r");
     configInject("method direct\r");
     configInject("security wpa2\r");
     configInject("use dhcp\r");
+    configInject("restore ospwd\r");
+    configInject("restore key\r");
+    configInject("restore no2cal\r");
+    configInject("restore cocal\r");
+    
     eeprom_write_block(blank, (void *) EEPROM_SSID, 32); // clear the SSID
     eeprom_write_block(blank, (void *) EEPROM_NETWORK_PWD, 32); // clear the Network Password
-    recomputeAndStoreConfigChecksum();
     Serial.println();
   }
   else if(strncmp(arg, "mac", 3) == 0){
     uint8_t _mac_address[6] = {0};
-    eeprom_read_block(_mac_address, (const void *) EEPROM_MAC_ADDRESS, 6);
-    if (!cc3000.setMacAddress(_mac_address)){
-       Serial.println(F("Error: Failed to restore MAC address to CC3000"));
-    }
+    char setmac_string[32] = {0};
+    eeprom_read_block(_mac_address, (const void *) EEPROM_BACKUP_MAC_ADDRESS, 6);
+    snprintf(setmac_string, 31,
+      "setmac %02x:%02x:%02x:%02x:%02x:%02x\r", 
+      _mac_address[0],
+      _mac_address[1],
+      _mac_address[2],
+      _mac_address[3],
+      _mac_address[4],
+      _mac_address[5]);
+    
+    configInject(setmac_string); 
+    Serial.println();    
   } 
+  else if(strncmp("ospwd", arg, 5) == 0){
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_OPENSENSORSIO_PWD, 32);
+    eeprom_write_block(tmp, (void *) EEPROM_OPENSENSORSIO_PWD, 32);
+  } 
+  else if(strncmp("key", arg, 3) == 0){ 
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_PRIVATE_KEY, 32);
+    eeprom_write_block(tmp, (void *) EEPROM_PRIVATE_KEY, 32);    
+  }
+  else if(strncmp("no2cal", arg, 6) == 0){ 
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_NO2_CAL_SLOPE, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_NO2_CAL_SLOPE, 4);    
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_NO2_CAL_OFFSET, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_NO2_CAL_OFFSET, 4);        
+  }
+  else if(strncmp("cocal", arg, 5) == 0){ 
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_CO_CAL_SLOPE, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_CO_CAL_SLOPE, 4);    
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_CO_CAL_OFFSET, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_CO_CAL_OFFSET, 4);      
+  }   
   else{
-    Serial.print(F("Error: Unexpected Variable Name \""));
+    valid = false;
+    Serial.print(F("Error: Unexpected paramater name \""));
     Serial.print(arg);
     Serial.println(F("\""));
   }  
+  
+  if(valid){
+    recomputeAndStoreConfigChecksum();     
+  }  
+  
 }
 
 void set_mac_address(char * arg){
@@ -817,8 +924,8 @@ void set_mac_address(char * arg){
        Serial.println(F("Error: Failed to write MAC address to CC3000"));
     }  
     else{ // cc3000 mac address accepted
-      // eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
-      // recomputeAndStoreConfigChecksum();   
+      eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
+      recomputeAndStoreConfigChecksum();   
     } 
   }
   else{
@@ -877,7 +984,7 @@ void set_network_password(char * arg){
     recomputeAndStoreConfigChecksum();
   }
   else{
-    Serial.println(F("Error: SSID must be less than 32 characters in length"));
+    Serial.println(F("Error: Network password must be less than 32 characters in length"));
   }  
 }
 
@@ -959,9 +1066,78 @@ void use_command(char * arg){
     recomputeAndStoreConfigChecksum();    
   }
   else{
-    Serial.print(F("Error: Invalid parameter provided to use - \""));
+    Serial.print(F("Error: Invalid parameter provided to 'use' command - \""));
     Serial.print(arg);
     Serial.println("\""); 
+  }
+}
+
+void set_opensensorsio_password(char * arg){
+  // we've reserved 32-bytes of EEPROM for a network password
+  // so the argument's length must be <= 31
+  char password[32] = {0};
+  uint16_t len = strlen(arg);
+  if(len < 32){
+    strncpy(password, arg, len);
+    eeprom_write_block(password, (void *) EEPROM_OPENSENSORSIO_PWD, 32);
+    recomputeAndStoreConfigChecksum();
+  }
+  else{
+    Serial.println(F("Error: OpenSensors.io password must be less than 32 characters in length"));
+  }     
+}
+
+void backup(char * arg){
+  boolean valid = true;
+  char tmp[32] = {0};
+  if(strncmp("mac", arg, 3) == 0){
+    configInject("init mac\r"); // make sure the CC3000 mac address is in EEPROM
+    eeprom_read_block(tmp, (const void *) EEPROM_MAC_ADDRESS, 6);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_MAC_ADDRESS, 6);
+  } 
+  else if(strncmp("ospwd", arg, 5) == 0){
+    eeprom_read_block(tmp, (const void *) EEPROM_OPENSENSORSIO_PWD, 32);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_OPENSENSORSIO_PWD, 32);
+  } 
+  else if(strncmp("key", arg, 3) == 0){ 
+    eeprom_read_block(tmp, (const void *) EEPROM_PRIVATE_KEY, 32);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_PRIVATE_KEY, 32);    
+  }
+  else if(strncmp("no2cal", arg, 6) == 0){ 
+    eeprom_read_block(tmp, (const void *) EEPROM_NO2_CAL_SLOPE, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_NO2_CAL_SLOPE, 4);    
+    eeprom_read_block(tmp, (const void *) EEPROM_NO2_CAL_OFFSET, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_NO2_CAL_OFFSET, 4);        
+  }
+  else if(strncmp("cocal", arg, 5) == 0){ 
+    eeprom_read_block(tmp, (const void *) EEPROM_CO_CAL_SLOPE, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_CO_CAL_SLOPE, 4);    
+    eeprom_read_block(tmp, (const void *) EEPROM_CO_CAL_OFFSET, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_CO_CAL_OFFSET, 4);      
+  }
+  else if(strncmp("all", arg, 3) == 0){
+    valid = false;
+    configInject("backup mac\r");
+    configInject("backup ospwd\r");
+    configInject("backup key\r");
+    configInject("backup no2cal\r");
+    configInject("backup cocal\r");
+    Serial.println();
+  }
+  else{
+    valid = false;
+    Serial.print(F("Error: Invalid parameter provided to 'backup' command - \""));
+    Serial.print(arg);
+    Serial.println("\""); 
+  }
+  
+  if(valid){
+    // set EEPROM_BACKUP_CHECK to 0x55 if it's not already done
+    uint8_t backup_check = eeprom_read_byte((const uint8_t *) EEPROM_BACKUP_CHECK);
+    if(backup_check != 0x55){
+      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, 0x55); 
+    }
+    recomputeAndStoreConfigChecksum();
   }
 }
 
