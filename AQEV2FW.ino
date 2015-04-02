@@ -53,8 +53,24 @@ void restore(char * arg);
 void set_mac_address(char * arg);
 void set_connection_method(char * arg);
 
-// these are padded with spaces
+// Note to self:
+//   When implementing a new parameter, ask yourself:
+//     should there be a command for the user to set its value directly
+//     should 'get' support it (almost certainly the answer is yes)
+//     should 'init' support it (is there a way to set it without user intervention)
+//     should 'restore' support it directly
+//     should 'restore defaults' support it
+//   ... and anytime you do the above, remember to update the help_menu
+//   ... and remember, anything that changes the config EEPROM 
+//       needs to call recomputeAndStoreConfigChecksum after doing so
+
+// the order of the command keywords in this array
+// must be kept in index-correspondence with the associated 
+// function pointers in the command_functions array
+//
+// these keywords are padded with spaces
 // in order to ease printing as a table
+// string comparisons should use strncmp rather than strcmp
 char * commands[] = {
   "get    ",
   "init   ",
@@ -514,7 +530,8 @@ void help_menu(char * arg){
       Serial.println(F("get <param>"));
       Serial.println(F("   <param> is one of:"));
       Serial.println(F("      mac - the MAC address of the cc3000"));
-      Serial.println(F("   result: the current value of <param>"));
+      Serial.println(F("      method - the Wi-Fi connection method"));
+      Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));      
     }
     else if(strncmp("init", arg, 4) == 0){
@@ -570,6 +587,28 @@ void print_eeprom_value(char * arg){
       }
     }
     Serial.println();
+  }
+  else if(strncmp(arg, "method", 6) == 0){
+    uint8_t method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
+    switch(method){
+      case CONNECT_METHOD_DIRECT:
+        Serial.println(F("Direct Connect"));
+        break;
+      case CONNECT_METHOD_SMARTCONFIG:
+        Serial.println(F("Smart Config Connect [not currently supported]"));
+        break;
+      case CONNECT_METHOD_PFOD:
+        Serial.println(F("Pfod Wi-Fi Connect [not currently supported]"));
+        break;
+      default:
+        Serial.print(F("Error: Unknown connection method code [0x"));
+        if(method < 0x10){
+          Serial.print(F("0")); 
+        }
+        Serial.print(method, HEX);
+        Serial.println(F("]"));
+        break;   
+    }
   }
   else{
     Serial.print(F("Error: Unexpected Variable Name \""));
