@@ -629,6 +629,11 @@ void help_menu(char * arg){
       Serial.println(F("      security - the Wi-Fi security mode"));
       Serial.println(F("      ipmode - the Wi-Fi IP-address mode"));
       Serial.println(F("      ospwd - lol, sorry, that's not happening either!"));
+      Serial.println(F("      no2_slope - NO2 sensors slope [ppb/V]"));
+      Serial.println(F("      no2_off - NO2 sensors offset [V]"));
+      Serial.println(F("      co_slope - NO2 sensors slope [ppb/V]"));
+      Serial.println(F("      co_off - NO2 sensors offset [V]"));
+      Serial.println(F("      key - lol, sorry, that's also not happening!"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));      
     }
@@ -722,6 +727,26 @@ void help_menu(char * arg){
       Serial.println(F("      cocal    - backs up the CO calibration parameters"));
       Serial.println(F("      all      - does all of the above"));
     }
+    else if(strncmp("no2_slope", arg, 9) == 0){
+      Serial.println(F("no2_slope <number>"));
+      Serial.println(F("   <number> is the decimal value NO2 sensor slope [ppb/V]"));      
+    }
+    else if(strncmp("no2_off", arg, 7) == 0){
+      Serial.println(F("no2_off <number>"));
+      Serial.println(F("   <number> is the decimal value NO2 sensor offset [V]"));      
+    }    
+    else if(strncmp("co_slope", arg, 8) == 0){
+      Serial.println(F("co_slope <number>"));
+      Serial.println(F("   <number> is the decimal value CO sensor slope [ppm/V]"));      
+    }
+    else if(strncmp("co_off", arg, 6) == 0){
+      Serial.println(F("co_off <number>"));
+      Serial.println(F("   <number> is the decimal value for the CO sensor's offset [V]"));      
+    }       
+    else if(strncmp("key", arg, 3) == 0){
+      Serial.println(F("key <string>"));
+      Serial.println(F("   <string> is 32-byte hexadecimal string for the private key"));      
+    }       
     else{
       Serial.print(F("Error: There is no help available for command \""));
       Serial.print(arg);
@@ -824,6 +849,22 @@ void print_eeprom_value(char * arg){
       Serial.println(ip[3], DEC);
     }
   }
+  else if(strncmp(arg, "no2_slope", 9) == 0){
+    float val = eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE);
+    Serial.println(val, 9);
+  } 
+  else if(strncmp(arg, "no2_off", 7) == 0){
+    float val = eeprom_read_float((const float *) EEPROM_NO2_CAL_OFFSET);
+    Serial.println(val, 9);    
+  }   
+  else if(strncmp(arg, "co_slope", 8) == 0){
+    float val = eeprom_read_float((const float *) EEPROM_CO_CAL_SLOPE);
+    Serial.println(val, 9);    
+  } 
+  else if(strncmp(arg, "co_off", 6) == 0){
+    float val = eeprom_read_float((const float *) EEPROM_CO_CAL_OFFSET);
+    Serial.println(val, 9);    
+  }     
   else{
     Serial.print(F("Error: Unexpected Variable Name \""));
     Serial.print(arg);
@@ -1224,20 +1265,65 @@ void backup(char * arg){
   }
 }
 
+boolean convertStringToFloat(char * str_to_convert, float * target){
+  char * end_ptr;   
+  *target = strtod(str_to_convert, &end_ptr);
+  if(end_ptr == str_to_convert) {
+    return false;
+  } 
+  return true;
+}
+
 void set_no2_slope(char * arg){
-  
+  float value = 0.0;
+  if(convertStringToFloat(arg, &value)){
+    eeprom_write_float((float *) EEPROM_NO2_CAL_SLOPE, value);
+    recomputeAndStoreConfigChecksum();
+  }
+  else{
+    Serial.print(F("Error: Failed to convert string \""));
+    Serial.print(arg);
+    Serial.println(F("\" to decimal number."));
+  }
 }
 
 void set_no2_offset(char * arg){
-  
+  float value = 0.0;
+  if(convertStringToFloat(arg, &value)){
+    eeprom_write_float((float *) EEPROM_NO2_CAL_OFFSET, value);
+    recomputeAndStoreConfigChecksum();
+  }
+  else{
+    Serial.print(F("Error: Failed to convert string \""));
+    Serial.print(arg);
+    Serial.println(F("\" to decimal number."));
+  }  
 }
 
 void set_co_slope(char * arg){
-  
+  float value = 0.0;
+  if(convertStringToFloat(arg, &value)){
+    eeprom_write_float((float *) EEPROM_CO_CAL_SLOPE, value);
+    recomputeAndStoreConfigChecksum();
+  }
+  else{
+    Serial.print(F("Error: Failed to convert string \""));
+    Serial.print(arg);
+    Serial.println(F("\" to decimal number."));
+  }  
 }
 
 void set_co_offset(char * arg){
-  
+  float value = 0.0;
+  if(convertStringToFloat(arg, &value)){
+    eeprom_write_float((float *) EEPROM_CO_CAL_OFFSET, value);
+    recomputeAndStoreConfigChecksum();
+  }
+  else{
+    Serial.print(F("Error: Failed to convert string \""));
+    Serial.print(arg);
+    Serial.println(F("\" to decimal number."));
+  }    
 }
 
 void set_private_key(char * arg){
