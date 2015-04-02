@@ -485,21 +485,34 @@ void help_menu(char * arg){
     // as they pertain to this command
     if(strncmp("help", arg, 4) == 0){
       Serial.println(F("help <arg>"));
-      Serial.println(F("   <arg> is any legal command name"));
+      Serial.println(F("   <arg> is any legal command keyword"));
       Serial.println(F("   result: usage instructions are printed"));
       Serial.println(F("           for the command named <arg>"));     
     }
-    else if(strncmp("get", arg, 4) == 0){
-      
+    else if(strncmp("get", arg, 3) == 0){
+      Serial.println(F("get <param>"));
+      Serial.println(F("   <param> is one of:"));
+      Serial.println(F("      mac - the MAC address of the cc3000"));
+      Serial.println(F("   result: the current value of <param>"));
+      Serial.println(F("           is printed to the console."));      
     }
     else if(strncmp("init", arg, 4) == 0){
-      
+      Serial.println(F("init <param>"));
+      Serial.println(F("   <param> is one of:"));
+      Serial.println(F("      mac - retrieves the mac address from"));
+      Serial.println(F("            the CC3000 and stores it in EEPROM"));
     }
-    else if(strncmp("restore", arg, 4) == 0){
-      
+    else if(strncmp("restore", arg, 7) == 0){
+      Serial.println(F("restore <param>"));
+      Serial.println(F("   <param> is one of:"));
+      Serial.println(F("      mac - retrieves the mac address from"));
+      Serial.println(F("            EEPROM and assigns it to the CC3000"));      
     }
-    else if(strncmp("setmac", arg, 4) == 0){
-      
+    else if(strncmp("setmac", arg, 6) == 0){
+      Serial.println(F("restore <address>"));
+      Serial.println(F("   <address> is a MAC address of the form:"));
+      Serial.println(F("                08:ab:73:DA:8f:00"));
+
     }    
     else{
       Serial.print(F("Error: There is no help available for command \""));
@@ -581,7 +594,7 @@ void set_mac_address(char * arg){
   // parse the argument string, expected to be of the form ab:01:33:51:c8:77
   while(token != NULL){
     if((strlen(token) == 2) && isxdigit(token[0]) && isxdigit(token[1]) && (num_tokens < 6)){
-      _mac_address[num_tokens++] = atoi(token);
+      _mac_address[num_tokens++] = (uint8_t) strtoul(token, NULL, 16);
     }
     else{
       Serial.print(F("Error: MAC address parse error on input \""));
