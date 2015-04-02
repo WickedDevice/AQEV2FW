@@ -48,7 +48,6 @@ void restore(char * arg);
 void set_mac_address(char * arg);
 
 char * commands[] = {
-  "help   ",
   "get    ",
   "init   ",
   "restore",  
@@ -348,9 +347,14 @@ uint8_t configModeStateMachine(char b){
     Serial.print(b); // echo the character
   }
   
+  char lower_buf[64] = {0};  
+  if(line_terminated){
+    strncpy(lower_buf, buf, 63);
+    lowercase(lower_buf);  
+  }  
   
   // process the data currently stored in the buffer
-  if(received_init_code && line_terminated){
+  if(received_init_code && line_terminated){  
     // with the exeption of the command "exit"
     // commands are always of the form <command> <argument>
     // they are minimally parsed here and delegated to 
@@ -359,7 +363,7 @@ uint8_t configModeStateMachine(char b){
     // Serial.print("buf = ");
     // Serial.println(buf);
        
-    if((strncmp("exit", buf, 4) == 0) || (strncmp("EXIT", buf, 4) == 0)){      
+    if(strncmp("exit", lower_buf, 4) == 0){      
       ret = CONFIG_MODE_GOT_EXIT;
     }    
     else{
@@ -386,7 +390,7 @@ uint8_t configModeStateMachine(char b){
       }
       
       // deal with commands that can legitimately have no arguments first
-      if((strncmp("help", buf, 4) == 0) || (strncmp("HELP", buf, 4) == 0)){  
+      if(strncmp("help", lower_buf, 4) == 0){  
         help_menu(first_arg);
       }      
       else if(first_arg != 0){ 
@@ -400,7 +404,7 @@ uint8_t configModeStateMachine(char b){
         // command with argument was received, determine if it's valid
         // and if so, call the appropriate command processing function
         for(uint8_t ii = 0; commands[ii] != 0; ii++){
-          if(strncmp(commands[ii], buf, strlen(buf)) == 0){
+          if(strncmp(commands[ii], lower_buf, strlen(buf)) == 0){
             command_functions[ii](first_arg);
             break; 
           }
@@ -419,7 +423,7 @@ uint8_t configModeStateMachine(char b){
     // we are looking for are an exact match to the strings
     // "AQE\r" or "aqe\r"
     
-    if((strncmp("aqe", buf, 3) == 0) || (strncmp("AQE", buf, 3) == 0)){
+    if(strncmp("aqe", lower_buf, 3) == 0){
       received_init_code = true;
       ret = CONFIG_MODE_GOT_INIT;
     }
@@ -447,9 +451,21 @@ void prompt(void){
 }
 
 // command processing function implementations
+void lowercase(char * str){
+  uint8_t len = strlen(str);
+  if(len < 255){ // guard against an infinite loop
+    for(uint8_t ii = 0; ii < len; ii++){
+      str[ii] = tolower(str[ii]);
+    } 
+  }
+}
+
 void help_menu(char * arg){
   const uint8_t commands_per_line = 3;
   const uint8_t first_dynamic_command_index = 2;
+  
+  lowercase(arg);
+  
   if(arg == 0){
     // list the commands that are legal
     Serial.print(F("1. help  \t2. exit  \t"));
@@ -465,7 +481,31 @@ void help_menu(char * arg){
     Serial.println();
   }
   else{
-    
+    // we have an argument, so the user is asking for some specific usage instructions
+    // as they pertain to this command
+    if(strncmp("help", arg, 4) == 0){
+      Serial.println(F("help <arg>"));
+      Serial.println(F("   <arg> is any legal command name"));
+      Serial.println(F("   result: usage instructions are printed"));
+      Serial.println(F("           for the command named <arg>"));     
+    }
+    else if(strncmp("get", arg, 4) == 0){
+      
+    }
+    else if(strncmp("init", arg, 4) == 0){
+      
+    }
+    else if(strncmp("restore", arg, 4) == 0){
+      
+    }
+    else if(strncmp("setmac", arg, 4) == 0){
+      
+    }    
+    else{
+      Serial.print(F("Error: There is no help available for command \""));
+      Serial.print(arg);
+      Serial.println(F("\"")); 
+    }
   }
 }
 
