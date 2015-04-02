@@ -71,6 +71,11 @@ void setup(){
   
   // check for initial integrity of configuration in eeprom
   if(!checkConfigIntegrity()){
+    Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
+    configModeStateMachine('a');
+    configModeStateMachine('q');
+    configModeStateMachine('e');
+    configModeStateMachine('\r');
     mode = MODE_CONFIG;
   }  
   else{
@@ -286,11 +291,16 @@ void initializeHardware(void){
 
 boolean checkConfigIntegrity(void){
   uint16_t computed_crc = computeConfigChecksum();
-  uint16_t stored_crc = eeprom_read_word((const uint16_t *) EEPROM_CRC_CHECKSUM);  
+  uint16_t stored_crc = eeprom_read_word((const uint16_t *) EEPROM_CRC_CHECKSUM);    
   if(computed_crc == stored_crc){
     return true;
   }
   else{
+    Serial.print(F("Computed CRC = "));
+    Serial.print(computed_crc, HEX);
+    Serial.print(F(", Stored CRC = "));
+    Serial.println(stored_crc, HEX);
+    
     return false; 
   }
 }
@@ -448,6 +458,7 @@ void print_eeprom_value(char * arg){
         Serial.print(F(":"));  
       }
     }
+    Serial.println();
   }
   else{
     Serial.print(F("Error: Unexpected Variable Name \""));
@@ -464,6 +475,7 @@ void initialize_eeprom_value(char * arg){
     }
     else{
       eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
+      recomputeAndStoreConfigChecksum();
     }   
   }
   else{
@@ -511,10 +523,13 @@ void set_mac_address(char * arg){
     token = strtok(NULL, ":");
   }
   
-  eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
   if (!cc3000.setMacAddress(_mac_address)){
-     Serial.println(F("Error: Failed to restore MAC address to CC3000"));
+     Serial.println(F("Error: Failed to write MAC address to CC3000"));
   }  
+  else{ // cc3000 mac address accepted
+    eeprom_write_block(_mac_address, (void *) EEPROM_MAC_ADDRESS, 6);
+    recomputeAndStoreConfigChecksum();   
+  }
 }
 
 void recomputeAndStoreConfigChecksum(void){
@@ -524,7 +539,9 @@ void recomputeAndStoreConfigChecksum(void){
 
 uint16_t computeConfigChecksum(void){
   uint16_t crc = 0;
-  for(uint16_t address = EEPROM_CRC_CHECKSUM + 1; address <= E2END; address++){
+  // the checksum is 2 bytes, so start computing the checksum at 
+  // the second byte after it's location
+  for(uint16_t address = EEPROM_CRC_CHECKSUM + 2; address <= E2END; address++){
     crc = _crc16_update(crc, eeprom_read_byte((const uint8_t *) address));
   }
   return crc;  
