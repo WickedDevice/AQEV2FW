@@ -61,7 +61,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_BACKUP_NO2_CAL_SLOPE (EEPROM_BACKUP_OPENSENSORSIO_PWD + 32)
 #define EEPROM_BACKUP_OPENSENSORSIO_PWD (EEPROM_BACKUP_MAC_ADDRESS + 6)
 #define EEPROM_BACKUP_MAC_ADDRESS (EEPROM_BACKUP_CHECK + 1) // backup parameters are added here offset from the EEPROM_CRC_CHECKSUM
-#define EEPROM_BACKUP_CHECK   (EEPROM_CRC_CHECKSUM + 2) // this value should contain the value 0x55 if backup has ever happened
+#define EEPROM_BACKUP_CHECK   (EEPROM_CRC_CHECKSUM + 2) // this value should contain the value with various bits set if backup has ever happened
 #define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
 
 // valid connection methods
@@ -69,6 +69,18 @@ uint8_t mode = MODE_OPERATIONAL;
 #define CONNECT_METHOD_DIRECT        (0)
 #define CONNECT_METHOD_SMARTCONFIG   (1)
 #define CONNECT_METHOD_PFOD          (2)
+
+// backup status bits
+#define BACKUP_STATUS_MAC_ADDRESS_BIT       (7)
+#define BACKUP_STATUS_OPENSENSORSIO_PWD_BIT (6)
+#define BACKUP_STATUS_NO2_CALIBRATION_BIT   (5)
+#define BACKUP_STATUS_CO_CALIBRATION_BIT    (4)
+#define BACKUP_STATUS_PRIVATE_KEY_BIT       (3)
+#define BIT_IS_CLEARED(val, b) (!(val & _BV(b)))
+#define CLEAR_BIT(val, b) \
+do { \
+  val &= ~_BV(b); \
+} while(0)
 
 void help_menu(char * arg);
 void print_eeprom_value(char * arg);
@@ -83,6 +95,11 @@ void set_static_ip_address(char * arg);
 void use_command(char * arg);
 void set_opensensorsio_password(char * arg);
 void backup(char * arg);
+void set_no2_slope(char * arg);
+void set_no2_offset(char * arg);
+void set_co_slope(char * arg);
+void set_co_offset(char * arg);
+void set_private_key(char * arg);
 
 // Note to self:
 //   When implementing a new parameter, ask yourself:
@@ -103,18 +120,23 @@ void backup(char * arg);
 // in order to ease printing as a table
 // string comparisons should use strncmp rather than strcmp
 char * commands[] = {
-  "get     ",
-  "init    ",
-  "restore ",  
-  "setmac  ",  
-  "method  ",
-  "ssid    ",
-  "pwd     ",
-  "security",
-  "staticip",
-  "use     ",
-  "ospwd   ",
-  "backup  ",
+  "get      ",
+  "init     ",
+  "restore  ",  
+  "setmac   ",  
+  "method   ",
+  "ssid     ",
+  "pwd      ",
+  "security ",
+  "staticip ",
+  "use      ",
+  "ospwd    ",
+  "backup   ",
+  "no2_slope",
+  "no2_off  ",
+  "co_slope ",
+  "co_off   ",  
+  "key      ",
   0
 };
 
@@ -131,6 +153,11 @@ void (*command_functions[])(char * arg) = {
   use_command,
   set_opensensorsio_password,
   backup,
+  set_no2_slope,
+  set_no2_offset,
+  set_co_slope,
+  set_co_offset,
+  set_private_key,
   0
 };
 
@@ -829,17 +856,17 @@ void restore(char * arg){
   uint8_t tmp[32] = {0};
   boolean valid = true;
   
+  // things that must have been backed up before restoring.
+  // 1. MAC address              0x80
+  // 2. OpenSensors.io Password  0x40
+  // 3. Private Key              0x20
+  // 4. NO2 Calibration Values   0x10
+  // 5. CO Calibratino Values    0x80
+  
   uint8_t backup_check = eeprom_read_byte((const uint8_t *) EEPROM_BACKUP_CHECK);
   
-  if(backup_check != 0x55){
-    Serial.println(F("Error: At least one 'backup' operation must be performed "));
-    Serial.println(F("       prior to executing a 'restore' operation."));    
-    return;
-  }
-  
-  if(strncmp(arg, "defaults", 8) == 0){        
+  if(strncmp(arg, "defaults", 8) == 0){           
     prompt();
-    configInject("restore mac\r");
     configInject("method direct\r");
     configInject("security wpa2\r");
     configInject("use dhcp\r");
@@ -847,12 +874,19 @@ void restore(char * arg){
     configInject("restore key\r");
     configInject("restore no2cal\r");
     configInject("restore cocal\r");
+    configInject("restore mac\r");    
     
     eeprom_write_block(blank, (void *) EEPROM_SSID, 32); // clear the SSID
     eeprom_write_block(blank, (void *) EEPROM_NETWORK_PWD, 32); // clear the Network Password
     Serial.println();
   }
-  else if(strncmp(arg, "mac", 3) == 0){
+  else if(strncmp(arg, "mac", 3) == 0){    
+    if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_MAC_ADDRESS_BIT)){ 
+      Serial.println(F("Error: MAC address must be backed up  "));
+      Serial.println(F("       prior to executing a 'restore'."));    
+      return;
+    }       
+    
     uint8_t _mac_address[6] = {0};
     char setmac_string[32] = {0};
     eeprom_read_block(_mac_address, (const void *) EEPROM_BACKUP_MAC_ADDRESS, 6);
@@ -869,20 +903,44 @@ void restore(char * arg){
     Serial.println();    
   } 
   else if(strncmp("ospwd", arg, 5) == 0){
+    if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_OPENSENSORSIO_PWD_BIT)){ 
+      Serial.println(F("Error: OpenSensors.io Password must be backed up  "));
+      Serial.println(F("       prior to executing a 'restore'."));    
+      return;
+    }    
+    
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_OPENSENSORSIO_PWD, 32);
     eeprom_write_block(tmp, (void *) EEPROM_OPENSENSORSIO_PWD, 32);
   } 
   else if(strncmp("key", arg, 3) == 0){ 
+    if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_PRIVATE_KEY_BIT)){ 
+      Serial.println(F("Error: Private key must be backed up  "));
+      Serial.println(F("       prior to executing a 'restore'."));    
+      return;
+    }       
+    
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_PRIVATE_KEY, 32);
     eeprom_write_block(tmp, (void *) EEPROM_PRIVATE_KEY, 32);    
   }
-  else if(strncmp("no2cal", arg, 6) == 0){ 
+  else if(strncmp("no2cal", arg, 6) == 0){
+    if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_NO2_CALIBRATION_BIT)){ 
+      Serial.println(F("Error: NO2 calibration must be backed up  "));
+      Serial.println(F("       prior to executing a 'restore'."));    
+      return;
+    }       
+        
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_NO2_CAL_SLOPE, 4);
     eeprom_write_block(tmp, (void *) EEPROM_NO2_CAL_SLOPE, 4);    
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_NO2_CAL_OFFSET, 4);
     eeprom_write_block(tmp, (void *) EEPROM_NO2_CAL_OFFSET, 4);        
   }
   else if(strncmp("cocal", arg, 5) == 0){ 
+    if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_CO_CALIBRATION_BIT)){ 
+      Serial.println(F("Error: CO calibration must be backed up  "));
+      Serial.println(F("       prior to executing a 'restore'."));    
+      return;
+    }       
+    
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_CO_CAL_SLOPE, 4);
     eeprom_write_block(tmp, (void *) EEPROM_CO_CAL_SLOPE, 4);    
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_CO_CAL_OFFSET, 4);
@@ -1093,38 +1151,65 @@ void set_opensensorsio_password(char * arg){
 void backup(char * arg){
   boolean valid = true;
   char tmp[32] = {0};
+  uint8_t backup_check = eeprom_read_byte((const uint8_t *) EEPROM_BACKUP_CHECK);
+  
   if(strncmp("mac", arg, 3) == 0){
     configInject("init mac\r"); // make sure the CC3000 mac address is in EEPROM
     eeprom_read_block(tmp, (const void *) EEPROM_MAC_ADDRESS, 6);
     eeprom_write_block(tmp, (void *) EEPROM_BACKUP_MAC_ADDRESS, 6);
+    
+    if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_MAC_ADDRESS_BIT)){
+      CLEAR_BIT(backup_check, BACKUP_STATUS_MAC_ADDRESS_BIT);
+      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
+    }    
   } 
   else if(strncmp("ospwd", arg, 5) == 0){
     eeprom_read_block(tmp, (const void *) EEPROM_OPENSENSORSIO_PWD, 32);
     eeprom_write_block(tmp, (void *) EEPROM_BACKUP_OPENSENSORSIO_PWD, 32);
+    
+    if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_OPENSENSORSIO_PWD_BIT)){
+      CLEAR_BIT(backup_check, BACKUP_STATUS_OPENSENSORSIO_PWD_BIT);
+      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
+    }        
   } 
   else if(strncmp("key", arg, 3) == 0){ 
     eeprom_read_block(tmp, (const void *) EEPROM_PRIVATE_KEY, 32);
-    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_PRIVATE_KEY, 32);    
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_PRIVATE_KEY, 32);        
+    
+    if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_PRIVATE_KEY_BIT)){
+      CLEAR_BIT(backup_check, BACKUP_STATUS_PRIVATE_KEY_BIT);
+      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
+    }           
   }
   else if(strncmp("no2cal", arg, 6) == 0){ 
     eeprom_read_block(tmp, (const void *) EEPROM_NO2_CAL_SLOPE, 4);
     eeprom_write_block(tmp, (void *) EEPROM_BACKUP_NO2_CAL_SLOPE, 4);    
     eeprom_read_block(tmp, (const void *) EEPROM_NO2_CAL_OFFSET, 4);
-    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_NO2_CAL_OFFSET, 4);        
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_NO2_CAL_OFFSET, 4);  
+
+    if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_NO2_CALIBRATION_BIT)){
+      CLEAR_BIT(backup_check, BACKUP_STATUS_NO2_CALIBRATION_BIT);
+      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
+    }    
   }
   else if(strncmp("cocal", arg, 5) == 0){ 
     eeprom_read_block(tmp, (const void *) EEPROM_CO_CAL_SLOPE, 4);
     eeprom_write_block(tmp, (void *) EEPROM_BACKUP_CO_CAL_SLOPE, 4);    
     eeprom_read_block(tmp, (const void *) EEPROM_CO_CAL_OFFSET, 4);
-    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_CO_CAL_OFFSET, 4);      
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_CO_CAL_OFFSET, 4);     
+
+    if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_CO_CALIBRATION_BIT)){
+      CLEAR_BIT(backup_check, BACKUP_STATUS_CO_CALIBRATION_BIT);
+      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
+    }        
   }
   else if(strncmp("all", arg, 3) == 0){
     valid = false;
-    configInject("backup mac\r");
     configInject("backup ospwd\r");
     configInject("backup key\r");
     configInject("backup no2cal\r");
     configInject("backup cocal\r");
+    configInject("backup mac\r");    
     Serial.println();
   }
   else{
@@ -1134,14 +1219,29 @@ void backup(char * arg){
     Serial.println("\""); 
   }
   
-  if(valid){
-    // set EEPROM_BACKUP_CHECK to 0x55 if it's not already done
-    uint8_t backup_check = eeprom_read_byte((const uint8_t *) EEPROM_BACKUP_CHECK);
-    if(backup_check != 0x55){
-      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, 0x55); 
-    }
+  if(valid){    
     recomputeAndStoreConfigChecksum();
   }
+}
+
+void set_no2_slope(char * arg){
+  
+}
+
+void set_no2_offset(char * arg){
+  
+}
+
+void set_co_slope(char * arg){
+  
+}
+
+void set_co_offset(char * arg){
+  
+}
+
+void set_private_key(char * arg){
+  
 }
 
 void recomputeAndStoreConfigChecksum(void){
