@@ -425,8 +425,8 @@ boolean checkConfigIntegrity(void){
 // returns true if the function is in config mode
 uint8_t configModeStateMachine(char b, boolean reset_buffers){
   static boolean received_init_code = false;
-  const char buf_max_write_idx = 62; // [63] must always have a null-terminator
-  static char buf[64] = {0}; // buffer to hold commands / data
+  const uint8_t buf_max_write_idx = 126; // [63] must always have a null-terminator
+  static char buf[128] = {0}; // buffer to hold commands / data
   static uint8_t buf_idx = 0;  // current number of bytes in buf  
   boolean line_terminated = false;
   char * first_arg = 0;
@@ -465,9 +465,9 @@ uint8_t configModeStateMachine(char b, boolean reset_buffers){
     Serial.print(b); // echo the character
   }
   
-  char lower_buf[64] = {0};  
+  char lower_buf[128] = {0};  
   if(line_terminated){
-    strncpy(lower_buf, buf, 63);
+    strncpy(lower_buf, buf, 127);
     lowercase(lower_buf);  
   }  
   
@@ -1373,8 +1373,6 @@ void set_co_slope(char * arg){
 void set_co_offset(char * arg){
   set_float_param(arg, (float *) EEPROM_CO_CAL_OFFSET, 0);  
 }
-
-
 
 void set_private_key(char * arg){
   // we've reserved 32-bytes of EEPROM for a private key
