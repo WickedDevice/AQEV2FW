@@ -757,6 +757,7 @@ void help_menu(char * arg) {
     else if (strncmp("no2_cal", arg, 7) == 0) {
       Serial.println(F("no2_cal <number>"));
       Serial.println(F("   <number> is the decimal value of NO2 sensitivity [nA/ppm]"));
+      Serial.println(F("   note: also sets the NO2 slope based on the sensitivity"));
     }
     else if (strncmp("no2_slope", arg, 9) == 0) {
       Serial.println(F("no2_slope <number>"));
@@ -769,6 +770,7 @@ void help_menu(char * arg) {
     else if (strncmp("co_cal", arg, 6) == 0) {
       Serial.println(F("co_cal <number>"));
       Serial.println(F("   <number> is the decimal value of CO sensitivity [nA/ppm]"));
+      Serial.println(F("   note: also sets the CO slope based on the sensitivity"));      
     }
     else if (strncmp("co_slope", arg, 8) == 0) {
       Serial.println(F("co_slope <number>"));
