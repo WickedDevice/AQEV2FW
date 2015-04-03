@@ -63,8 +63,8 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_BACKUP_NO2_CAL_SLOPE (EEPROM_BACKUP_NO2_SENSITIVITY + 4)
 #define EEPROM_BACKUP_NO2_SENSITIVITY (EEPROM_BACKUP_OPENSENSORSIO_PWD + 32)
 #define EEPROM_BACKUP_OPENSENSORSIO_PWD (EEPROM_BACKUP_MAC_ADDRESS + 6)
-#define EEPROM_BACKUP_MAC_ADDRESS (EEPROM_BACKUP_CHECK + 1) // backup parameters are added here offset from the EEPROM_CRC_CHECKSUM
-#define EEPROM_BACKUP_CHECK   (EEPROM_CRC_CHECKSUM + 2) // this value should contain the value with various bits set if backup has ever happened
+#define EEPROM_BACKUP_MAC_ADDRESS (EEPROM_BACKUP_CHECK + 2) // backup parameters are added here offset from the EEPROM_CRC_CHECKSUM
+#define EEPROM_BACKUP_CHECK   (EEPROM_CRC_CHECKSUM + 2) // 2-byte value with various bits set if backup has ever happened
 #define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
 
 // valid connection methods
@@ -145,7 +145,6 @@ char * commands[] = {
   "co_slope ",
   "co_off   ",  
   "key      ",
-  "settings ",
   0
 };
 
@@ -232,6 +231,10 @@ void setup(){
     Serial.println(F(" mins without input.")); 
     Serial.println(F("Enter 'help' for a list of available commands, "));
     Serial.println(F("      ...or 'help <cmd>' for help on a specific command"));
+    
+    configInject("get settings\r");
+    Serial.println();
+    
     prompt();
     for(;;){
       unsigned long current_millis = millis();
@@ -633,6 +636,7 @@ void help_menu(char * arg){
     else if(strncmp("get", arg, 3) == 0){
       Serial.println(F("get <param>"));
       Serial.println(F("   <param> is one of:"));
+      Serial.println(F("      settings - displays all viewable settings"));
       Serial.println(F("      mac - the MAC address of the cc3000"));
       Serial.println(F("      method - the Wi-Fi connection method"));
       Serial.println(F("      ssid - the Wi-Fi SSID to connect to"));
@@ -777,124 +781,205 @@ void help_menu(char * arg){
   }
 }
 
+void print_eeprom_mac(void){
+  uint8_t _mac_address[6] = {0};
+  // retrieve the value from EEPROM
+  eeprom_read_block(_mac_address, (const void *) EEPROM_MAC_ADDRESS, 6);
+  
+  // print the stored value, formatted
+  for(uint8_t ii = 0; ii < 6; ii++){
+    if(_mac_address[ii] < 0x10){
+      Serial.print(F("0"));
+    }
+    Serial.print(_mac_address[ii], HEX);
+    
+    // only print colons after the first 5 values
+    if(ii < 5){
+      Serial.print(F(":"));  
+    }
+  }
+  Serial.println();  
+}
+
+void print_eeprom_connect_method(void){
+  uint8_t method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
+  switch(method){
+    case CONNECT_METHOD_DIRECT:
+      Serial.println(F("Direct Connect"));
+      break;
+    case CONNECT_METHOD_SMARTCONFIG:
+      Serial.println(F("Smart Config Connect [not currently supported]"));
+      break;
+    case CONNECT_METHOD_PFOD:
+      Serial.println(F("Pfod Wi-Fi Connect [not currently supported]"));
+      break;
+    default:
+      Serial.print(F("Error: Unknown connection method code [0x"));
+      if(method < 0x10){
+        Serial.print(F("0")); 
+      }
+      Serial.print(method, HEX);
+      Serial.println(F("]"));
+      break;   
+  }   
+}
+
+void print_eeprom_ssid(void){
+  char ssid[32] = {0};
+  boolean ssid_contains_only_printables = true;
+  eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
+  for(uint8_t ii = 0; ii < 32; ii++){
+    if(ssid[ii] == '\0'){
+      break; 
+    }    
+    else if(!isprint(ssid[ii])){
+      ssid_contains_only_printables = false;
+      break;
+    }
+  } 
+ 
+  if(!ssid_contains_only_printables || (strlen(ssid) == 0)){
+    Serial.println(F("No SSID currently configured."));
+  }
+  else{
+    Serial.println(ssid);
+  } 
+}
+
+void print_eeprom_security_type(void){
+  uint8_t security = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);    
+  switch(security){
+    case WLAN_SEC_UNSEC:
+      Serial.println(F("Open"));
+      break;
+    case WLAN_SEC_WEP:
+      Serial.println(F("WEP"));
+      break;
+    case WLAN_SEC_WPA:
+      Serial.println(F("WPA"));
+      break;
+    case WLAN_SEC_WPA2:
+      Serial.println(F("WPA2"));
+      break;
+    default:
+      Serial.print(F("Error: Unknown security mode code [0x"));
+      if(security < 0x10){
+        Serial.print(F("0")); 
+      }
+      Serial.print(security, HEX);
+      Serial.println(F("]"));
+      break;   
+  }      
+}
+
+void print_eeprom_ipmode(void){
+  uint8_t ip[4] = {0};
+  uint8_t noip[4] = {0};
+  eeprom_read_block(ip, (const void *) EEPROM_STATIC_IP_ADDRESS, 4);
+  if(memcmp(ip, noip, 4) == 0){
+    Serial.println(F("Configured for DHCP"));      
+  }
+  else{
+    Serial.print(F("Configured for Static IP Address: "));
+    for(uint8_t ii = 0; ii < 3; ii++){
+      Serial.print(ip[ii], DEC);
+      Serial.print(F("."));
+    } 
+    Serial.println(ip[3], DEC);
+  } 
+}
+
+void print_eeprom_float(const float * address){
+    float val = eeprom_read_float(address);
+    Serial.println(val, 9);  
+}
+
+void print_label_with_star_if_not_backed_up(char * label, uint8_t bit_number){
+  uint16_t backup_check = eeprom_read_word((const uint16_t *) EEPROM_BACKUP_CHECK);
+  Serial.print(F(" ")); 
+  if(!BIT_IS_CLEARED(backup_check, bit_number)){ 
+    Serial.print(F("*"));
+  }
+  else{
+    Serial.print(F(" "));    
+  }
+  Serial.print(F(" "));
+  Serial.print(label);
+}
+
 void print_eeprom_value(char * arg){  
   if(strncmp(arg, "mac", 3) == 0){
-    uint8_t _mac_address[6] = {0};
-    // retrieve the value from EEPROM
-    eeprom_read_block(_mac_address, (const void *) EEPROM_MAC_ADDRESS, 6);
-    
-    // print the stored value, formatted
-    for(uint8_t ii = 0; ii < 6; ii++){
-      if(_mac_address[ii] < 0x10){
-        Serial.print(F("0"));
-      }
-      Serial.print(_mac_address[ii], HEX);
-      
-      // only print colons after the first 5 values
-      if(ii < 5){
-        Serial.print(F(":"));  
-      }
-    }
-    Serial.println();
+    print_eeprom_mac();
   }
   else if(strncmp(arg, "method", 6) == 0){
-    uint8_t method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
-    switch(method){
-      case CONNECT_METHOD_DIRECT:
-        Serial.println(F("Direct Connect"));
-        break;
-      case CONNECT_METHOD_SMARTCONFIG:
-        Serial.println(F("Smart Config Connect [not currently supported]"));
-        break;
-      case CONNECT_METHOD_PFOD:
-        Serial.println(F("Pfod Wi-Fi Connect [not currently supported]"));
-        break;
-      default:
-        Serial.print(F("Error: Unknown connection method code [0x"));
-        if(method < 0x10){
-          Serial.print(F("0")); 
-        }
-        Serial.print(method, HEX);
-        Serial.println(F("]"));
-        break;   
-    }
-    
+    print_eeprom_connect_method();
   }
   else if(strncmp(arg, "ssid", 4) == 0){
-    char ssid[32] = {0};
-    eeprom_read_block(ssid, (const void *) EEPROM_SSID, 32);
-    if(strlen(ssid) == 0){
-      Serial.println(F("No SSID currently configured."));
-    }
-    else{
-      Serial.println(ssid);
-    }
+    print_eeprom_ssid();
   }
   else if(strncmp(arg, "security", 8) == 0){
-    uint8_t security = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);    
-    switch(security){
-      case WLAN_SEC_UNSEC:
-        Serial.println(F("Open"));
-        break;
-      case WLAN_SEC_WEP:
-        Serial.println(F("WEP"));
-        break;
-      case WLAN_SEC_WPA:
-        Serial.println(F("WPA"));
-        break;
-      case WLAN_SEC_WPA2:
-        Serial.println(F("WPA2"));
-        break;
-      default:
-        Serial.print(F("Error: Unknown security mode code [0x"));
-        if(security < 0x10){
-          Serial.print(F("0")); 
-        }
-        Serial.print(security, HEX);
-        Serial.println(F("]"));
-        break;   
-    }    
+    print_eeprom_security_type();
   }  
   else if(strncmp(arg, "ipmode", 6) == 0){
-    uint8_t ip[4] = {0};
-    uint8_t noip[4] = {0};
-    eeprom_read_block(ip, (const void *) EEPROM_STATIC_IP_ADDRESS, 4);
-    if(memcmp(ip, noip, 4) == 0){
-      Serial.println(F("Configured for DHCP"));      
-    }
-    else{
-      Serial.print(F("Configured for Static IP Address: "));
-      for(uint8_t ii = 0; ii < 3; ii++){
-        Serial.print(ip[ii], DEC);
-        Serial.print(F("."));
-      } 
-      Serial.println(ip[3], DEC);
-    }
+    print_eeprom_ipmode();
   }
   else if(strncmp(arg, "no2_cal", 7) == 0){
-    float val = eeprom_read_float((const float *) EEPROM_NO2_SENSITIVITY);
-    Serial.println(val, 9);
+    print_eeprom_float((const float *) EEPROM_NO2_SENSITIVITY);
   }  
   else if(strncmp(arg, "no2_slope", 9) == 0){
-    float val = eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE);
-    Serial.println(val, 9);
+    print_eeprom_float((const float *) EEPROM_NO2_CAL_SLOPE);
   } 
   else if(strncmp(arg, "no2_off", 7) == 0){
-    float val = eeprom_read_float((const float *) EEPROM_NO2_CAL_OFFSET);
-    Serial.println(val, 9);    
+    print_eeprom_float((const float *) EEPROM_NO2_CAL_OFFSET);  
   }   
   else if(strncmp(arg, "co_cal", 6) == 0){
-    float val = eeprom_read_float((const float *) EEPROM_CO_SENSITIVITY);
-    Serial.println(val, 9);
+    print_eeprom_float((const float *) EEPROM_CO_SENSITIVITY);
   }    
   else if(strncmp(arg, "co_slope", 8) == 0){
-    float val = eeprom_read_float((const float *) EEPROM_CO_CAL_SLOPE);
-    Serial.println(val, 9);    
+    print_eeprom_float((const float *) EEPROM_CO_CAL_SLOPE);
   } 
   else if(strncmp(arg, "co_off", 6) == 0){
-    float val = eeprom_read_float((const float *) EEPROM_CO_CAL_OFFSET);
-    Serial.println(val, 9);    
+    print_eeprom_float((const float *) EEPROM_CO_CAL_OFFSET);   
   }     
+  else if(strncmp(arg, "settings", 8) == 0){
+    char allff[64] = {0};
+    memset(allff, 0xff, 64);
+    
+    // print all the settings to the screen in an orderly fashion
+    Serial.println(F("Network Settings:"));
+    print_label_with_star_if_not_backed_up("MAC Address: ", BACKUP_STATUS_MAC_ADDRESS_BIT);
+    print_eeprom_mac();
+    Serial.print(F("   SSID: "));
+    print_eeprom_ssid();
+    Serial.print(F("   Security Mode: "));
+    print_eeprom_security_type();
+    Serial.print(F("   IP Mode: "));
+    print_eeprom_ipmode();
+    Serial.println(F("Credentials:"));
+    print_label_with_star_if_not_backed_up("OpenSensors.io Password backed up? [* means no]", BACKUP_STATUS_OPENSENSORSIO_PWD_BIT);
+    Serial.println();
+    print_label_with_star_if_not_backed_up("Private key backed up? [* means no]", BACKUP_STATUS_PRIVATE_KEY_BIT);
+    Serial.println();
+    Serial.println(F("Sensor Calibrations:"));
+    
+    print_label_with_star_if_not_backed_up("NO2 Sensitivity [nA/ppm]: ", BACKUP_STATUS_NO2_CALIBRATION_BIT);
+    print_eeprom_float((const float *) EEPROM_NO2_SENSITIVITY);
+    print_label_with_star_if_not_backed_up("NO2 Slope [ppb/V]: ", BACKUP_STATUS_NO2_CALIBRATION_BIT);
+    print_eeprom_float((const float *) EEPROM_NO2_CAL_SLOPE);    
+    print_label_with_star_if_not_backed_up("NO2 Offset [V]: ", BACKUP_STATUS_NO2_CALIBRATION_BIT);
+    print_eeprom_float((const float *) EEPROM_NO2_CAL_OFFSET);      
+    
+    print_label_with_star_if_not_backed_up("CO Sensitivity [nA/ppm]: ", BACKUP_STATUS_CO_CALIBRATION_BIT);
+    print_eeprom_float((const float *) EEPROM_CO_SENSITIVITY);
+    print_label_with_star_if_not_backed_up("CO Slope [ppm/V]: ", BACKUP_STATUS_CO_CALIBRATION_BIT);
+    print_eeprom_float((const float *) EEPROM_CO_CAL_SLOPE);    
+    print_label_with_star_if_not_backed_up("CO Offset [V]: ", BACKUP_STATUS_CO_CALIBRATION_BIT);
+    print_eeprom_float((const float *) EEPROM_CO_CAL_OFFSET);          
+    
+    Serial.println();
+    Serial.println(F("note: '*' next to label means the setting is not backed up."));
+    Serial.println(F("      run 'backup all' when you are satisfied"));
+  }
   else{
     Serial.print(F("Error: Unexpected Variable Name \""));
     Serial.print(arg);
@@ -934,7 +1019,7 @@ void restore(char * arg){
   // 4. NO2 Calibration Values   0x10
   // 5. CO Calibratino Values    0x80
   
-  uint8_t backup_check = eeprom_read_byte((const uint8_t *) EEPROM_BACKUP_CHECK);
+  uint16_t backup_check = eeprom_read_word((const uint16_t *) EEPROM_BACKUP_CHECK);
   
   if(strncmp(arg, "defaults", 8) == 0){           
     prompt();
@@ -1226,7 +1311,7 @@ void set_opensensorsio_password(char * arg){
 void backup(char * arg){
   boolean valid = true;
   char tmp[32] = {0};
-  uint8_t backup_check = eeprom_read_byte((const uint8_t *) EEPROM_BACKUP_CHECK);
+  uint16_t backup_check = eeprom_read_word((const uint16_t *) EEPROM_BACKUP_CHECK);
   
   if(strncmp("mac", arg, 3) == 0){
     configInject("init mac\r"); // make sure the CC3000 mac address is in EEPROM
@@ -1235,7 +1320,7 @@ void backup(char * arg){
     
     if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_MAC_ADDRESS_BIT)){
       CLEAR_BIT(backup_check, BACKUP_STATUS_MAC_ADDRESS_BIT);
-      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
+      eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);       
     }    
   } 
   else if(strncmp("ospwd", arg, 5) == 0){
@@ -1244,7 +1329,7 @@ void backup(char * arg){
     
     if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_OPENSENSORSIO_PWD_BIT)){
       CLEAR_BIT(backup_check, BACKUP_STATUS_OPENSENSORSIO_PWD_BIT);
-      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
+      eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);      
     }        
   } 
   else if(strncmp("key", arg, 3) == 0){ 
@@ -1253,7 +1338,7 @@ void backup(char * arg){
     
     if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_PRIVATE_KEY_BIT)){
       CLEAR_BIT(backup_check, BACKUP_STATUS_PRIVATE_KEY_BIT);
-      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
+      eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);      
     }           
   }
   else if(strncmp("no2", arg, 3) == 0){ 
@@ -1266,7 +1351,7 @@ void backup(char * arg){
 
     if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_NO2_CALIBRATION_BIT)){
       CLEAR_BIT(backup_check, BACKUP_STATUS_NO2_CALIBRATION_BIT);
-      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
+      eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);  
     }    
   }
   else if(strncmp("co", arg, 2) == 0){ 
@@ -1279,7 +1364,7 @@ void backup(char * arg){
 
     if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_CO_CALIBRATION_BIT)){
       CLEAR_BIT(backup_check, BACKUP_STATUS_CO_CALIBRATION_BIT);
-      eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
+      eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);     
     }        
   }
   else if(strncmp("all", arg, 3) == 0){
