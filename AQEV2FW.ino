@@ -145,6 +145,7 @@ char * commands[] = {
   "co_slope ",
   "co_off   ",  
   "key      ",
+  "settings ",
   0
 };
 
@@ -735,8 +736,8 @@ void help_menu(char * arg){
       Serial.println(F("      ospwd    - backs up the OpenSensors.io password"));
       Serial.println(F("      mac      - backs up the CC3000 MAC address"));
       Serial.println(F("      key      - backs up the 256-bit private key"));
-      Serial.println(F("      no2cal   - backs up the NO2 calibration parameters"));
-      Serial.println(F("      cocal    - backs up the CO calibration parameters"));
+      Serial.println(F("      no2      - backs up the NO2 calibration parameters"));
+      Serial.println(F("      co       - backs up the CO calibration parameters"));
       Serial.println(F("      all      - does all of the above"));
     }
     else if(strncmp("no2_cal", arg, 7) == 0){
@@ -767,7 +768,7 @@ void help_menu(char * arg){
       Serial.println(F("key <string>"));
       Serial.println(F("   <string> is a 64-character string representing "));
       Serial.println(F("      a 32-byte (256-bit) hexadecimal value of the private key"));      
-    }       
+    }          
     else{
       Serial.print(F("Error: There is no help available for command \""));
       Serial.print(arg);
@@ -1255,7 +1256,9 @@ void backup(char * arg){
       eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
     }           
   }
-  else if(strncmp("no2cal", arg, 6) == 0){ 
+  else if(strncmp("no2", arg, 3) == 0){ 
+    eeprom_read_block(tmp, (const void *) EEPROM_NO2_SENSITIVITY, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_NO2_SENSITIVITY, 4);     
     eeprom_read_block(tmp, (const void *) EEPROM_NO2_CAL_SLOPE, 4);
     eeprom_write_block(tmp, (void *) EEPROM_BACKUP_NO2_CAL_SLOPE, 4);    
     eeprom_read_block(tmp, (const void *) EEPROM_NO2_CAL_OFFSET, 4);
@@ -1266,7 +1269,9 @@ void backup(char * arg){
       eeprom_write_byte((uint8_t *) EEPROM_BACKUP_CHECK, backup_check);       
     }    
   }
-  else if(strncmp("cocal", arg, 5) == 0){ 
+  else if(strncmp("co", arg, 2) == 0){ 
+    eeprom_read_block(tmp, (const void *) EEPROM_CO_SENSITIVITY, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_CO_SENSITIVITY, 4);       
     eeprom_read_block(tmp, (const void *) EEPROM_CO_CAL_SLOPE, 4);
     eeprom_write_block(tmp, (void *) EEPROM_BACKUP_CO_CAL_SLOPE, 4);    
     eeprom_read_block(tmp, (const void *) EEPROM_CO_CAL_OFFSET, 4);
@@ -1281,8 +1286,8 @@ void backup(char * arg){
     valid = false;
     configInject("backup ospwd\r");
     configInject("backup key\r");
-    configInject("backup no2cal\r");
-    configInject("backup cocal\r");
+    configInject("backup no2\r");
+    configInject("backup co\r");
     configInject("backup mac\r");    
     Serial.println();
   }
