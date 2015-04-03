@@ -37,28 +37,31 @@ uint8_t mode = MODE_OPERATIONAL;
 
 #define EEPROM_MAC_ADDRESS    (E2END + 1 - 6)    // MAC address, i.e. the last 6-bytes of EEPROM
                                                  // more parameters follow, address relative to each other so they don't overlap                                                 
-#define EEPROM_CONNECT_METHOD (EEPROM_MAC_ADDRESS - 1) // connection method encoded as a single byte value 
-#define EEPROM_SSID           (EEPROM_CONNECT_METHOD - 32) // ssid string, up to 32 characters (one of which is a null terminator)
-#define EEPROM_NETWORK_PWD    (EEPROM_SSID - 32) // network password, up to 32 characters (one of which is a null terminator)
-#define EEPROM_SECURITY_MODE  (EEPROM_NETWORK_PWD - 1) // security mode encoded as a single byte value, consistent with the CC3000 library
-#define EEPROM_STATIC_IP_ADDRESS (EEPROM_SECURITY_MODE - 4) // static ipv4 address, 4 bytes - 0.0.0.0 indicates use DHCP
+#define EEPROM_CONNECT_METHOD    (EEPROM_MAC_ADDRESS - 1)        // connection method encoded as a single byte value 
+#define EEPROM_SSID              (EEPROM_CONNECT_METHOD - 32)    // ssid string, up to 32 characters (one of which is a null terminator)
+#define EEPROM_NETWORK_PWD       (EEPROM_SSID - 32)              // network password, up to 32 characters (one of which is a null terminator)
+#define EEPROM_SECURITY_MODE     (EEPROM_NETWORK_PWD - 1)        // security mode encoded as a single byte value, consistent with the CC3000 library
+#define EEPROM_STATIC_IP_ADDRESS (EEPROM_SECURITY_MODE - 4)      // static ipv4 address, 4 bytes - 0.0.0.0 indicates use DHCP
 #define EEPROM_OPENSENSORSIO_PWD (EEPROM_STATIC_IP_ADDRESS - 32) // password for opensensors.io, up to 32 characters (one of which is a null terminator)
-#define EEPROM_NO2_CAL_SLOPE (EEPROM_OPENSENSORSIO_PWD - 4) // float value, 4-bytes, the slope applied to the sensor
-#define EEPROM_NO2_CAL_OFFSET (EEPROM_NO2_CAL_SLOPE - 4) // float value, 4-btyes, the offset applied to the sensor
-#define EEPROM_CO_CAL_SLOPE (EEPROM_NO2_CAL_OFFSET - 4) // float value, 4-bytes, the slope applied to the sensor
-#define EEPROM_CO_CAL_OFFSET (EEPROM_CO_CAL_SLOPE - 4) // float value, 4-btyes, the offset applied to the sensor
-#define EEPROM_PRIVATE_KEY (EEPROM_CO_CAL_OFFSET - 4) // 32-bytes of Random Data (256-bits)
+#define EEPROM_NO2_SENSITIVITY   (EEPROM_OPENSENSORSIO_PWD - 4)  // float value, 4-bytes, the sensitivity from the sticker
+#define EEPROM_NO2_CAL_SLOPE     (EEPROM_NO2_SENSITIVITY - 4)    // float value, 4-bytes, the slope applied to the sensor
+#define EEPROM_NO2_CAL_OFFSET    (EEPROM_NO2_CAL_SLOPE - 4)      // float value, 4-btyes, the offset applied to the sensor
+#define EEPROM_CO_SENSITIVITY    (EEPROM_NO2_CAL_OFFSET - 4)     // float value, 4-bytes, the sensitivity from the sticker
+#define EEPROM_CO_CAL_SLOPE      (EEPROM_CO_SENSITIVITY - 4)     // float value, 4-bytes, the slope applied to the sensor
+#define EEPROM_CO_CAL_OFFSET     (EEPROM_CO_CAL_SLOPE - 4)       // float value, 4-btyes, the offset applied to the sensor
+#define EEPROM_PRIVATE_KEY       (EEPROM_CO_CAL_OFFSET - 4)      // 32-bytes of Random Data (256-bits)
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make suer the addresses don't collide and start overlapping!
 //   T Add values down here by adding offsets to previously added values
 //  \/
-
 #define EEPROM_BACKUP_PRIVATE_KEY (EEPROM_CO_CAL_OFFSET + 4)
 #define EEPROM_BACKUP_CO_CAL_OFFSET (EEPROM_CO_CAL_SLOPE + 4)
-#define EEPROM_BACKUP_CO_CAL_SLOPE (EEPROM_NO2_CAL_OFFSET + 4)
+#define EEPROM_BACKUP_CO_CAL_SLOPE (EEPROM_BACKUP_CO_SENSITIVITY + 4)
+#define EEPROM_BACKUP_CO_SENSITIVITY (EEPROM_NO2_CAL_OFFSET + 4)
 #define EEPROM_BACKUP_NO2_CAL_OFFSET (EEPROM_NO2_CAL_SLOPE + 4)
-#define EEPROM_BACKUP_NO2_CAL_SLOPE (EEPROM_BACKUP_OPENSENSORSIO_PWD + 32)
+#define EEPROM_BACKUP_NO2_CAL_SLOPE (EEPROM_BACKUP_NO2_SENSITIVITY + 4)
+#define EEPROM_BACKUP_NO2_SENSITIVITY (EEPROM_BACKUP_OPENSENSORSIO_PWD + 32)
 #define EEPROM_BACKUP_OPENSENSORSIO_PWD (EEPROM_BACKUP_MAC_ADDRESS + 6)
 #define EEPROM_BACKUP_MAC_ADDRESS (EEPROM_BACKUP_CHECK + 1) // backup parameters are added here offset from the EEPROM_CRC_CHECKSUM
 #define EEPROM_BACKUP_CHECK   (EEPROM_CRC_CHECKSUM + 2) // this value should contain the value with various bits set if backup has ever happened
@@ -76,10 +79,11 @@ uint8_t mode = MODE_OPERATIONAL;
 #define BACKUP_STATUS_NO2_CALIBRATION_BIT   (5)
 #define BACKUP_STATUS_CO_CALIBRATION_BIT    (4)
 #define BACKUP_STATUS_PRIVATE_KEY_BIT       (3)
-#define BIT_IS_CLEARED(val, b) (!(val & _BV(b)))
+
+#define BIT_IS_CLEARED(val, b) (!(val & (1UL << b)))
 #define CLEAR_BIT(val, b) \
 do { \
-  val &= ~_BV(b); \
+  val &= ~(1UL << b); \
 } while(0)
 
 void help_menu(char * arg);
@@ -97,8 +101,10 @@ void set_opensensorsio_password(char * arg);
 void backup(char * arg);
 void set_no2_slope(char * arg);
 void set_no2_offset(char * arg);
+void set_no2_sensitivity(char * arg);
 void set_co_slope(char * arg);
 void set_co_offset(char * arg);
+void set_co_sensitivity(char * arg);
 void set_private_key(char * arg);
 
 // Note to self:
@@ -132,8 +138,10 @@ char * commands[] = {
   "use      ",
   "ospwd    ",
   "backup   ",
+  "no2_cal  ",
   "no2_slope",
   "no2_off  ",
+  "co_cal   ",
   "co_slope ",
   "co_off   ",  
   "key      ",
@@ -153,8 +161,10 @@ void (*command_functions[])(char * arg) = {
   use_command,
   set_opensensorsio_password,
   backup,
+  set_no2_sensitivity,
   set_no2_slope,
   set_no2_offset,
+  set_co_sensitivity,
   set_co_slope,
   set_co_offset,
   set_private_key,
@@ -629,10 +639,12 @@ void help_menu(char * arg){
       Serial.println(F("      security - the Wi-Fi security mode"));
       Serial.println(F("      ipmode - the Wi-Fi IP-address mode"));
       Serial.println(F("      ospwd - lol, sorry, that's not happening either!"));
+      Serial.println(F("      no2_cal - NO2 sensitivity [nA/ppm]"));
       Serial.println(F("      no2_slope - NO2 sensors slope [ppb/V]"));
       Serial.println(F("      no2_off - NO2 sensors offset [V]"));
-      Serial.println(F("      co_slope - NO2 sensors slope [ppb/V]"));
-      Serial.println(F("      co_off - NO2 sensors offset [V]"));
+      Serial.println(F("      co_cal - CO sensitivity [nA/ppm]"));      
+      Serial.println(F("      co_slope - CO sensors slope [ppm/V]"));
+      Serial.println(F("      co_off - CO sensors offset [V]"));
       Serial.println(F("      key - lol, sorry, that's also not happening!"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));      
@@ -652,16 +664,16 @@ void help_menu(char * arg){
       Serial.println(F("                 performs 'restore mac'"));
       Serial.println(F("                 performs 'restore ospwd'"));
       Serial.println(F("                 performs 'restore key'"));
-      Serial.println(F("                 performs 'restore no2cal'"));
-      Serial.println(F("                 performs 'restore cocal'"));
+      Serial.println(F("                 performs 'restore no2'"));
+      Serial.println(F("                 performs 'restore co'"));
       Serial.println(F("                 clears the SSID from memory"));
       Serial.println(F("                 clears the Network Password from memory"));
       Serial.println(F("      mac      - retrieves the mac address from BACKUP"));
       Serial.println(F("                 and assigns it to the CC3000, via a 'setmac' command"));
       Serial.println(F("      ospwd    - restores the OpenSensors.io password from BACKUP "));    
       Serial.println(F("      key      - restores the Private Key from BACKUP "));    
-      Serial.println(F("      no2cal   - restores the NO2 calibration parameters from BACKUP "));    
-      Serial.println(F("      cocal    - restores the CO calibration parameters from BACKUP "));          
+      Serial.println(F("      no2      - restores the NO2 calibration parameters from BACKUP "));    
+      Serial.println(F("      co       - restores the CO calibration parameters from BACKUP "));          
     }
     else if(strncmp("setmac", arg, 6) == 0){
       Serial.println(F("setmac <address>"));
@@ -727,25 +739,34 @@ void help_menu(char * arg){
       Serial.println(F("      cocal    - backs up the CO calibration parameters"));
       Serial.println(F("      all      - does all of the above"));
     }
+    else if(strncmp("no2_cal", arg, 7) == 0){
+      Serial.println(F("no2_cal <number>"));
+      Serial.println(F("   <number> is the decimal value of NO2 sensitivity [nA/ppm]"));
+    }    
     else if(strncmp("no2_slope", arg, 9) == 0){
       Serial.println(F("no2_slope <number>"));
-      Serial.println(F("   <number> is the decimal value NO2 sensor slope [ppb/V]"));      
+      Serial.println(F("   <number> is the decimal value of NO2 sensor slope [ppb/V]"));
     }
     else if(strncmp("no2_off", arg, 7) == 0){
       Serial.println(F("no2_off <number>"));
-      Serial.println(F("   <number> is the decimal value NO2 sensor offset [V]"));      
+      Serial.println(F("   <number> is the decimal value of NO2 sensor offset [V]"));
     }    
+    else if(strncmp("co_cal", arg, 6) == 0){
+      Serial.println(F("co_cal <number>"));
+      Serial.println(F("   <number> is the decimal value of CO sensitivity [nA/ppm]"));
+    }        
     else if(strncmp("co_slope", arg, 8) == 0){
       Serial.println(F("co_slope <number>"));
-      Serial.println(F("   <number> is the decimal value CO sensor slope [ppm/V]"));      
+      Serial.println(F("   <number> is the decimal value of CO sensor slope [ppm/V]"));
     }
     else if(strncmp("co_off", arg, 6) == 0){
       Serial.println(F("co_off <number>"));
-      Serial.println(F("   <number> is the decimal value for the CO sensor's offset [V]"));      
+      Serial.println(F("   <number> is the decimal value of CO sensor offset [V]"));      
     }       
     else if(strncmp("key", arg, 3) == 0){
       Serial.println(F("key <string>"));
-      Serial.println(F("   <string> is 32-byte hexadecimal string for the private key"));      
+      Serial.println(F("   <string> is a 64-character string representing "));
+      Serial.println(F("      a 32-byte (256-bit) hexadecimal value of the private key"));      
     }       
     else{
       Serial.print(F("Error: There is no help available for command \""));
@@ -849,6 +870,10 @@ void print_eeprom_value(char * arg){
       Serial.println(ip[3], DEC);
     }
   }
+  else if(strncmp(arg, "no2_cal", 7) == 0){
+    float val = eeprom_read_float((const float *) EEPROM_NO2_SENSITIVITY);
+    Serial.println(val, 9);
+  }  
   else if(strncmp(arg, "no2_slope", 9) == 0){
     float val = eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE);
     Serial.println(val, 9);
@@ -857,6 +882,10 @@ void print_eeprom_value(char * arg){
     float val = eeprom_read_float((const float *) EEPROM_NO2_CAL_OFFSET);
     Serial.println(val, 9);    
   }   
+  else if(strncmp(arg, "co_cal", 6) == 0){
+    float val = eeprom_read_float((const float *) EEPROM_CO_SENSITIVITY);
+    Serial.println(val, 9);
+  }    
   else if(strncmp(arg, "co_slope", 8) == 0){
     float val = eeprom_read_float((const float *) EEPROM_CO_CAL_SLOPE);
     Serial.println(val, 9);    
@@ -913,8 +942,8 @@ void restore(char * arg){
     configInject("use dhcp\r");
     configInject("restore ospwd\r");
     configInject("restore key\r");
-    configInject("restore no2cal\r");
-    configInject("restore cocal\r");
+    configInject("restore no2\r");
+    configInject("restore co\r");
     configInject("restore mac\r");    
     
     eeprom_write_block(blank, (void *) EEPROM_SSID, 32); // clear the SSID
@@ -963,25 +992,29 @@ void restore(char * arg){
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_PRIVATE_KEY, 32);
     eeprom_write_block(tmp, (void *) EEPROM_PRIVATE_KEY, 32);    
   }
-  else if(strncmp("no2cal", arg, 6) == 0){
+  else if(strncmp("no2", arg, 6) == 0){
     if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_NO2_CALIBRATION_BIT)){ 
       Serial.println(F("Error: NO2 calibration must be backed up  "));
       Serial.println(F("       prior to executing a 'restore'."));    
       return;
     }       
         
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_NO2_SENSITIVITY, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_NO2_SENSITIVITY, 4);    
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_NO2_CAL_SLOPE, 4);
-    eeprom_write_block(tmp, (void *) EEPROM_NO2_CAL_SLOPE, 4);    
+    eeprom_write_block(tmp, (void *) EEPROM_NO2_CAL_SLOPE, 4);        
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_NO2_CAL_OFFSET, 4);
     eeprom_write_block(tmp, (void *) EEPROM_NO2_CAL_OFFSET, 4);        
   }
-  else if(strncmp("cocal", arg, 5) == 0){ 
+  else if(strncmp("co", arg, 5) == 0){ 
     if(!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_CO_CALIBRATION_BIT)){ 
       Serial.println(F("Error: CO calibration must be backed up  "));
       Serial.println(F("       prior to executing a 'restore'."));    
       return;
     }       
     
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_CO_SENSITIVITY, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_CO_SENSITIVITY, 4);     
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_CO_CAL_SLOPE, 4);
     eeprom_write_block(tmp, (void *) EEPROM_CO_CAL_SLOPE, 4);    
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_CO_CAL_OFFSET, 4);
@@ -1268,16 +1301,19 @@ void backup(char * arg){
 boolean convertStringToFloat(char * str_to_convert, float * target){
   char * end_ptr;   
   *target = strtod(str_to_convert, &end_ptr);
-  if(end_ptr == str_to_convert) {
+  if(end_ptr != (str_to_convert + strlen(str_to_convert))) {
     return false;
   } 
   return true;
 }
 
-void set_no2_slope(char * arg){
+void set_float_param(char * arg, float * eeprom_address,float (*conversion)(float)){
   float value = 0.0;
   if(convertStringToFloat(arg, &value)){
-    eeprom_write_float((float *) EEPROM_NO2_CAL_SLOPE, value);
+    if(conversion){
+      value = conversion(value);
+    }
+    eeprom_write_float(eeprom_address, value);
     recomputeAndStoreConfigChecksum();
   }
   else{
@@ -1285,49 +1321,92 @@ void set_no2_slope(char * arg){
     Serial.print(arg);
     Serial.println(F("\" to decimal number."));
   }
+}
+
+// convert from nA/ppm to ppb/V
+// from SPEC Sensors, Sensor Development Kit, User Manual, Rev. 1.5
+// M[V/ppm] = Sensitivity[nA/ppm] * TIA_Gain[kV/A] * 10^-9[A/nA] * 10^3[V/kV]
+// TIA_Gain[kV/A] for NO2 = 499
+// slope = 1/M
+float convert_no2_sensitivity_to_slope(float sensitivity){
+  float ret = 1.0e6;
+  ret /= sensitivity;
+  ret /= 499.0;   
+  return ret;
+}
+
+// sets both sensitivity and slope
+void set_no2_sensitivity(char * arg){
+  set_float_param(arg, (float *) EEPROM_NO2_SENSITIVITY, 0);
+  set_float_param(arg, (float *) EEPROM_NO2_CAL_SLOPE, convert_no2_sensitivity_to_slope);
+}
+
+void set_no2_slope(char * arg){
+  set_float_param(arg, (float *) EEPROM_NO2_CAL_SLOPE, 0);
 }
 
 void set_no2_offset(char * arg){
-  float value = 0.0;
-  if(convertStringToFloat(arg, &value)){
-    eeprom_write_float((float *) EEPROM_NO2_CAL_OFFSET, value);
-    recomputeAndStoreConfigChecksum();
-  }
-  else{
-    Serial.print(F("Error: Failed to convert string \""));
-    Serial.print(arg);
-    Serial.println(F("\" to decimal number."));
-  }  
+  set_float_param(arg, (float *) EEPROM_NO2_CAL_OFFSET, 0);
+}
+
+// convert from nA/ppm to ppb/V
+// from SPEC Sensors, Sensor Development Kit, User Manual, Rev. 1.5
+// M[V/ppm] = Sensitivity[nA/ppm] * TIA_Gain[kV/A] * 10^-9[A/nA] * 10^3[V/kV]
+// TIA_Gain[kV/A] for CO = 100
+// slope = 1/M
+float convert_co_sensitivity_to_slope(float sensitivity){
+  float ret = 1.0e6;
+  ret /= sensitivity;
+  ret /= 100.0;   
+  return ret;
+}
+
+void set_co_sensitivity(char * arg){
+  set_float_param(arg, (float *) EEPROM_CO_SENSITIVITY, 0);
+  set_float_param(arg, (float *) EEPROM_CO_CAL_SLOPE, convert_co_sensitivity_to_slope); 
 }
 
 void set_co_slope(char * arg){
-  float value = 0.0;
-  if(convertStringToFloat(arg, &value)){
-    eeprom_write_float((float *) EEPROM_CO_CAL_SLOPE, value);
-    recomputeAndStoreConfigChecksum();
-  }
-  else{
-    Serial.print(F("Error: Failed to convert string \""));
-    Serial.print(arg);
-    Serial.println(F("\" to decimal number."));
-  }  
+  set_float_param(arg, (float *) EEPROM_CO_CAL_SLOPE, 0);  
 }
 
 void set_co_offset(char * arg){
-  float value = 0.0;
-  if(convertStringToFloat(arg, &value)){
-    eeprom_write_float((float *) EEPROM_CO_CAL_OFFSET, value);
+  set_float_param(arg, (float *) EEPROM_CO_CAL_OFFSET, 0);  
+}
+
+
+
+void set_private_key(char * arg){
+  // we've reserved 32-bytes of EEPROM for a private key
+  // only exact 64-character hex representation is accepted
+  uint8_t key[32] = {0};
+  uint16_t len = strlen(arg);
+  if(len == 64){    
+    // process the characters as pairs
+    for(uint8_t ii = 0; ii < 32; ii++){
+      char tmp[3] = {0};
+      tmp[0] = arg[ii*2];
+      tmp[1] = arg[ii*2 + 1];
+      if(isxdigit(tmp[0]) && isxdigit(tmp[1])){
+        key[ii] = (uint8_t) strtoul(tmp, NULL, 16);
+      }
+      else{
+        Serial.print(F("Error: Invalid hex value found ["));
+        Serial.print(tmp);
+        Serial.println(F("]"));
+        return;
+      }
+    }
+    
+    eeprom_write_block(key, (void *) EEPROM_PRIVATE_KEY, 32);
     recomputeAndStoreConfigChecksum();
   }
   else{
-    Serial.print(F("Error: Failed to convert string \""));
-    Serial.print(arg);
-    Serial.println(F("\" to decimal number."));
-  }    
-}
-
-void set_private_key(char * arg){
-  
+    Serial.println(F("Error: Private key must be exactly characters long, "));
+    Serial.print(F("       but was "));
+    Serial.print(len);
+    Serial.println(F(" characters long."));
+  }      
 }
 
 void recomputeAndStoreConfigChecksum(void){
