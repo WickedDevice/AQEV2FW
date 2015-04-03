@@ -52,7 +52,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_PRIVATE_KEY       (EEPROM_CO_CAL_OFFSET - 4)      // 32-bytes of Random Data (256-bits)
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
-//   * ... and make suer the addresses don't collide and start overlapping!
+//   * ... and make sure the addresses don't collide and start overlapping!
 //   T Add values down here by adding offsets to previously added values
 //  \/
 #define EEPROM_BACKUP_PRIVATE_KEY (EEPROM_CO_CAL_OFFSET + 4)
@@ -129,7 +129,7 @@ char * commands[] = {
   "get      ",
   "init     ",
   "restore  ",
-  "setmac   ",
+  "mac   ",
   "method   ",
   "ssid     ",
   "pwd      ",
@@ -183,6 +183,7 @@ void setup() {
   if (!checkConfigIntegrity() || !valid_ssid_config()) {
     Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
     configInject("aqe\r");
+    Serial.println();
     mode = MODE_CONFIG;
   }
   else {
@@ -683,14 +684,14 @@ void help_menu(char * arg) {
       Serial.println(F("                 clears the SSID from memory"));
       Serial.println(F("                 clears the Network Password from memory"));
       Serial.println(F("      mac      - retrieves the mac address from BACKUP"));
-      Serial.println(F("                 and assigns it to the CC3000, via a 'setmac' command"));
+      Serial.println(F("                 and assigns it to the CC3000, via a 'mac' command"));
       Serial.println(F("      ospwd    - restores the OpenSensors.io password from BACKUP "));
       Serial.println(F("      key      - restores the Private Key from BACKUP "));
       Serial.println(F("      no2      - restores the NO2 calibration parameters from BACKUP "));
       Serial.println(F("      co       - restores the CO calibration parameters from BACKUP "));
     }
-    else if (strncmp("setmac", arg, 6) == 0) {
-      Serial.println(F("setmac <address>"));
+    else if (strncmp("mac", arg, 3) == 0) {
+      Serial.println(F("mac <address>"));
       Serial.println(F("   <address> is a MAC address of the form:"));
       Serial.println(F("                08:ab:73:DA:8f:00"));
       Serial.println(F("   result:  The entered MAC address is assigned to the CC3000"));
@@ -1075,7 +1076,7 @@ void restore(char * arg) {
     char setmac_string[32] = {0};
     eeprom_read_block(_mac_address, (const void *) EEPROM_BACKUP_MAC_ADDRESS, 6);
     snprintf(setmac_string, 31,
-             "setmac %02x:%02x:%02x:%02x:%02x:%02x\r",
+             "mac %02x:%02x:%02x:%02x:%02x:%02x\r",
              _mac_address[0],
              _mac_address[1],
              _mac_address[2],
@@ -1343,6 +1344,7 @@ void backup(char * arg) {
 
   if (strncmp("mac", arg, 3) == 0) {
     configInject("init mac\r"); // make sure the CC3000 mac address is in EEPROM
+    Serial.println();
     eeprom_read_block(tmp, (const void *) EEPROM_MAC_ADDRESS, 6);
     eeprom_write_block(tmp, (void *) EEPROM_BACKUP_MAC_ADDRESS, 6);
 
