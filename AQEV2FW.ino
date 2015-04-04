@@ -42,7 +42,10 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_NETWORK_PWD       (EEPROM_SSID - 32)              // network password, up to 32 characters (one of which is a null terminator)
 #define EEPROM_SECURITY_MODE     (EEPROM_NETWORK_PWD - 1)        // security mode encoded as a single byte value, consistent with the CC3000 library
 #define EEPROM_STATIC_IP_ADDRESS (EEPROM_SECURITY_MODE - 4)      // static ipv4 address, 4 bytes - 0.0.0.0 indicates use DHCP
-#define EEPROM_OPENSENSORSIO_PWD (EEPROM_STATIC_IP_ADDRESS - 32) // password for opensensors.io, up to 32 characters (one of which is a null terminator)
+#define EEPROM_STATIC_NETMASK    (EEPROM_STATIC_IP_ADDRESS - 4)  // static netmask, 4 bytes
+#define EEPROM_STATIC_GATEWAY    (EEPROM_STATIC_NETMASK - 4)     // static default gateway ip address, 4 bytes
+#define EEPROM_STATIC_DNS        (EEPROM_STATIC_GATEWAY - 4)     // static dns server ip address, 4 bytes
+#define EEPROM_OPENSENSORSIO_PWD (EEPROM_STATIC_DNS - 32)        // password for opensensors.io, up to 32 characters (one of which is a null terminator)
 #define EEPROM_NO2_SENSITIVITY   (EEPROM_OPENSENSORSIO_PWD - 4)  // float value, 4-bytes, the sensitivity from the sticker
 #define EEPROM_NO2_CAL_SLOPE     (EEPROM_NO2_SENSITIVITY - 4)    // float value, 4-bytes, the slope applied to the sensor
 #define EEPROM_NO2_CAL_OFFSET    (EEPROM_NO2_CAL_SLOPE - 4)      // float value, 4-btyes, the offset applied to the sensor
@@ -266,7 +269,7 @@ void setup() {
       }
 
       if (idle_time_ms >= idle_timeout_period_ms) {
-        Serial.println(F("Idle time expired, exiting CONFIG mode."));
+        Serial.println(F("Info: Idle time expired, exiting CONFIG mode."));
         break;
       }
     }
@@ -284,7 +287,7 @@ void setup() {
 
   // re-check for valid configuration
   if (!checkConfigIntegrity()) {
-    Serial.println(F("Resetting prior to Loop because of invalid configuration"));
+    Serial.println(F("Info: Resetting prior to Loop because of invalid configuration"));
     tinywdt.force_reset();
   }
   else {
@@ -304,6 +307,7 @@ void loop() {
   }
 }
 
+/****** INITIALIZATION SUPPORT FUNCTIONS ******/
 void initializeHardware(void) {
   wf.begin();
   Serial.begin(115200);
@@ -317,14 +321,14 @@ void initializeHardware(void) {
   Wire.begin();
 
   // Initialize slot select pins
-  Serial.print(F("Slot Select Pins Initialization..."));
+  Serial.print(F("Info: Slot Select Pins Initialization..."));
   pinMode(9, OUTPUT);
   pinMode(10, OUTPUT);
   selectNoSlot();
   Serial.println(F("OK."));
 
   // Initialize Tiny Watchdog
-  Serial.print(F("Tiny Watchdog Initialization..."));
+  Serial.print(F("Info: Tiny Watchdog Initialization..."));
   tinywdt.begin(500, 60000);
   Serial.println(F("OK."));
 
@@ -364,7 +368,7 @@ void initializeHardware(void) {
   lcd.print(F("Version 2"));
 
   // Initialize SPI Flash
-  Serial.print(F("SPI Flash Initialization..."));
+  Serial.print(F("Info: SPI Flash Initialization..."));
   if (flash.initialize()) {
     Serial.println(F("OK."));
   }
@@ -373,7 +377,7 @@ void initializeHardware(void) {
   }
 
   // Initialize SHT25
-  Serial.print(F("SHT25 Initization..."));
+  Serial.print(F("Info: SHT25 Initization..."));
   if (sht25.begin()) {
     Serial.println(F("OK."));
   }
@@ -382,7 +386,7 @@ void initializeHardware(void) {
   }
 
   // Initialize NO2 Sensor
-  Serial.print(F("NO2 Sensor Initization..."));
+  Serial.print(F("Info: NO2 Sensor Initization..."));
   selectSlot2();
   if (lmp91000.configure(
         LMP91000_TIA_GAIN_350K | LMP91000_RLOAD_10OHM,
@@ -395,7 +399,7 @@ void initializeHardware(void) {
     Serial.println(F("Failed."));
   }
 
-  Serial.print(F("CO Sensor Initization..."));
+  Serial.print(F("Info: CO Sensor Initization..."));
   selectSlot1();
   if (lmp91000.configure(
         LMP91000_TIA_GAIN_350K | LMP91000_RLOAD_10OHM,
@@ -410,7 +414,7 @@ void initializeHardware(void) {
 
   selectNoSlot();
 
-  Serial.print(F("CC3000 Initialization..."));
+  Serial.print(F("Info: CC3000 Initialization..."));
   if (cc3000.begin()) {
     Serial.println(F("OK."));
   }
@@ -419,6 +423,7 @@ void initializeHardware(void) {
   }
 }
 
+/****** CONFIGURATION SUPPORT FUNCTIONS ******/
 boolean checkConfigIntegrity(void) {
   uint16_t computed_crc = computeConfigChecksum();
   uint16_t stored_crc = eeprom_read_word((const uint16_t *) EEPROM_CRC_CHECKSUM);
@@ -426,11 +431,10 @@ boolean checkConfigIntegrity(void) {
     return true;
   }
   else {
-    Serial.print(F("Computed CRC = "));
-    Serial.print(computed_crc, HEX);
-    Serial.print(F(", Stored CRC = "));
-    Serial.println(stored_crc, HEX);
-
+    //Serial.print(F("Computed CRC = "));
+    //Serial.print(computed_crc, HEX);
+    //Serial.print(F(", Stored CRC = "));
+    //Serial.println(stored_crc, HEX);
     return false;
   }
 }
@@ -724,10 +728,13 @@ void help_menu(char * arg) {
       Serial.println(F("      wpa2 - the network WPA2 Personal security"));
     }
     else if (strncmp("staticip", arg, 8) == 0) {
-      Serial.println(F("staticip <address>"));
-      Serial.println(F("   <address> is an IPv4 address of the form:"));
-      Serial.println(F("                192.168.1.152"));
-      Serial.println(F("   result: The entered IPv4 address will be used by the CC3000"));
+      Serial.println(F("staticip <config>"));
+      Serial.println(F("   <config> is four ip address separated by spaces"));
+      Serial.println(F("      <param1> static ip address, e.g. 192.168.1.17"));
+      Serial.println(F("      <param2> netmask, e.g. 255.255.255.0"));      
+      Serial.println(F("      <param3> default gateway ip address, e.g. 192.168.1.1"));      
+      Serial.println(F("      <param4> dns server ip address, e.g. 8.8.8.8"));      
+      Serial.println(F("   result: The entered static network parameters will be used by the CC3000"));
       Serial.println(F("   note:   To configure DHCP use command 'use dhcp'"));
     }
     else if (strncmp("use", arg, 3) == 0) {
@@ -898,18 +905,57 @@ void print_eeprom_security_type(void) {
 
 void print_eeprom_ipmode(void) {
   uint8_t ip[4] = {0};
+  uint8_t netmask[4] = {0};
+  uint8_t gateway[4] = {0};
+  uint8_t dns[4] = {0};
   uint8_t noip[4] = {0};
   eeprom_read_block(ip, (const void *) EEPROM_STATIC_IP_ADDRESS, 4);
+  eeprom_read_block(netmask, (const void *) EEPROM_STATIC_NETMASK, 4);
+  eeprom_read_block(gateway, (const void *) EEPROM_STATIC_GATEWAY, 4);
+  eeprom_read_block(dns, (const void *) EEPROM_STATIC_DNS, 4);
+  
   if (memcmp(ip, noip, 4) == 0) {
     Serial.println(F("Configured for DHCP"));
   }
   else {
-    Serial.print(F("Configured for Static IP Address: "));
-    for (uint8_t ii = 0; ii < 3; ii++) {
-      Serial.print(ip[ii], DEC);
-      Serial.print(F("."));
+    Serial.println(F("Configured for Static IP: "));
+    for(uint8_t param_idx = 0; param_idx < 4; param_idx++){         
+      for (uint8_t ii = 0; ii < 4; ii++) {
+        switch(param_idx){
+          case 0:
+            if(ii == 0){
+              Serial.print(F("   IP Address:      "));
+            }
+            Serial.print(ip[ii], DEC);
+            break;
+          case 1:
+            if(ii == 0){
+              Serial.print(F("   Netmask:         "));
+            }
+            Serial.print(netmask[ii], DEC);
+            break;
+          case 2:
+            if(ii == 0){
+              Serial.print(F("   Default Gateway: "));
+            }
+            Serial.print(gateway[ii], DEC);
+            break;
+          case 3:
+            if(ii == 0){
+              Serial.print(F("   DNS Server:      "));
+            }         
+            Serial.print(dns[ii], DEC); 
+            break;
+        }   
+        
+        if( ii != 3 ){        
+          Serial.print(F("."));
+        }
+        else{
+          Serial.println(); 
+        }
+      }      
     }
-    Serial.println(ip[3], DEC);
   }
 }
 
@@ -1269,58 +1315,138 @@ void set_network_security_mode(char * arg) {
 
 void set_static_ip_address(char * arg) {
   uint8_t _ip_address[4] = {0};
-  char tmp[32] = {0};
-  strncpy(tmp, arg, 31); // copy the string so you don't mutilate the argument
-  char * token = strtok(tmp, ".");
+  uint8_t _gateway_ip[4] = {0};
+  uint8_t _dns_ip[4] = {0}; 
+  uint8_t _netmask[4] = {0};
+  
+  char tmp[128] = {0};
+  strncpy(tmp, arg, 127); // copy the string so you don't mutilate the argument
+  char * params[4] = {0};
+  uint8_t param_idx = 0;
+  
+  // first tokenize on spaces, you should end up with four strings     
+  char * token = strtok(tmp, " ");
   uint8_t num_tokens = 0;
 
-  // parse the argument string, expected to be of the form 192.168.1.52
   while (token != NULL) {
-    uint8_t tokenlen = strlen(token);
-    if ((tokenlen < 4) && (num_tokens < 4)) {
-      for (uint8_t ii = 0; ii < tokenlen; ii++) {
-        if (!isdigit(token[ii])) {
-          Serial.println(F("Error: Static IP address octets must be integer values"));
+    if(param_idx > 3){
+      Serial.println(F("Error: Too many parameters passed to staticip"));
+      Serial.print(F("       "));
+      Serial.println(arg);
+      configInject("help staticip\r");
+      Serial.println();
+      return;
+    }
+    params[param_idx++] = token;   
+    token = strtok(NULL, " "); 
+  }
+  
+  if(param_idx != 4){
+     Serial.println(F("Error: Too few parameters passed to staticip"));
+     Serial.print(F("       "));
+     Serial.println(arg);
+     configInject("help staticip\r");   
+     Serial.println();     
+     return;
+  }
+
+  for(param_idx = 0; param_idx < 4; param_idx++){
+    token = strtok(params[param_idx], ".");
+    num_tokens = 0;    
+    
+    // parse the parameter string, expected to be of the form 192.168.1.52
+    while (token != NULL) {
+      uint8_t tokenlen = strlen(token);
+      if ((tokenlen < 4) && (num_tokens < 4)) {
+        for (uint8_t ii = 0; ii < tokenlen; ii++) {
+          if (!isdigit(token[ii])) {
+            Serial.print(F("Error: IP address octets must be integer values [@param "));
+            Serial.print(param_idx + 1);
+            Serial.println(F("]"));
+            return;
+          }
+        }
+        uint32_t octet = (uint8_t) strtoul(token, NULL, 10);
+        if (octet < 256) {
+          switch(param_idx){
+            case 0:
+              _ip_address[num_tokens++] = octet;
+              break;
+            case 1:
+              _netmask[num_tokens++] = octet;
+              break;
+            case 2:
+              _gateway_ip[num_tokens++] = octet;
+              break;
+            case 3:
+              _dns_ip[num_tokens++] = octet;
+              break; 
+            default:
+              break;            
+          }
+        }
+        else {
+          Serial.print(F("Error: IP address octets must be between 0 and 255 inclusive [@param "));
+          Serial.print(param_idx + 1);
+          Serial.println(F("]"));
           return;
         }
       }
-      uint32_t octet = (uint8_t) strtoul(token, NULL, 10);
-      if (octet < 256) {
-        _ip_address[num_tokens++] = octet;
-      }
       else {
-        Serial.println(F("Error: Static IP address octets must be less between 0 and 255 inclusive."));
-        return;
+        Serial.print(F("Error: IP address parse error on input \""));
+        Serial.print(token);
+        Serial.println(F("\""));
+        return; 
       }
+      
+      token = strtok(NULL, ".");
+    }    
+      
+    if (num_tokens != 4){
+      Serial.print(F("Error: IP Address must contain 4 valid octets separated by '.' [@param "));
+      Serial.print(param_idx + 1);
+      Serial.println(F("]"));
+      return;
     }
-    else {
-      Serial.print(F("Error: Static IP address parse error on input \""));
-      Serial.print(arg);
-      Serial.println(F("\""));
-      return; // return early
-    }
-    token = strtok(NULL, ".");
+
   }
 
-  if (num_tokens == 4) {
-    eeprom_write_block(_ip_address, (void *) EEPROM_STATIC_IP_ADDRESS, 4);
+  // if we got this far, it means we got 4 valid IP addresses, and they
+  // are stored in their respective local variables    
+  uint32_t ipAddress = cc3000.IP2U32(_ip_address[0], _ip_address[1], _ip_address[2], _ip_address[3]);
+  uint32_t netMask = cc3000.IP2U32(_netmask[0], _netmask[1], _netmask[2], _netmask[3]);
+  uint32_t defaultGateway = cc3000.IP2U32(_gateway_ip[0], _gateway_ip[1], _gateway_ip[2], _gateway_ip[3]);
+  uint32_t dns = cc3000.IP2U32(_dns_ip[0], _dns_ip[1], _dns_ip[2], _dns_ip[3]);  
+  if (!cc3000.setStaticIPAddress(ipAddress, netMask, defaultGateway, dns)) {
+    Serial.println(F("Error: setStaticIPAddress Failed on CC3000"));
+    return;          
+  }  
+  else{
+    eeprom_write_block(_ip_address, (void *) EEPROM_STATIC_IP_ADDRESS, 4);  
+    eeprom_write_block(_netmask, (void *) EEPROM_STATIC_NETMASK, 4);
+    eeprom_write_block(_gateway_ip, (void *) EEPROM_STATIC_GATEWAY, 4);
+    eeprom_write_block(_dns_ip, (void *) EEPROM_STATIC_DNS, 4);
     recomputeAndStoreConfigChecksum();
-  }
-  else {
-    Serial.println(F("Error: Static IP Address must contain 4 valid octets separated by '.'"));
   }
 }
 
 void use_command(char * arg) {
   const uint8_t noip[4] = {0};
   if (strncmp("dhcp", arg, 3) == 0) {
-    eeprom_write_block(noip, (void *) EEPROM_STATIC_IP_ADDRESS, 4);
-    recomputeAndStoreConfigChecksum();
+    if (!cc3000.setDHCP()){
+      Serial.println(F("Error: setDCHP Failed on CC3000"));
+      return;      
+    }
+    else{
+      eeprom_write_block(noip, (void *) EEPROM_STATIC_IP_ADDRESS, 4);
+      recomputeAndStoreConfigChecksum();
+    }
   }
   else {
     Serial.print(F("Error: Invalid parameter provided to 'use' command - \""));
     Serial.print(arg);
     Serial.println("\"");
+    return;
   }
 }
 
@@ -1544,7 +1670,8 @@ uint16_t computeConfigChecksum(void) {
   return crc;
 }
 
-// Gas Sensor Slot Selection
+/****** GAS SENSOR SUPPORT FUNCTIONS ******/
+
 void selectNoSlot(void) {
   digitalWrite(9, LOW);
   digitalWrite(10, LOW);
@@ -1560,10 +1687,106 @@ void selectSlot2(void) {
   digitalWrite(9, HIGH);
 }
 
+/****** LCD SUPPORT FUNCTIONS ******/
+
 void backlightOn(void) {
   digitalWrite(A6, HIGH);
 }
 
 void backlightOff(void) {
   digitalWrite(A6, LOW);
+}
+
+
+/****** WIFI SUPPORT FUNCTIONS ******/
+void restartWifi(){
+  while(cc3000.getStatus() != STATUS_CONNECTED){
+    Serial.println(F("Info: Rebooting CC3000."));
+    cc3000.reboot();
+    
+    reconnectToAccessPoint();
+    acquireIpAddress();    
+    
+    while (!cc3000.checkDHCP()){
+      delay(100);
+    }
+
+    while (!displayConnectionDetails()) {
+      Serial.println(F("Error: Failed to retrieve connection details"));
+      Serial.flush();
+      tinywdt.force_reset();
+    }
+
+    // if (!mdns.begin("airqualityegg", cc3000)) {
+    //   Serial.println(F("Error setting up MDNS responder!"));
+    //   while(1);     
+    // }
+    // Serial.println(F("Listening for connections..."));
+    // LED(GREEN);
+  }
+}
+
+bool displayConnectionDetails(void){
+  uint32_t ipAddress, netmask, gateway, dhcpserv, dnsserv;
+  
+  if(!cc3000.getIPAddress(&ipAddress, &netmask, &gateway, &dhcpserv, &dnsserv))
+  {
+    Serial.println(F("Error: Unable to retrieve the IP Address!\r\n"));
+    return false;
+  }
+  else
+  {
+    Serial.print(F("Info: IP Addr: ")); cc3000.printIPdotsRev(ipAddress); Serial.println();
+    Serial.print(F("Info: Netmask: ")); cc3000.printIPdotsRev(netmask); Serial.println();
+    Serial.print(F("Info: Gateway: ")); cc3000.printIPdotsRev(gateway); Serial.println();
+    Serial.print(F("Info: DHCPsrv: ")); cc3000.printIPdotsRev(dhcpserv); Serial.println();
+    Serial.print(F("Info: DNSserv: ")); cc3000.printIPdotsRev(dnsserv); Serial.println();
+    return true;
+  }
+}
+
+void reconnectToAccessPoint(void){
+  char ssid[32] = {0};
+  char network_password[32] = {0};
+    
+  uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
+  uint8_t network_security_mode = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);  
+  eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
+  eeprom_read_block(ssid, (const void *) EEPROM_NETWORK_PWD, 31); 
+ 
+  switch(connect_method){
+    case CONNECT_METHOD_DIRECT:
+      if(!cc3000.connectToAP(ssid, network_password, network_security_mode)) {
+        Serial.print(F("Error: Failed to connect to Access Point with SSID: "));
+        Serial.println(ssid);
+        Serial.flush();
+        tinywdt.force_reset();
+      }
+      break;
+    case CONNECT_METHOD_SMARTCONFIG:
+    case CONNECT_METHOD_PFOD:
+    default:
+      Serial.println(F("Error: Connection method not currently supported"));
+      break;
+  }  
+}
+
+void acquireIpAddress(void){
+  uint8_t static_ip_address[4] = {0};
+  uint8_t noip[4] = {0};
+  eeprom_read_block(static_ip_address, (const void *) EEPROM_STATIC_IP_ADDRESS, 4);
+  
+  // if it's DHCP we're configured for, engage DHCP process
+  if (memcmp(static_ip_address, noip, 4) == 0){
+    /* Wait for DHCP to complete */
+    Serial.println(F("Info: Request DHCP"));
+    while (!cc3000.checkDHCP()){
+      delay(100);
+      // if this goes on for longer than a minute, 
+      // tiny watchdog should automatically kick in
+      // and reset the unit. If we don't want that to happen
+      // we would need to pet the tiny watchdog every so often
+      // in this loop.
+    }    
+  }
 }
