@@ -277,8 +277,14 @@ void setup() {
 
 
   Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
-  // Try and Connect to the Network
-
+  
+  // Try and Connect to the Configured Network
+  if(!restartWifi()){
+    Serial.println(F("Error: Failed to connect to configured network. Rebooting."));
+    Serial.flush();
+    tinywdt.force_reset();
+  }
+  
   // If connected, Check for Firmware Updates
 
   // If connected, Get Network Time
@@ -1699,23 +1705,14 @@ void backlightOff(void) {
 
 
 /****** WIFI SUPPORT FUNCTIONS ******/
-void restartWifi(){
+boolean restartWifi(){
   while(cc3000.getStatus() != STATUS_CONNECTED){
     Serial.println(F("Info: Rebooting CC3000."));
     cc3000.reboot();
     
     reconnectToAccessPoint();
     acquireIpAddress();    
-    
-    while (!cc3000.checkDHCP()){
-      delay(100);
-    }
-
-    while (!displayConnectionDetails()) {
-      Serial.println(F("Error: Failed to retrieve connection details"));
-      Serial.flush();
-      tinywdt.force_reset();
-    }
+    displayConnectionDetails();
 
     // if (!mdns.begin("airqualityegg", cc3000)) {
     //   Serial.println(F("Error setting up MDNS responder!"));
@@ -1724,6 +1721,8 @@ void restartWifi(){
     // Serial.println(F("Listening for connections..."));
     // LED(GREEN);
   }
+  
+  return (cc3000.getStatus() == STATUS_CONNECTED);
 }
 
 bool displayConnectionDetails(void){
@@ -1731,7 +1730,7 @@ bool displayConnectionDetails(void){
   
   if(!cc3000.getIPAddress(&ipAddress, &netmask, &gateway, &dhcpserv, &dnsserv))
   {
-    Serial.println(F("Error: Unable to retrieve the IP Address!\r\n"));
+    Serial.println(F("Error: Unable to retrieve the IP Address!"));
     return false;
   }
   else
