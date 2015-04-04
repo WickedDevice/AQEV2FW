@@ -275,6 +275,14 @@ void setup() {
     }
   }
 
+  // re-check for valid configuration
+  if (!checkConfigIntegrity()) {
+    Serial.println(F("Info: Resetting prior to Loop because of invalid configuration"));
+    tinywdt.force_reset();
+  }
+  else {
+    Serial.println(F("Beginning main Loop"));
+  }
 
   Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
   
@@ -286,20 +294,9 @@ void setup() {
   }
   
   // If connected, Check for Firmware Updates
-
+  
   // If connected, Get Network Time
-
-
-
-  // re-check for valid configuration
-  if (!checkConfigIntegrity()) {
-    Serial.println(F("Info: Resetting prior to Loop because of invalid configuration"));
-    tinywdt.force_reset();
-  }
-  else {
-    Serial.println(F("Beginning main Loop"));
-  }
-
+  
 }
 
 void loop() {
@@ -1423,6 +1420,13 @@ void set_static_ip_address(char * arg) {
   uint32_t netMask = cc3000.IP2U32(_netmask[0], _netmask[1], _netmask[2], _netmask[3]);
   uint32_t defaultGateway = cc3000.IP2U32(_gateway_ip[0], _gateway_ip[1], _gateway_ip[2], _gateway_ip[3]);
   uint32_t dns = cc3000.IP2U32(_dns_ip[0], _dns_ip[1], _dns_ip[2], _dns_ip[3]);  
+  
+  //   Note that the setStaticIPAddress function will save its state
+  //   in the CC3000's internal non-volatile memory and the details
+  //   will be used the next time the CC3000 connects to a network.
+  //   This means you only need to call the function once and the
+  //   CC3000 will remember the connection details.   
+  
   if (!cc3000.setStaticIPAddress(ipAddress, netMask, defaultGateway, dns)) {
     Serial.println(F("Error: setStaticIPAddress Failed on CC3000"));
     return;          
@@ -1439,6 +1443,8 @@ void set_static_ip_address(char * arg) {
 void use_command(char * arg) {
   const uint8_t noip[4] = {0};
   if (strncmp("dhcp", arg, 3) == 0) {
+    //  To switch back to using DHCP, call the setDHCP() function 
+    //  Like setStaticIp, only needs to be called once.
     if (!cc3000.setDHCP()){
       Serial.println(F("Error: setDCHP Failed on CC3000"));
       return;      
@@ -1706,7 +1712,7 @@ void backlightOff(void) {
 
 /****** WIFI SUPPORT FUNCTIONS ******/
 boolean restartWifi(){
-  while(cc3000.getStatus() != STATUS_CONNECTED){
+  while(!connectedToNetwork()){
     Serial.println(F("Info: Rebooting CC3000."));
     cc3000.reboot();
     
@@ -1717,12 +1723,10 @@ boolean restartWifi(){
     // if (!mdns.begin("airqualityegg", cc3000)) {
     //   Serial.println(F("Error setting up MDNS responder!"));
     //   while(1);     
-    // }
-    // Serial.println(F("Listening for connections..."));
-    // LED(GREEN);
+    // }    
   }
   
-  return (cc3000.getStatus() == STATUS_CONNECTED);
+  return connectedToNetwork();
 }
 
 bool displayConnectionDetails(void){
@@ -1788,4 +1792,8 @@ void acquireIpAddress(void){
       // in this loop.
     }    
   }
+}
+
+boolean connectedToNetwork(void){
+  return (cc3000.getStatus() == STATUS_CONNECTED);
 }
