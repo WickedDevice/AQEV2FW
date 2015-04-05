@@ -37,22 +37,24 @@ uint8_t mode = MODE_OPERATIONAL;
 
 #define EEPROM_MAC_ADDRESS    (E2END + 1 - 6)    // MAC address, i.e. the last 6-bytes of EEPROM
 // more parameters follow, address relative to each other so they don't overlap
-#define EEPROM_CONNECT_METHOD    (EEPROM_MAC_ADDRESS - 1)        // connection method encoded as a single byte value 
-#define EEPROM_SSID              (EEPROM_CONNECT_METHOD - 32)    // ssid string, up to 32 characters (one of which is a null terminator)
-#define EEPROM_NETWORK_PWD       (EEPROM_SSID - 32)              // network password, up to 32 characters (one of which is a null terminator)
-#define EEPROM_SECURITY_MODE     (EEPROM_NETWORK_PWD - 1)        // security mode encoded as a single byte value, consistent with the CC3000 library
-#define EEPROM_STATIC_IP_ADDRESS (EEPROM_SECURITY_MODE - 4)      // static ipv4 address, 4 bytes - 0.0.0.0 indicates use DHCP
-#define EEPROM_STATIC_NETMASK    (EEPROM_STATIC_IP_ADDRESS - 4)  // static netmask, 4 bytes
-#define EEPROM_STATIC_GATEWAY    (EEPROM_STATIC_NETMASK - 4)     // static default gateway ip address, 4 bytes
-#define EEPROM_STATIC_DNS        (EEPROM_STATIC_GATEWAY - 4)     // static dns server ip address, 4 bytes
-#define EEPROM_OPENSENSORSIO_PWD (EEPROM_STATIC_DNS - 32)        // password for opensensors.io, up to 32 characters (one of which is a null terminator)
-#define EEPROM_NO2_SENSITIVITY   (EEPROM_OPENSENSORSIO_PWD - 4)  // float value, 4-bytes, the sensitivity from the sticker
-#define EEPROM_NO2_CAL_SLOPE     (EEPROM_NO2_SENSITIVITY - 4)    // float value, 4-bytes, the slope applied to the sensor
-#define EEPROM_NO2_CAL_OFFSET    (EEPROM_NO2_CAL_SLOPE - 4)      // float value, 4-btyes, the offset applied to the sensor
-#define EEPROM_CO_SENSITIVITY    (EEPROM_NO2_CAL_OFFSET - 4)     // float value, 4-bytes, the sensitivity from the sticker
-#define EEPROM_CO_CAL_SLOPE      (EEPROM_CO_SENSITIVITY - 4)     // float value, 4-bytes, the slope applied to the sensor
-#define EEPROM_CO_CAL_OFFSET     (EEPROM_CO_CAL_SLOPE - 4)       // float value, 4-btyes, the offset applied to the sensor
-#define EEPROM_PRIVATE_KEY       (EEPROM_CO_CAL_OFFSET - 4)      // 32-bytes of Random Data (256-bits)
+#define EEPROM_CONNECT_METHOD     (EEPROM_MAC_ADDRESS - 1)        // connection method encoded as a single byte value 
+#define EEPROM_SSID               (EEPROM_CONNECT_METHOD - 32)    // ssid string, up to 32 characters (one of which is a null terminator)
+#define EEPROM_NETWORK_PWD        (EEPROM_SSID - 32)              // network password, up to 32 characters (one of which is a null terminator)
+#define EEPROM_SECURITY_MODE      (EEPROM_NETWORK_PWD - 1)        // security mode encoded as a single byte value, consistent with the CC3000 library
+#define EEPROM_STATIC_IP_ADDRESS  (EEPROM_SECURITY_MODE - 4)      // static ipv4 address, 4 bytes - 0.0.0.0 indicates use DHCP
+#define EEPROM_STATIC_NETMASK     (EEPROM_STATIC_IP_ADDRESS - 4)  // static netmask, 4 bytes
+#define EEPROM_STATIC_GATEWAY     (EEPROM_STATIC_NETMASK - 4)     // static default gateway ip address, 4 bytes
+#define EEPROM_STATIC_DNS         (EEPROM_STATIC_GATEWAY - 4)     // static dns server ip address, 4 bytes
+#define EEPROM_OPENSENSORSIO_PWD  (EEPROM_STATIC_DNS - 32)        // password for opensensors.io, up to 32 characters (one of which is a null terminator)
+#define EEPROM_NO2_SENSITIVITY    (EEPROM_OPENSENSORSIO_PWD - 4)  // float value, 4-bytes, the sensitivity from the sticker
+#define EEPROM_NO2_CAL_SLOPE      (EEPROM_NO2_SENSITIVITY - 4)    // float value, 4-bytes, the slope applied to the sensor
+#define EEPROM_NO2_CAL_OFFSET     (EEPROM_NO2_CAL_SLOPE - 4)      // float value, 4-btyes, the offset applied to the sensor
+#define EEPROM_CO_SENSITIVITY     (EEPROM_NO2_CAL_OFFSET - 4)     // float value, 4-bytes, the sensitivity from the sticker
+#define EEPROM_CO_CAL_SLOPE       (EEPROM_CO_SENSITIVITY - 4)     // float value, 4-bytes, the slope applied to the sensor
+#define EEPROM_CO_CAL_OFFSET      (EEPROM_CO_CAL_SLOPE - 4)       // float value, 4-btyes, the offset applied to the sensor
+#define EEPROM_PRIVATE_KEY        (EEPROM_CO_CAL_OFFSET - 4)      // 32-bytes of Random Data (256-bits)
+#define EEPROM_MQTT_SERVER_NAME   (EEPROM_PRIVATE_KEY - 32)       // TODO: the DNS name of the MQTT server (default opensensors.io)
+#define EEPROM_UPDATE_SERVER_NAME (EEPROM_MQTT_SERVER_NAME - 32)  // TODO: the DNS name of the Firmware Update server (default update.wickeddevice.com)
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
