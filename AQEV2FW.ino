@@ -178,6 +178,20 @@ void (*command_functions[])(char * arg) = {
 unsigned long previous_tinywdt_millis = 0;
 const long tinywdt_interval = 1000;
 
+#define NUM_HEARTBEAT_WAVEFORM_SAMPLES (84)
+const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
+  95, 94, 95, 96, 95, 94, 95, 96, 95, 94,
+  95, 96, 95, 94, 95, 96, 95, 97, 105, 112,
+  117, 119, 120, 117, 111, 103, 95, 94, 95, 96,
+  95, 94, 100, 131, 162, 193, 224, 255, 244, 214,
+  183, 152, 121, 95, 88, 80, 71, 74, 82, 90, 
+  96, 95, 94, 95, 96, 97, 106, 113, 120, 125, 
+  129, 132, 133, 131, 128, 124, 118, 111, 103, 96,
+  95, 96, 95, 94, 95, 96, 95, 94, 95, 99, 
+  105, 106, 101, 96  
+};
+uint8_t heartbeat_waveform_index = 0;
+
 void setup() {
   // initialize hardware
   initializeHardware();
