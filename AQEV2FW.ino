@@ -1712,9 +1712,18 @@ void backlightOff(void) {
 
 /****** WIFI SUPPORT FUNCTIONS ******/
 boolean restartWifi(){
+  boolean first_time = true;
+  
   while(!connectedToNetwork()){
-    Serial.println(F("Info: Rebooting CC3000."));
-    cc3000.reboot();
+    
+    if(first_time){
+      first_time = false;
+    }
+    else{
+      Serial.print(F("Info: Rebooting CC3000..."));
+      cc3000.reboot();
+      Serial.println(F("OK."));
+    }
     
     reconnectToAccessPoint();
     acquireIpAddress();    
@@ -1751,20 +1760,24 @@ bool displayConnectionDetails(void){
 void reconnectToAccessPoint(void){
   char ssid[32] = {0};
   char network_password[32] = {0};
-    
+  
   uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
   uint8_t network_security_mode = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);  
   eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
-  eeprom_read_block(ssid, (const void *) EEPROM_NETWORK_PWD, 31); 
+  eeprom_read_block(network_password, (const void *) EEPROM_NETWORK_PWD, 31); 
  
   switch(connect_method){
     case CONNECT_METHOD_DIRECT:
+      Serial.print(F("Info: Connecting to Access Point with SSID \""));
+      Serial.print(ssid);
+      Serial.print(F("\"..."));
       if(!cc3000.connectToAP(ssid, network_password, network_security_mode)) {
         Serial.print(F("Error: Failed to connect to Access Point with SSID: "));
         Serial.println(ssid);
         Serial.flush();
         tinywdt.force_reset();
       }
+      Serial.println(F("OK."));
       break;
     case CONNECT_METHOD_SMARTCONFIG:
     case CONNECT_METHOD_PFOD:
@@ -1782,7 +1795,7 @@ void acquireIpAddress(void){
   // if it's DHCP we're configured for, engage DHCP process
   if (memcmp(static_ip_address, noip, 4) == 0){
     /* Wait for DHCP to complete */
-    Serial.println(F("Info: Request DHCP"));
+    Serial.print(F("Info: Request DHCP..."));
     while (!cc3000.checkDHCP()){
       delay(100);
       // if this goes on for longer than a minute, 
@@ -1790,7 +1803,8 @@ void acquireIpAddress(void){
       // and reset the unit. If we don't want that to happen
       // we would need to pet the tiny watchdog every so often
       // in this loop.
-    }    
+    }   
+    Serial.println(F("OK.")); 
   }
 }
 
