@@ -473,10 +473,10 @@ boolean checkConfigIntegrity(void) {
     return true;
   }
   else {
-    Serial.print(F("Computed CRC = "));
-    Serial.print(computed_crc, HEX);
-    Serial.print(F(", Stored CRC = "));
-    Serial.println(stored_crc, HEX);
+    //Serial.print(F("Computed CRC = "));
+    //Serial.print(computed_crc, HEX);
+    //Serial.print(F(", Stored CRC = "));
+    //Serial.println(stored_crc, HEX);
     return false;
   }
 }
