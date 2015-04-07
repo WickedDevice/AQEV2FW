@@ -11,9 +11,9 @@ The baseline code for Air Quality Egg version 2 WildFire firmware
 * https://github.com/WickedDevice/TinyWatchdog
 * https://github.com/WickedDevice/LMP91000
 * https://github.com/stevemarple/MCP342x
-* https://github.com/WickedDevice/WildFire_PubSubClient
 * https://github.com/WickedDevice/SHT25
 * https://github.com/WickedDevice/WildFire_SPIFlash
+* https://github.com/knolleary/pubsubclient
 * https://github.com/PaulStoffregen/Time
 * https://github.com/PaulStoffregen/CapacitiveSensor
 * https://github.com/arduino-libraries/LiquidCrystal

@@ -2,7 +2,6 @@
 #include <SPI.h>
 #include <WildFire.h>
 #include <WildFire_CC3000.h>
-#include <WildFire_PubSubClient.h>
 #include <TinyWatchdog.h>
 #include <SHT25.h>
 #include <MCP342x.h>
@@ -11,6 +10,7 @@
 #include <Time.h>
 #include <CapacitiveSensor.h>
 #include <LiquidCrystal.h>
+#include <PubSubClient.h>
 #include <util/crc16.h>
 
 #define AQEV2FW_VERSION "0.1"
@@ -24,6 +24,8 @@ SHT25 sht25;
 WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A1, A0);
 LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
+WildFire_CC3000_Client ethClient; // for MQTTbyte server[] = { 100, 1, 168, 192 };pubsub
+byte mqtt_server[] = { 0 };
 
 // the software's operating mode
 #define MODE_CONFIG      (1)
@@ -45,16 +47,18 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_STATIC_NETMASK     (EEPROM_STATIC_IP_ADDRESS - 4)  // static netmask, 4 bytes
 #define EEPROM_STATIC_GATEWAY     (EEPROM_STATIC_NETMASK - 4)     // static default gateway ip address, 4 bytes
 #define EEPROM_STATIC_DNS         (EEPROM_STATIC_GATEWAY - 4)     // static dns server ip address, 4 bytes
-#define EEPROM_OPENSENSORSIO_PWD  (EEPROM_STATIC_DNS - 32)        // password for opensensors.io, up to 32 characters (one of which is a null terminator)
-#define EEPROM_NO2_SENSITIVITY    (EEPROM_OPENSENSORSIO_PWD - 4)  // float value, 4-bytes, the sensitivity from the sticker
+#define EEPROM_MQTT_PASSWORD      (EEPROM_STATIC_DNS - 32)        // password for mqtt server, up to 32 characters (one of which is a null terminator)
+#define EEPROM_NO2_SENSITIVITY    (EEPROM_MQTT_PASSWORD - 4)      // float value, 4-bytes, the sensitivity from the sticker
 #define EEPROM_NO2_CAL_SLOPE      (EEPROM_NO2_SENSITIVITY - 4)    // float value, 4-bytes, the slope applied to the sensor
 #define EEPROM_NO2_CAL_OFFSET     (EEPROM_NO2_CAL_SLOPE - 4)      // float value, 4-btyes, the offset applied to the sensor
 #define EEPROM_CO_SENSITIVITY     (EEPROM_NO2_CAL_OFFSET - 4)     // float value, 4-bytes, the sensitivity from the sticker
 #define EEPROM_CO_CAL_SLOPE       (EEPROM_CO_SENSITIVITY - 4)     // float value, 4-bytes, the slope applied to the sensor
 #define EEPROM_CO_CAL_OFFSET      (EEPROM_CO_CAL_SLOPE - 4)       // float value, 4-btyes, the offset applied to the sensor
 #define EEPROM_PRIVATE_KEY        (EEPROM_CO_CAL_OFFSET - 4)      // 32-bytes of Random Data (256-bits)
-#define EEPROM_MQTT_SERVER_NAME   (EEPROM_PRIVATE_KEY - 32)       // TODO: the DNS name of the MQTT server (default opensensors.io)
-#define EEPROM_UPDATE_SERVER_NAME (EEPROM_MQTT_SERVER_NAME - 32)  // TODO: the DNS name of the Firmware Update server (default update.wickeddevice.com)
+#define EEPROM_MQTT_SERVER_NAME   (EEPROM_PRIVATE_KEY - 32)       // string, the DNS name of the MQTT server (default opensensors.io), up to 32 characters (one of which is a null terminator)
+#define EEPROM_MQTT_USERNAME     (EEPROM_MQTT_SERVER_NAME - 32)   // string, the user name for the MQTT server (default airqualityegg), up to 32 characters (one of which is a null terminator)
+#define EEPROM_MQTT_CLIENT_ID     (EEPROM_MQTT_USERNAME - 32)     // string, the client identifier for the MQTT server (default SHT25 identifier), between 1 and 23 characters long
+#define EEPROM_UPDATE_SERVER_NAME (EEPROM_MQTT_SERVER_NAME - 32)  // string, the DNS name of the Firmware Update server (default update.wickeddevice.com), up to 32 characters (one of which is a null terminator)
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
@@ -66,11 +70,13 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_BACKUP_CO_SENSITIVITY (EEPROM_NO2_CAL_OFFSET + 4)
 #define EEPROM_BACKUP_NO2_CAL_OFFSET (EEPROM_NO2_CAL_SLOPE + 4)
 #define EEPROM_BACKUP_NO2_CAL_SLOPE (EEPROM_BACKUP_NO2_SENSITIVITY + 4)
-#define EEPROM_BACKUP_NO2_SENSITIVITY (EEPROM_BACKUP_OPENSENSORSIO_PWD + 32)
-#define EEPROM_BACKUP_OPENSENSORSIO_PWD (EEPROM_BACKUP_MAC_ADDRESS + 6)
+#define EEPROM_BACKUP_NO2_SENSITIVITY (EEPROM_BACKUP_MQTT_PASSWORD + 32)
+#define EEPROM_BACKUP_MQTT_PASSWORD (EEPROM_BACKUP_MAC_ADDRESS + 6)
 #define EEPROM_BACKUP_MAC_ADDRESS (EEPROM_BACKUP_CHECK + 2) // backup parameters are added here offset from the EEPROM_CRC_CHECKSUM
 #define EEPROM_BACKUP_CHECK   (EEPROM_CRC_CHECKSUM + 2) // 2-byte value with various bits set if backup has ever happened
 #define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
+// the only things that need "backup" are those which are unique to a device
+// other things can have "defaults" stored in flash (i.e. using the restore defaults command)
 
 // valid connection methods
 // only DIRECT is supported initially
@@ -80,7 +86,7 @@ uint8_t mode = MODE_OPERATIONAL;
 
 // backup status bits
 #define BACKUP_STATUS_MAC_ADDRESS_BIT       (7)
-#define BACKUP_STATUS_OPENSENSORSIO_PWD_BIT (6)
+#define BACKUP_STATUS_MQTT_PASSSWORD_BIT (6)
 #define BACKUP_STATUS_NO2_CALIBRATION_BIT   (5)
 #define BACKUP_STATUS_CO_CALIBRATION_BIT    (4)
 #define BACKUP_STATUS_PRIVATE_KEY_BIT       (3)
@@ -102,7 +108,10 @@ void set_network_password(char * arg);
 void set_network_security_mode(char * arg);
 void set_static_ip_address(char * arg);
 void use_command(char * arg);
-void set_opensensorsio_password(char * arg);
+void set_mqtt_password(char * arg);
+void set_mqtt_server(char * arg);
+void set_mqtt_username(char * arg);
+void set_mqtt_client_id(char * arg);
 void backup(char * arg);
 void set_no2_slope(char * arg);
 void set_no2_offset(char * arg);
@@ -131,25 +140,29 @@ void set_private_key(char * arg);
 // in order to ease printing as a table
 // string comparisons should use strncmp rather than strcmp
 char * commands[] = {
-  "get      ",
-  "init     ",
-  "restore  ",
-  "mac   ",
-  "method   ",
-  "ssid     ",
-  "pwd      ",
-  "security ",
-  "staticip ",
-  "use      ",
-  "ospwd    ",
-  "backup   ",
-  "no2_cal  ",
-  "no2_slope",
-  "no2_off  ",
-  "co_cal   ",
-  "co_slope ",
-  "co_off   ",
-  "key      ",
+  "get       ",
+  "init      ",
+  "restore   ",
+  "mac       ",
+  "method    ",
+  "ssid      ",
+  "pwd       ",
+  "security  ",
+  "staticip  ",
+  "use       ",
+  "mqttpwd   ",
+  "mqttsrv   ",
+  "mqttuser  ",
+  "mqttid    ",
+  "updatesrv ",
+  "backup    ",
+  "no2_cal   ",
+  "no2_slope ",
+  "no2_off   ",
+  "co_cal    ",
+  "co_slope  ",
+  "co_off    ",
+  "key       ",
   0
 };
 
@@ -164,7 +177,11 @@ void (*command_functions[])(char * arg) = {
   set_network_security_mode,
   set_static_ip_address,
   use_command,
-  set_opensensorsio_password,
+  set_mqtt_password,
+  set_mqtt_server,
+  set_mqtt_username,
+  set_mqtt_client_id,
+  set_update_server_name,
   backup,
   set_no2_sensitivity,
   set_no2_slope,
@@ -676,7 +693,11 @@ void help_menu(char * arg) {
       Serial.println(F("      pwd - lol, sorry, that's not happening!"));
       Serial.println(F("      security - the Wi-Fi security mode"));
       Serial.println(F("      ipmode - the Wi-Fi IP-address mode"));
-      Serial.println(F("      ospwd - lol, sorry, that's not happening either!"));
+      Serial.println(F("      mqttpwd - lol, sorry, that's not happening either!"));
+      Serial.println(F("      mqttsrv - MQTT server name"));
+      Serial.println(F("      mqttuser - MQTT username"));
+      Serial.println(F("      mqttid - MQTT client ID"));      
+      Serial.println(F("      updatesrv - Update server name"));      
       Serial.println(F("      no2_cal - NO2 sensitivity [nA/ppm]"));
       Serial.println(F("      no2_slope - NO2 sensors slope [ppb/V]"));
       Serial.println(F("      no2_off - NO2 sensors offset [V]"));
@@ -700,7 +721,11 @@ void help_menu(char * arg) {
       Serial.println(F("                 performs 'security wpa2'"));
       Serial.println(F("                 performs 'use dhcp'"));
       Serial.println(F("                 performs 'restore mac'"));
-      Serial.println(F("                 performs 'restore ospwd'"));
+      Serial.println(F("                 performs 'restore mqttpwd'"));
+      Serial.println(F("                 performs 'restore mqttsrv'"));
+      Serial.println(F("                 performs 'restore mqttuser'"));
+      Serial.println(F("                 performs 'restore mqttid'"));      
+      Serial.println(F("                 performs 'restore updatesrv'"));      
       Serial.println(F("                 performs 'restore key'"));
       Serial.println(F("                 performs 'restore no2'"));
       Serial.println(F("                 performs 'restore co'"));
@@ -708,7 +733,11 @@ void help_menu(char * arg) {
       Serial.println(F("                 clears the Network Password from memory"));
       Serial.println(F("      mac      - retrieves the mac address from BACKUP"));
       Serial.println(F("                 and assigns it to the CC3000, via a 'mac' command"));
-      Serial.println(F("      ospwd    - restores the OpenSensors.io password from BACKUP "));
+      Serial.println(F("      mqttpwd  - restores the MQTT password from BACKUP "));
+      Serial.println(F("      mqttsrv  - restores the MQTT server name"));
+      Serial.println(F("      mqttuser - restores the MQTT username"));      
+      Serial.println(F("      mqttid   - restores the MQTT client ID"));    
+      Serial.println(F("      updatesrv- restores the Update server name"));          
       Serial.println(F("      key      - restores the Private Key from BACKUP "));
       Serial.println(F("      no2      - restores the NO2 calibration parameters from BACKUP "));
       Serial.println(F("      co       - restores the CO calibration parameters from BACKUP "));
@@ -761,19 +790,53 @@ void help_menu(char * arg) {
       Serial.println(F("   <param> is one of:"));
       Serial.println(F("      dhcp - wipes the Static IP address from the EEPROM"));
     }
-    else if (strncmp("ospwd", arg, 5) == 0) {
-      Serial.println(F("ospwd <string>"));
+    else if (strncmp("mqttpwd", arg, 7) == 0) {
+      Serial.println(F("mqttpwd <string>"));
       Serial.println(F("   <string> is the password the device will use to connect "));
-      Serial.println(F("      to OpenSensors.io."));
+      Serial.println(F("      to the MQTT server."));
       Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
       Serial.println(F("            probably not be using this command."));
       Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
       Serial.println(F("            from publishing data to the internet."));
     }
+    else if (strncmp("mqttsrv", arg, 7) == 0) {
+      Serial.println(F("mqttsrv <string>"));
+      Serial.println(F("   <string> is the DNS name of the MQTT server."));
+      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
+      Serial.println(F("            probably not be using this command."));
+      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
+      Serial.println(F("            from publishing data to the internet."));
+    }
+    else if (strncmp("mqttuser", arg, 8) == 0) {
+      Serial.println(F("mqttuser <string>"));
+      Serial.println(F("   <string> is the username used to connect to the MQTT server."));
+      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
+      Serial.println(F("            probably not be using this command."));
+      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
+      Serial.println(F("            from publishing data to the internet."));
+    }
+    else if (strncmp("mqttid", arg, 6) == 0) {
+      Serial.println(F("mqttid <string>"));
+      Serial.println(F("   <string> is the Client ID used to connect to the MQTT server."));
+      Serial.println(F("            Must be between 1 and 23 characters long per MQTT v3.1 spec."));    
+      // Ref: http://public.dhe.ibm.com/software/dw/webservices/ws-mqtt/mqtt-v3r1.html#connect  
+      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
+      Serial.println(F("            probably not be using this command."));
+      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
+      Serial.println(F("            from publishing data to the internet."));
+    }    
+    else if (strncmp("updatesrv", arg, 9) == 0) {
+      Serial.println(F("updatesrv <string>"));
+      Serial.println(F("   <string> is the DNS name of the Update server."));
+      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
+      Serial.println(F("            probably not be using this command."));
+      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
+      Serial.println(F("            from getting firmware updates over the internet."));
+    }    
     else if (strncmp("backup", arg, 3) == 0) {
       Serial.println(F("backup <param>"));
       Serial.println(F("   <param> is one of:"));
-      Serial.println(F("      ospwd    - backs up the OpenSensors.io password"));
+      Serial.println(F("      mqttpwd  - backs up the MQTT password"));
       Serial.println(F("      mac      - backs up the CC3000 MAC address"));
       Serial.println(F("      key      - backs up the 256-bit private key"));
       Serial.println(F("      no2      - backs up the NO2 calibration parameters"));
@@ -996,6 +1059,29 @@ void print_label_with_star_if_not_backed_up(char * label, uint8_t bit_number) {
   Serial.print(label);
 }
 
+void print_eeprom_string(const char * address){
+  char tmp[32] = {0};
+  eeprom_read_block(tmp, (const void *) address, 31);
+  Serial.println(tmp);
+}
+
+void print_eeprom_update_server(){
+  print_eeprom_string((const char *) EEPROM_UPDATE_SERVER_NAME);
+}
+
+void print_eeprom_mqtt_server(){
+  print_eeprom_string((const char *) EEPROM_MQTT_SERVER_NAME);
+}
+
+
+void print_eeprom_mqtt_client_id(){
+  print_eeprom_string((const char *) EEPROM_MQTT_CLIENT_ID);
+}
+
+void print_eeprom_mqtt_username(){
+  print_eeprom_string((const char *) EEPROM_MQTT_USERNAME);
+}
+
 void print_eeprom_value(char * arg) {
   if (strncmp(arg, "mac", 3) == 0) {
     print_eeprom_mac();
@@ -1046,10 +1132,21 @@ void print_eeprom_value(char * arg) {
     print_eeprom_security_type();
     Serial.print(F("    IP Mode: "));
     print_eeprom_ipmode();
+    Serial.print(F("    Update Server: "));
+    print_eeprom_update_server();    
+    Serial.println(F(" +-------------------------------------------------------------+"));
+    Serial.println(F(" | MQTT Settings:                                              |"));
+    Serial.println(F(" +-------------------------------------------------------------+"));    
+    Serial.print(F("    MQTT Server: "));
+    print_eeprom_mqtt_server();   
+    Serial.print(F("    MQTT Client ID: "));
+    print_eeprom_mqtt_client_id();       
+    Serial.print(F("    MQTT Username: "));
+    print_eeprom_mqtt_username();           
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | Credentials:                                                |"));
     Serial.println(F(" +-------------------------------------------------------------+"));
-    print_label_with_star_if_not_backed_up("OpenSensors.io Password backed up? [* means no]", BACKUP_STATUS_OPENSENSORSIO_PWD_BIT);
+    print_label_with_star_if_not_backed_up("MQTT Password backed up? [* means no]", BACKUP_STATUS_MQTT_PASSSWORD_BIT);
     Serial.println();
     print_label_with_star_if_not_backed_up("Private key backed up? [* means no]", BACKUP_STATUS_PRIVATE_KEY_BIT);
     Serial.println();
@@ -1110,7 +1207,7 @@ void restore(char * arg) {
 
   // things that must have been backed up before restoring.
   // 1. MAC address              0x80
-  // 2. OpenSensors.io Password  0x40
+  // 2. MQTT Password            0x40
   // 3. Private Key              0x20
   // 4. NO2 Calibration Values   0x10
   // 5. CO Calibratino Values    0x80
@@ -1122,7 +1219,11 @@ void restore(char * arg) {
     configInject("method direct\r");
     configInject("security wpa2\r");
     configInject("use dhcp\r");
-    configInject("restore ospwd\r");
+    configInject("restore mqttpwd\r");
+    configInject("restore mqttsrv\r");
+    configInject("restore mqttuser\r");
+    configInject("restore mqttid\r");
+    configInject("restore updatesrv\r");
     configInject("restore key\r");
     configInject("restore no2\r");
     configInject("restore co\r");
@@ -1154,16 +1255,41 @@ void restore(char * arg) {
     configInject(setmac_string);
     Serial.println();
   }
-  else if (strncmp("ospwd", arg, 5) == 0) {
-    if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_OPENSENSORSIO_PWD_BIT)) {
-      Serial.println(F("Error: OpenSensors.io Password must be backed up  "));
+  else if (strncmp("mqttpwd", arg, 7) == 0) {
+    if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_MQTT_PASSSWORD_BIT)) {
+      Serial.println(F("Error: MQTT Password must be backed up  "));
       Serial.println(F("       prior to executing a 'restore'."));
       return;
     }
 
-    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_OPENSENSORSIO_PWD, 32);
-    eeprom_write_block(tmp, (void *) EEPROM_OPENSENSORSIO_PWD, 32);
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_MQTT_PASSWORD, 32);
+    eeprom_write_block(tmp, (void *) EEPROM_MQTT_PASSWORD, 32);
   }
+  else if (strncmp("mqttsrv", arg, 7) == 0) {
+    eeprom_write_block("opensensors.io", (void *) EEPROM_MQTT_SERVER_NAME, 32);
+  }  
+  else if (strncmp("mqttuser", arg, 8) == 0) {
+    eeprom_write_block("airqualityegg", (void *) EEPROM_MQTT_USERNAME, 32);
+  }
+  else if (strncmp("mqttid", arg, 6) == 0) {
+    // get the 8-byte unique electronic ID from the SHT25 
+    // convert it to a string, and store it to EEPROM
+    uint8_t serial_number[8];
+    sht25.getSerialNumber(serial_number);
+    sprintf((char *) tmp, "%02X%02X%02X%02X%02X%02X%02X%02X",
+      serial_number[0],
+      serial_number[1],
+      serial_number[2],
+      serial_number[3],
+      serial_number[4],
+      serial_number[5],
+      serial_number[6],
+      serial_number[7]);
+    eeprom_write_block(tmp, (void *) EEPROM_MQTT_CLIENT_ID, 32);
+  }  
+  else if (strncmp("updatesrv", arg, 9) == 0) {
+    eeprom_write_block("update.wickeddevice.com", (void *) EEPROM_UPDATE_SERVER_NAME, 32);
+  }  
   else if (strncmp("key", arg, 3) == 0) {
     if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_PRIVATE_KEY_BIT)) {
       Serial.println(F("Error: Private key must be backed up  "));
@@ -1478,18 +1604,78 @@ void use_command(char * arg) {
   }
 }
 
-void set_opensensorsio_password(char * arg) {
-  // we've reserved 32-bytes of EEPROM for a network password
+void set_mqtt_password(char * arg) {
+  // we've reserved 32-bytes of EEPROM for a MQTT password
   // so the argument's length must be <= 31
   char password[32] = {0};
   uint16_t len = strlen(arg);
   if (len < 32) {
     strncpy(password, arg, len);
-    eeprom_write_block(password, (void *) EEPROM_OPENSENSORSIO_PWD, 32);
+    eeprom_write_block(password, (void *) EEPROM_MQTT_PASSWORD, 32);
     recomputeAndStoreConfigChecksum();
   }
   else {
-    Serial.println(F("Error: OpenSensors.io password must be less than 32 characters in length"));
+    Serial.println(F("Error: MQTT password must be less than 32 characters in length"));
+  }
+}
+
+void set_mqtt_server(char * arg){
+  // we've reserved 32-bytes of EEPROM for an MQTT server name
+  // so the argument's length must be <= 31
+  char server[32] = {0};
+  uint16_t len = strlen(arg);
+  if (len < 32) {
+    strncpy(server, arg, len);
+    eeprom_write_block(server, (void *) EEPROM_MQTT_SERVER_NAME, 32);
+    recomputeAndStoreConfigChecksum();
+  }
+  else {
+    Serial.println(F("Error: MQTT server name must be less than 32 characters in length"));
+  }  
+}
+
+void set_mqtt_username(char * arg){
+  // we've reserved 32-bytes of EEPROM for an MQTT username
+  // so the argument's length must be <= 31
+  char username[32] = {0};
+  uint16_t len = strlen(arg);
+  if (len < 32) {
+    strncpy(username, arg, len);
+    eeprom_write_block(username, (void *) EEPROM_MQTT_USERNAME, 32);
+    recomputeAndStoreConfigChecksum();
+  }
+  else {
+    Serial.println(F("Error: MQTT username must be less than 32 characters in length"));
+  }    
+}
+
+void set_mqtt_client_id(char * arg){
+  // we've reserved 32-bytes of EEPROM for an MQTT client ID
+  // but in fact an MQTT client ID must be between 1 and 23 characters
+  char client_id[32] = {0};
+  uint16_t len = strlen(arg);
+  if ((len >= 1) && (len <= 23)) {
+    strncpy(client_id, arg, len);
+    eeprom_write_block(client_id, (void *) EEPROM_MQTT_CLIENT_ID, 32);
+    recomputeAndStoreConfigChecksum();
+  }
+  else {
+    Serial.println(F("Error: MQTT client ID must be less between 1 and 23 characters in length"));
+  }
+}
+
+void set_update_server_name(char * arg){
+  // we've reserved 32-bytes of EEPROM for an update server name
+  // so the argument's length must be <= 31
+  char server[32] = {0};
+  uint16_t len = strlen(arg);
+  if (len < 32) {
+    strncpy(server, arg, len);
+    eeprom_write_block(server, (void *) EEPROM_UPDATE_SERVER_NAME, 32);
+    recomputeAndStoreConfigChecksum();
+  }
+  else {
+    Serial.println(F("Error: Update server name must be less than 32 characters in length"));
   }
 }
 
@@ -1509,12 +1695,12 @@ void backup(char * arg) {
       eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);
     }
   }
-  else if (strncmp("ospwd", arg, 5) == 0) {
-    eeprom_read_block(tmp, (const void *) EEPROM_OPENSENSORSIO_PWD, 32);
-    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_OPENSENSORSIO_PWD, 32);
+  else if (strncmp("mqttpwd", arg, 7) == 0) {
+    eeprom_read_block(tmp, (const void *) EEPROM_MQTT_PASSWORD, 32);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_MQTT_PASSWORD, 32);
 
-    if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_OPENSENSORSIO_PWD_BIT)) {
-      CLEAR_BIT(backup_check, BACKUP_STATUS_OPENSENSORSIO_PWD_BIT);
+    if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_MQTT_PASSSWORD_BIT)) {
+      CLEAR_BIT(backup_check, BACKUP_STATUS_MQTT_PASSSWORD_BIT);
       eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);
     }
   }
@@ -1555,7 +1741,7 @@ void backup(char * arg) {
   }
   else if (strncmp("all", arg, 3) == 0) {
     valid = false;
-    configInject("backup ospwd\r");
+    configInject("backup mqttpwd\r");
     configInject("backup key\r");
     configInject("backup no2\r");
     configInject("backup co\r");
