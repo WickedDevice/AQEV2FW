@@ -54,7 +54,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_CO_SENSITIVITY     (EEPROM_NO2_CAL_OFFSET - 4)     // float value, 4-bytes, the sensitivity from the sticker
 #define EEPROM_CO_CAL_SLOPE       (EEPROM_CO_SENSITIVITY - 4)     // float value, 4-bytes, the slope applied to the sensor
 #define EEPROM_CO_CAL_OFFSET      (EEPROM_CO_CAL_SLOPE - 4)       // float value, 4-btyes, the offset applied to the sensor
-#define EEPROM_PRIVATE_KEY        (EEPROM_CO_CAL_OFFSET - 4)      // 32-bytes of Random Data (256-bits)
+#define EEPROM_PRIVATE_KEY        (EEPROM_CO_CAL_OFFSET - 32)     // 32-bytes of Random Data (256-bits)
 #define EEPROM_MQTT_SERVER_NAME   (EEPROM_PRIVATE_KEY - 32)       // string, the DNS name of the MQTT server (default opensensors.io), up to 32 characters (one of which is a null terminator)
 #define EEPROM_MQTT_USERNAME      (EEPROM_MQTT_SERVER_NAME - 32)  // string, the user name for the MQTT server (default airqualityegg), up to 32 characters (one of which is a null terminator)
 #define EEPROM_MQTT_CLIENT_ID     (EEPROM_MQTT_USERNAME - 32)     // string, the client identifier for the MQTT server (default SHT25 identifier), between 1 and 23 characters long
@@ -216,8 +216,14 @@ void setup() {
   initializeHardware();
 
   // check for initial integrity of configuration in eeprom
-  if (!checkConfigIntegrity() || !valid_ssid_config()) {
+  if (!checkConfigIntegrity()) {
     Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
+    configInject("aqe\r");
+    Serial.println();
+    mode = MODE_CONFIG;
+  }
+  else if(!valid_ssid_config()){
+    Serial.println(F("Info: No valid SSID configured, automatically falling back to CONFIG mode."));
     configInject("aqe\r");
     Serial.println();
     mode = MODE_CONFIG;
@@ -467,10 +473,10 @@ boolean checkConfigIntegrity(void) {
     return true;
   }
   else {
-    //Serial.print(F("Computed CRC = "));
-    //Serial.print(computed_crc, HEX);
-    //Serial.print(F(", Stored CRC = "));
-    //Serial.println(stored_crc, HEX);
+    Serial.print(F("Computed CRC = "));
+    Serial.print(computed_crc, HEX);
+    Serial.print(F(", Stored CRC = "));
+    Serial.println(stored_crc, HEX);
     return false;
   }
 }
