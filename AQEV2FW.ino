@@ -2344,7 +2344,7 @@ boolean publishNO2(){
   float converted_value = 0.0f;
   dtostrf(raw_value, -8, 5, raw_value_string);
   dtostrf(converted_value, -8, 5, converted_value_string);
-  sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"percent\"}", raw_value_string, converted_value_string);  
+  sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"ppb\"}", raw_value_string, converted_value_string);  
   return mqqtPublish("/orgs/wd/aqe/no2", tmp);   
 }
 
@@ -2356,6 +2356,6 @@ boolean publishCO(){
   float converted_value = 0.0f;
   dtostrf(raw_value, -8, 5, raw_value_string);
   dtostrf(converted_value, -8, 5, converted_value_string);
-  sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"percent\"}", raw_value_string, converted_value_string);  
+  sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"ppm\"}", raw_value_string, converted_value_string);  
   return mqqtPublish("/orgs/wd/aqe/co", tmp);   
 }
