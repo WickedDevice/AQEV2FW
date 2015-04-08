@@ -361,17 +361,12 @@ void setup() {
 
 void loop() {
   unsigned long current_millis = millis();
-  char tmp[128] = { 0 };
+
   if(mqttReconnect()){
     if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){      
-      uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
-      sprintf(tmp, "{\"converted-value\" : %d, \"converted-units\": \"\"}", sample);
-      
-      if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
-         heartbeat_waveform_index = 0;
-      }
-      
-      mqqtPublish("/orgs/wd/aqe/heartbeat", tmp);
+      publishHeartbeat();
+      publishTemperature();
+      publishHumidity();
       
       previous_mqtt_publish_millis = current_millis;       
     }
@@ -2255,4 +2250,34 @@ boolean mqqtPublish(char * topic, char *str){
   else {
     Serial.println(F("Failed."));
   }
+}
+
+
+void publishHeartbeat(){
+  char tmp[128] = { 0 };  
+  uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
+  sprintf(tmp, "{\"converted-value\" : %d, \"converted-units\": \"\"}", sample);  
+  if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
+     heartbeat_waveform_index = 0;
+  }
+  
+  mqqtPublish("/orgs/wd/aqe/heartbeat", tmp); 
+}
+
+void publishTemperature(){
+  char tmp[128] = { 0 };  
+  char value_string[16] = {0};
+  float value = sht25.getTemperature();
+  dtostrf(value, -6, 2, value_string);
+  sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"degC\"}", value_string);    
+  mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
+}
+
+void publishHumidity(){
+  char tmp[128] = { 0 };  
+  char value_string[16] = {0};  
+  float value = sht25.getRelativeHumidity();  
+  dtostrf(value, -6, 2, value_string);
+  sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
+  mqqtPublish("/orgs/wd/aqe/humidity", tmp);   
 }
