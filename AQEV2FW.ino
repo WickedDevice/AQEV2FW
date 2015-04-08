@@ -24,8 +24,8 @@ SHT25 sht25;
 WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A1, A0);
 LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
-WildFire_CC3000_Client ethClient; // for MQTTbyte server[] = { 100, 1, 168, 192 };pubsub
-byte mqtt_server[] = { 0 };
+byte mqtt_server[] = { 0 };      
+PubSubClient mqtt_client;
 
 // the software's operating mode
 #define MODE_CONFIG      (1)
@@ -58,7 +58,9 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_MQTT_SERVER_NAME   (EEPROM_PRIVATE_KEY - 32)       // string, the DNS name of the MQTT server (default opensensors.io), up to 32 characters (one of which is a null terminator)
 #define EEPROM_MQTT_USERNAME      (EEPROM_MQTT_SERVER_NAME - 32)  // string, the user name for the MQTT server (default airqualityegg), up to 32 characters (one of which is a null terminator)
 #define EEPROM_MQTT_CLIENT_ID     (EEPROM_MQTT_USERNAME - 32)     // string, the client identifier for the MQTT server (default SHT25 identifier), between 1 and 23 characters long
-#define EEPROM_UPDATE_SERVER_NAME (EEPROM_MQTT_CLIENT_ID - 32)    // string, the DNS name of the Firmware Update server (default update.wickeddevice.com), up to 32 characters (one of which is a null terminator)
+#define EEPROM_MQTT_AUTH          (EEPROM_MQTT_CLIENT_ID - 1)     // MQTT authentication enabled, single byte value 0 = disabled or 1 = enabled
+#define EEPROM_MQTT_PORT          (EEPROM_MQTT_AUTH - 4)          // MQTT authentication enabled, reserve four bytes, even though you only need two for a port
+#define EEPROM_UPDATE_SERVER_NAME (EEPROM_MQTT_PORT - 32)         // string, the DNS name of the Firmware Update server (default update.wickeddevice.com), up to 32 characters (one of which is a null terminator)
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
@@ -86,7 +88,7 @@ uint8_t mode = MODE_OPERATIONAL;
 
 // backup status bits
 #define BACKUP_STATUS_MAC_ADDRESS_BIT       (7)
-#define BACKUP_STATUS_MQTT_PASSSWORD_BIT (6)
+#define BACKUP_STATUS_MQTT_PASSSWORD_BIT    (6)
 #define BACKUP_STATUS_NO2_CALIBRATION_BIT   (5)
 #define BACKUP_STATUS_CO_CALIBRATION_BIT    (4)
 #define BACKUP_STATUS_PRIVATE_KEY_BIT       (3)
@@ -110,8 +112,10 @@ void set_static_ip_address(char * arg);
 void use_command(char * arg);
 void set_mqtt_password(char * arg);
 void set_mqtt_server(char * arg);
+void set_mqtt_port(char * arg);
 void set_mqtt_username(char * arg);
 void set_mqtt_client_id(char * arg);
+void set_mqtt_authentication(char * arg);
 void backup(char * arg);
 void set_no2_slope(char * arg);
 void set_no2_offset(char * arg);
@@ -150,10 +154,12 @@ char * commands[] = {
   "security  ",
   "staticip  ",
   "use       ",
-  "mqttpwd   ",
   "mqttsrv   ",
+  "mqttport  ",
   "mqttuser  ",
+  "mqttpwd   ",  
   "mqttid    ",
+  "mqttauth  ",
   "updatesrv ",
   "backup    ",
   "no2_cal   ",
@@ -177,10 +183,12 @@ void (*command_functions[])(char * arg) = {
   set_network_security_mode,
   set_static_ip_address,
   use_command,
-  set_mqtt_password,
   set_mqtt_server,
+  set_mqtt_port,  
   set_mqtt_username,
+  set_mqtt_password,  
   set_mqtt_client_id,
+  set_mqtt_authentication,
   set_update_server_name,
   backup,
   set_no2_sensitivity,
@@ -196,6 +204,11 @@ void (*command_functions[])(char * arg) = {
 // tiny watchdog timer intervals
 unsigned long previous_tinywdt_millis = 0;
 const long tinywdt_interval = 1000;
+
+// mqtt publish timer intervals
+unsigned long previous_mqtt_publish_millis = 0;
+const long mqtt_publish_interval = 5000;
+
 
 #define NUM_HEARTBEAT_WAVEFORM_SAMPLES (84)
 const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
@@ -332,20 +345,34 @@ void setup() {
     tinywdt.force_reset();
   }
   
-  // If connected, Check for Firmware Updates
+  // Check for Firmware Updates
   
-  // If connected, Get Network Time
-  
+  // Get Network Time
+   
+  // Connect to MQTT server
+  if(!mqttReconnect()){
+    Serial.print(F("Error: Unable to connect to MQTT server"));
+    Serial.flush();
+    tinywdt.force_reset();    
+  }  
 }
 
 void loop() {
   unsigned long current_millis = millis();
-
+  if(mqttReconnect()){
+    if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){
+      
+      Serial.println(F("Info: MQTT message published."));
+      previous_mqtt_publish_millis = current_millis;       
+    }
+  }
+  
 
   // pet the watchdog
   if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
-    tinywdt.pet();
     previous_tinywdt_millis = current_millis;
+    Serial.println(F("Info: Watchdog Pet."));
+    tinywdt.pet();
   }
 }
 
@@ -656,6 +683,21 @@ void lowercase(char * str) {
   }
 }
 
+void note_know_what_youre_doing(){
+  Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
+  Serial.println(F("            probably not be using this command."));  
+}
+
+void warn_could_break_upload(){
+  Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
+  Serial.println(F("            from publishing data to the internet."));  
+}
+
+void warn_could_break_connect(){
+  Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
+  Serial.println(F("            from connecting to your network."));  
+}
+
 void help_menu(char * arg) {
   const uint8_t commands_per_line = 3;
   const uint8_t first_dynamic_command_index = 2;
@@ -699,10 +741,12 @@ void help_menu(char * arg) {
       Serial.println(F("      pwd - lol, sorry, that's not happening!"));
       Serial.println(F("      security - the Wi-Fi security mode"));
       Serial.println(F("      ipmode - the Wi-Fi IP-address mode"));
-      Serial.println(F("      mqttpwd - lol, sorry, that's not happening either!"));
       Serial.println(F("      mqttsrv - MQTT server name"));
+      Serial.println(F("      mqttport - MQTT server port"));           
       Serial.println(F("      mqttuser - MQTT username"));
+      Serial.println(F("      mqttpwd - lol, sorry, that's not happening either!"));      
       Serial.println(F("      mqttid - MQTT client ID"));      
+      Serial.println(F("      mqttauth - MQTT authentication enabled?"));      
       Serial.println(F("      updatesrv - Update server name"));      
       Serial.println(F("      no2_cal - NO2 sensitivity [nA/ppm]"));
       Serial.println(F("      no2_slope - NO2 sensors slope [ppb/V]"));
@@ -726,10 +770,12 @@ void help_menu(char * arg) {
       Serial.println(F("      defaults - performs 'method direct'"));
       Serial.println(F("                 performs 'security wpa2'"));
       Serial.println(F("                 performs 'use dhcp'"));
+      Serial.println(F("                 performs 'mqttsrv opensensors.io'"));
+      Serial.println(F("                 performs 'mqttport 1883'"));           
+      Serial.println(F("                 performs 'mqttauth enable'"));        
+      Serial.println(F("                 performs 'mqttuser airqualityegg'"));  
       Serial.println(F("                 performs 'restore mac'"));
       Serial.println(F("                 performs 'restore mqttpwd'"));
-      Serial.println(F("                 performs 'restore mqttsrv'"));
-      Serial.println(F("                 performs 'restore mqttuser'"));
       Serial.println(F("                 performs 'restore mqttid'"));      
       Serial.println(F("                 performs 'restore updatesrv'"));      
       Serial.println(F("                 performs 'restore key'"));
@@ -740,8 +786,6 @@ void help_menu(char * arg) {
       Serial.println(F("      mac      - retrieves the mac address from BACKUP"));
       Serial.println(F("                 and assigns it to the CC3000, via a 'mac' command"));
       Serial.println(F("      mqttpwd  - restores the MQTT password from BACKUP "));
-      Serial.println(F("      mqttsrv  - restores the MQTT server name"));
-      Serial.println(F("      mqttuser - restores the MQTT username"));      
       Serial.println(F("      mqttid   - restores the MQTT client ID"));    
       Serial.println(F("      updatesrv- restores the Update server name"));          
       Serial.println(F("      key      - restores the Private Key from BACKUP "));
@@ -754,8 +798,7 @@ void help_menu(char * arg) {
       Serial.println(F("                08:ab:73:DA:8f:00"));
       Serial.println(F("   result:  The entered MAC address is assigned to the CC3000"));
       Serial.println(F("            and is stored in the EEPROM."));
-      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
-      Serial.println(F("            from connecting to your network."));
+      warn_could_break_connect();
     }
     else if (strncmp("method", arg, 6) == 0) {
       Serial.println(F("method <type>"));
@@ -763,15 +806,18 @@ void help_menu(char * arg) {
       Serial.println(F("      direct - use parameters entered in CONFIG mode"));
       Serial.println(F("      smartconfig - use smart config process [not yet supported]"));
       Serial.println(F("      pfod - use pfodWifiConnect config process  [not yet supported]"));
+      warn_could_break_connect();      
     }
     else if (strncmp("ssid", arg, 4) == 0) {
       Serial.println(F("ssid <string>"));
       Serial.println(F("   <string> is the SSID of the network the device should connect to."));
+      warn_could_break_connect();      
     }
     else if (strncmp("pwd", arg, 3) == 0) {
       Serial.println(F("pwd <string>"));
       Serial.println(F("   <string> is the network password for "));
       Serial.println(F("      the SSID that the device should connect to."));
+      warn_could_break_connect();      
     }
     else if (strncmp("security", arg, 8) == 0) {
       Serial.println(F("security <mode>"));
@@ -780,6 +826,7 @@ void help_menu(char * arg) {
       Serial.println(F("      wep  - the network WEP security"));
       Serial.println(F("      wpa  - the network WPA Personal security"));
       Serial.println(F("      wpa2 - the network WPA2 Personal security"));
+      warn_could_break_connect();      
     }
     else if (strncmp("staticip", arg, 8) == 0) {
       Serial.println(F("staticip <config>"));
@@ -790,47 +837,53 @@ void help_menu(char * arg) {
       Serial.println(F("      <param4> dns server ip address, e.g. 8.8.8.8"));      
       Serial.println(F("   result: The entered static network parameters will be used by the CC3000"));
       Serial.println(F("   note:   To configure DHCP use command 'use dhcp'"));
+      warn_could_break_connect();      
     }
     else if (strncmp("use", arg, 3) == 0) {
       Serial.println(F("use <param>"));
       Serial.println(F("   <param> is one of:"));
       Serial.println(F("      dhcp - wipes the Static IP address from the EEPROM"));
+      warn_could_break_connect();      
     }
     else if (strncmp("mqttpwd", arg, 7) == 0) {
       Serial.println(F("mqttpwd <string>"));
       Serial.println(F("   <string> is the password the device will use to connect "));
       Serial.println(F("      to the MQTT server."));
-      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
-      Serial.println(F("            probably not be using this command."));
-      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
-      Serial.println(F("            from publishing data to the internet."));
+      note_know_what_youre_doing();
+      warn_could_break_upload();      
     }
     else if (strncmp("mqttsrv", arg, 7) == 0) {
       Serial.println(F("mqttsrv <string>"));
       Serial.println(F("   <string> is the DNS name of the MQTT server."));
-      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
-      Serial.println(F("            probably not be using this command."));
-      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
-      Serial.println(F("            from publishing data to the internet."));
+      note_know_what_youre_doing();
+      warn_could_break_upload();  
     }
     else if (strncmp("mqttuser", arg, 8) == 0) {
       Serial.println(F("mqttuser <string>"));
       Serial.println(F("   <string> is the username used to connect to the MQTT server."));
-      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
-      Serial.println(F("            probably not be using this command."));
-      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
-      Serial.println(F("            from publishing data to the internet."));
+      note_know_what_youre_doing();
+      warn_could_break_upload();  
     }
     else if (strncmp("mqttid", arg, 6) == 0) {
       Serial.println(F("mqttid <string>"));
       Serial.println(F("   <string> is the Client ID used to connect to the MQTT server."));
       Serial.println(F("            Must be between 1 and 23 characters long per MQTT v3.1 spec."));    
       // Ref: http://public.dhe.ibm.com/software/dw/webservices/ws-mqtt/mqtt-v3r1.html#connect  
-      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
-      Serial.println(F("            probably not be using this command."));
-      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
-      Serial.println(F("            from publishing data to the internet."));
+      note_know_what_youre_doing();
+      warn_could_break_upload();  
     }    
+    else if (strncmp("mqttauth", arg, 8) == 0) {
+      Serial.println(F("mqttauth <string>"));
+      Serial.println(F("   <string> is the one of 'enable' or 'disable'"));
+      note_know_what_youre_doing();
+      warn_could_break_upload();   
+    }        
+    else if (strncmp("mqttport", arg, 8) == 0) {
+      Serial.println(F("mqttport <number>"));
+      Serial.println(F("   <number> is the a number between 1 and 65535 inclusive"));
+      note_know_what_youre_doing();
+      warn_could_break_upload();  
+    }            
     else if (strncmp("updatesrv", arg, 9) == 0) {
       Serial.println(F("updatesrv <string>"));
       Serial.println(F("   <string> is the DNS name of the Update server."));
@@ -1088,6 +1141,18 @@ void print_eeprom_mqtt_username(){
   print_eeprom_string((const char *) EEPROM_MQTT_USERNAME);
 }
 
+void print_eeprom_mqtt_authentication(){
+  uint8_t auth = eeprom_read_byte((uint8_t *) EEPROM_MQTT_AUTH);
+  if(auth){
+    Serial.println(F("    MQTT Authentication: Enabled"));    
+    Serial.print(F("    MQTT Username: "));
+    print_eeprom_mqtt_username();              
+  }
+  else{
+    Serial.println(F("    MQTT Authentication: Disabled"));
+  }
+}
+
 void print_eeprom_value(char * arg) {
   if (strncmp(arg, "mac", 3) == 0) {
     print_eeprom_mac();
@@ -1122,6 +1187,21 @@ void print_eeprom_value(char * arg) {
   else if (strncmp(arg, "co_off", 6) == 0) {
     print_eeprom_float((const float *) EEPROM_CO_CAL_OFFSET);
   }
+  else if(strncmp(arg, "mqttsrv", 7) == 0) {
+    print_eeprom_string((const char *) EEPROM_MQTT_SERVER_NAME);    
+  }
+  else if(strncmp(arg, "mqttport", 8) == 0) {
+    Serial.println(eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT));      
+  }  
+  else if(strncmp(arg, "mqttuser", 8) == 0) {
+    print_eeprom_string((const char *) EEPROM_MQTT_USERNAME);    
+  }  
+  else if(strncmp(arg, "mqttid", 6) == 0) {
+    print_eeprom_string((const char *) EEPROM_MQTT_CLIENT_ID);    
+  }
+  else if(strncmp(arg, "mqttauth", 8) == 0) {
+    Serial.println(eeprom_read_byte((const uint8_t *) EEPROM_MQTT_AUTH));    
+  }
   else if (strncmp(arg, "settings", 8) == 0) {
     char allff[64] = {0};
     memset(allff, 0xff, 64);
@@ -1145,10 +1225,11 @@ void print_eeprom_value(char * arg) {
     Serial.println(F(" +-------------------------------------------------------------+"));    
     Serial.print(F("    MQTT Server: "));
     print_eeprom_mqtt_server();   
+    Serial.print(F("    MQTT Port: "));
+    Serial.println(eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT)); 
     Serial.print(F("    MQTT Client ID: "));
     print_eeprom_mqtt_client_id();       
-    Serial.print(F("    MQTT Username: "));
-    print_eeprom_mqtt_username();           
+    print_eeprom_mqtt_authentication(); 
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | Credentials:                                                |"));
     Serial.println(F(" +-------------------------------------------------------------+"));
@@ -1225,9 +1306,11 @@ void restore(char * arg) {
     configInject("method direct\r");
     configInject("security wpa2\r");
     configInject("use dhcp\r");
+    configInject("mqttsrv opensensors.io\r");
+    configInject("mqttport 1883\r");        
+    configInject("mqttauth enable\r");    
+    configInject("mqttuser airqualityegg\r");
     configInject("restore mqttpwd\r");
-    configInject("restore mqttsrv\r");
-    configInject("restore mqttuser\r");
     configInject("restore mqttid\r");
     configInject("restore updatesrv\r");
     configInject("restore key\r");
@@ -1271,18 +1354,12 @@ void restore(char * arg) {
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_MQTT_PASSWORD, 32);
     eeprom_write_block(tmp, (void *) EEPROM_MQTT_PASSWORD, 32);
   }
-  else if (strncmp("mqttsrv", arg, 7) == 0) {
-    eeprom_write_block("opensensors.io", (void *) EEPROM_MQTT_SERVER_NAME, 32);
-  }  
-  else if (strncmp("mqttuser", arg, 8) == 0) {
-    eeprom_write_block("airqualityegg", (void *) EEPROM_MQTT_USERNAME, 32);
-  }
   else if (strncmp("mqttid", arg, 6) == 0) {
     // get the 8-byte unique electronic ID from the SHT25 
     // convert it to a string, and store it to EEPROM
     uint8_t serial_number[8];
     sht25.getSerialNumber(serial_number);
-    sprintf((char *) tmp, "%02X%02X%02X%02X%02X%02X%02X%02X",
+    sprintf((char *) tmp, "egg%02X%02X%02X%02X%02X%02X%02X%02X",
       serial_number[0],
       serial_number[1],
       serial_number[2],
@@ -1654,11 +1731,17 @@ void set_mqtt_username(char * arg){
     Serial.println(F("Error: MQTT username must be less than 32 characters in length"));
   }    
 }
-
 void set_mqtt_client_id(char * arg){
   // we've reserved 32-bytes of EEPROM for an MQTT client ID
   // but in fact an MQTT client ID must be between 1 and 23 characters
-  char client_id[32] = {0};
+  // and must start with an letter
+  char client_id[32] = {0};  
+  
+  if(!isalpha(arg[0])){
+    Serial.println(F("Error: MQTT client ID must begin with a letter"));
+    return;
+  }
+  
   uint16_t len = strlen(arg);
   if ((len >= 1) && (len <= 23)) {
     strncpy(client_id, arg, len);
@@ -1667,6 +1750,50 @@ void set_mqtt_client_id(char * arg){
   }
   else {
     Serial.println(F("Error: MQTT client ID must be less between 1 and 23 characters in length"));
+  }
+}
+
+void set_mqtt_authentication(char * arg) {    
+  if (strncmp("enable", arg, 6) == 0) { 
+    eeprom_write_byte((uint8_t *) EEPROM_MQTT_AUTH, 1);
+    recomputeAndStoreConfigChecksum();
+  }
+  else if(strncmp("disable", arg, 7) == 0) { 
+    eeprom_write_byte((uint8_t *) EEPROM_MQTT_AUTH, 0);
+    recomputeAndStoreConfigChecksum();    
+  }
+  else {
+    Serial.print(F("Error: Invalid parameter provided to 'mqttauth' command - \""));
+    Serial.print(arg);
+    Serial.println("\", must be either \"enable\" or \"disable\"");
+    return;
+  }
+}
+
+void set_mqtt_port(char * arg) {      
+  uint16_t len = strlen(arg);
+  boolean valid = true;
+  
+  for(uint16_t ii = 0; ii < len; ii++){
+    if(!isdigit(arg[ii])){
+      valid = false;
+    } 
+  }
+  
+  uint32_t port = 0xFFFFFFFF;
+  if(valid){
+    port = (uint32_t) strtoul(arg, NULL, 10);
+  }
+  
+  if(valid && (port < 0x10000) && (port > 0)){
+    eeprom_write_dword((uint32_t *) EEPROM_MQTT_PORT, port);
+    recomputeAndStoreConfigChecksum();        
+  }
+  else {
+    Serial.print(F("Error: Invalid parameter provided to 'mqttport' command - \""));
+    Serial.print(arg);
+    Serial.println("\", must a number between 1 and 65535 inclusive");
+    return;
   }
 }
 
@@ -2018,4 +2145,97 @@ void acquireIpAddress(void){
 
 boolean connectedToNetwork(void){
   return (cc3000.getStatus() == STATUS_CONNECTED);
+}
+
+void cc3000IpToArray(uint32_t ip, uint8_t * ip_array){
+  for(uint8_t ii = 0; ii < 4; ii++){
+    ip_array[ii] = ip & 0xff;
+    ip >>= 8;
+  }
+}
+
+/****** MQTT SUPPORT FUNCTIONS ******/
+boolean mqttResolve(void){
+  uint32_t ip = 0;
+  static boolean resolved = false;
+  
+  char mqtt_server_name[32] = {0};
+  if(!resolved){
+    eeprom_read_block(mqtt_server_name, (const void *) EEPROM_MQTT_SERVER_NAME, 31);
+    if  (!cc3000.getHostByName(mqtt_server_name, &ip) || (ip == 0))  {
+      Serial.print(F("Error: Couldn't resolve '"));
+      Serial.print(mqtt_server_name);
+      Serial.println(F("'"));
+      return false;
+    }  
+    else{
+      resolved = true;
+      cc3000IpToArray(ip, mqtt_server);      
+      Serial.print(F("Info: Resolved \""));
+      Serial.print(mqtt_server_name);
+      Serial.print(F("\" to IP address "));
+      cc3000.printIPdotsRev(ip);
+      Serial.println();
+    }
+  }
+    
+  return true;
+}
+
+boolean mqttReconnect(void){
+   static boolean first_access = true;
+   static char mqtt_username[32] = {0};
+   static char mqtt_client_id[32] = {0};
+   static char mqtt_password[32] = {0};
+   static uint8_t mqtt_auth_enabled = 0;
+   static uint32_t mqtt_port = 0;
+   static WildFire_CC3000_Client wifiClient;
+   
+   boolean loop_return_flag = true;
+   
+   if(!mqttResolve()){
+     return false;
+   }
+     
+   if(first_access){    
+     first_access = false;
+     loop_return_flag = false;
+     eeprom_read_block(mqtt_username, (const void *) EEPROM_MQTT_USERNAME, 31);
+     eeprom_read_block(mqtt_client_id, (const void *) EEPROM_MQTT_CLIENT_ID, 31);
+     eeprom_read_block(mqtt_password, (const void *) EEPROM_MQTT_PASSWORD, 31);
+     mqtt_auth_enabled = eeprom_read_byte((const uint8_t *) EEPROM_MQTT_AUTH);
+     mqtt_port = eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT);
+
+     mqtt_client.setBrokerIP(mqtt_server);
+     mqtt_client.setPort(mqtt_port);     
+     mqtt_client.setClient(wifiClient);
+          
+   }
+   else{
+     loop_return_flag = mqtt_client.loop();
+   }           
+   
+   if(!loop_return_flag){
+     Serial.print(F("Info: Connecting to MQTT Broker with Client ID \""));
+     Serial.print(mqtt_client_id);
+     Serial.print(F("\" "));
+     boolean connect_status = false;
+     if(mqtt_auth_enabled){
+       Serial.print(F("using Authentication..."));
+       connect_status = mqtt_client.connect(mqtt_client_id, mqtt_username, mqtt_password);
+     }
+     else{
+       Serial.print(F("Without Authentication..."));
+       connect_status = mqtt_client.connect(mqtt_client_id);
+     }
+     
+     if (connect_status) {
+       Serial.println(F("OK."));
+       return true;
+     }
+     else{
+       Serial.println(F("Failed.")); 
+       return false;       
+     }    
+   }  
 }
