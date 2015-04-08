@@ -2243,17 +2243,22 @@ boolean mqttReconnect(void){
 }
 
 boolean mqqtPublish(char * topic, char *str){
+  boolean response_status = true;
   Serial.print(F("MQTT Publishing..."));
   if(mqtt_client.publish(topic, str)){
     Serial.println(F("OK."));
+    response_status = true;
   } 
   else {
     Serial.println(F("Failed."));
+    response_status = false;
   }
+  
+  return response_status;
 }
 
 
-void publishHeartbeat(){
+boolean publishHeartbeat(){
   char tmp[128] = { 0 };  
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
   sprintf(tmp, "{\"converted-value\" : %d, \"converted-units\": \"\"}", sample);  
@@ -2261,23 +2266,23 @@ void publishHeartbeat(){
      heartbeat_waveform_index = 0;
   }
   
-  mqqtPublish("/orgs/wd/aqe/heartbeat", tmp); 
+  return mqqtPublish("/orgs/wd/aqe/heartbeat", tmp); 
 }
 
-void publishTemperature(){
+boolean publishTemperature(){
   char tmp[128] = { 0 };  
   char value_string[16] = {0};
   float value = sht25.getTemperature();
   dtostrf(value, -6, 2, value_string);
   sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"degC\"}", value_string);    
-  mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
+  return mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
 }
 
-void publishHumidity(){
+boolean publishHumidity(){
   char tmp[128] = { 0 };  
   char value_string[16] = {0};  
   float value = sht25.getRelativeHumidity();  
   dtostrf(value, -6, 2, value_string);
   sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
-  mqqtPublish("/orgs/wd/aqe/humidity", tmp);   
+  return mqqtPublish("/orgs/wd/aqe/humidity", tmp);   
 }
