@@ -378,6 +378,13 @@ void loop() {
       publishTemperature();
       publishHumidity();
       
+      selectSlot2();
+      publishNO2();
+      
+      selectSlot1();
+      publishCO();
+            
+      selectNoSlot();
       previous_mqtt_publish_millis = current_millis;       
     }
   }
@@ -2185,6 +2192,8 @@ void cc3000IpToArray(uint32_t ip, uint8_t * ip_array){
 }
 
 /****** ADC SUPPORT FUNCTIONS ******/
+// returns the measured voltage in Volts
+// 62.5 microvolts resolution in 16-bit mode
 float burstSampleADC(void){
   #define NUM_SAMPLES_PER_BURST (16)
   MCP342x::Config status;
@@ -2195,7 +2204,7 @@ float burstSampleADC(void){
       MCP342x::resolution16, MCP342x::gain1, 75, value, status);          
     burst_sample_total += value;
   }
-  return (1.0f * burst_sample_total) / NUM_SAMPLES_PER_BURST;
+  return (62.5e-6f * burst_sample_total) / NUM_SAMPLES_PER_BURST;  
 }
 
 /****** MQTT SUPPORT FUNCTIONS ******/
@@ -2325,4 +2334,28 @@ boolean publishHumidity(){
   dtostrf(value, -6, 2, value_string);
   sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
   return mqqtPublish("/orgs/wd/aqe/humidity", tmp);   
+}
+
+boolean publishNO2(){
+  char tmp[128] = { 0 };  
+  char raw_value_string[16] = {0};  
+  char converted_value_string[16] = {0};
+  float raw_value = burstSampleADC();
+  float converted_value = 0.0f;
+  dtostrf(raw_value, -8, 5, raw_value_string);
+  dtostrf(converted_value, -8, 5, converted_value_string);
+  sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"percent\"}", raw_value_string, converted_value_string);  
+  return mqqtPublish("/orgs/wd/aqe/no2", tmp);   
+}
+
+boolean publishCO(){
+  char tmp[128] = { 0 };  
+  char raw_value_string[16] = {0};  
+  char converted_value_string[16] = {0};
+  float raw_value = burstSampleADC();
+  float converted_value = 0.0f;
+  dtostrf(raw_value, -8, 5, raw_value_string);
+  dtostrf(converted_value, -8, 5, converted_value_string);
+  sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"percent\"}", raw_value_string, converted_value_string);  
+  return mqqtPublish("/orgs/wd/aqe/co", tmp);   
 }
