@@ -13,13 +13,16 @@
 #include <PubSubClient.h>
 #include <util/crc16.h>
 
-#define AQEV2FW_VERSION "0.1"
+// semantic versioning - see http://semver.org/
+#define AQEV2FW_MAJOR_VERSION 0
+#define AQEV2FW_MINOR_VERSION 1
+#define AQEV2FW_PATCH_VERSION 0
 
 WildFire wf;
 WildFire_CC3000 cc3000;
 TinyWatchdog tinywdt;
 LMP91000 lmp91000;
-MCP342x mcp342x;
+MCP342x adc;
 SHT25 sht25;
 WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A1, A0);
@@ -28,6 +31,15 @@ byte mqtt_server[] = { 0 };
 PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
 WildFire_CC3000_Client wifiClient;
+char firmware_version[16] = {0};
+
+boolean init_sht25_ok = false;
+boolean init_co_afe_ok = false;
+boolean init_no2_afe_ok = false;
+boolean init_co_adc_ok = false;
+boolean init_no2_adc_ok = false;
+boolean init_spi_flash_ok = false;
+boolean init_cc3000_ok = false;
 
 // the software's operating mode
 #define MODE_CONFIG      (1)
@@ -347,9 +359,7 @@ void setup() {
     tinywdt.force_reset();
   }
   
-  // Check for Firmware Updates
-  
-  // Get Network Time
+  // Check for Firmware Updates 
    
   // Connect to MQTT server
   if(!mqttReconnect()){
@@ -381,13 +391,24 @@ void loop() {
 }
 
 /****** INITIALIZATION SUPPORT FUNCTIONS ******/
+void init_firmware_version(void){
+  sprintf(firmware_version, "%d.%d.%d", 
+    AQEV2FW_MAJOR_VERSION, 
+    AQEV2FW_MINOR_VERSION, 
+    AQEV2FW_PATCH_VERSION);
+}
+
 void initializeHardware(void) {
   wf.begin();
   Serial.begin(115200);
 
+  init_firmware_version();
+
   Serial.println(F(" +------------------------------------+"));
   Serial.println(F(" |   Welcome to Air Quality Egg 2.0   |"));
-  Serial.println(F(" |        Firmware Version " AQEV2FW_VERSION "        |"));
+  Serial.print(F(" |       Firmware Version "));
+  Serial.print(firmware_version);
+  Serial.println(F("       |"));
   Serial.println(F(" +------------------------------------+"));
   Serial.println();
 
@@ -405,34 +426,9 @@ void initializeHardware(void) {
   tinywdt.begin(500, 60000);
   Serial.println(F("OK."));
 
-  // Initialize the LCD
-  byte upArrow[8] = {
-    B00100,
-    B01110,
-    B11111,
-    B00100,
-    B00100,
-    B00100,
-    B00100,
-    B00100
-  };
-
-  byte downArrow[8] = {
-    B00100,
-    B00100,
-    B00100,
-    B00100,
-    B00100,
-    B11111,
-    B01110,
-    B00100
-  };
-
   pinMode(A6, OUTPUT);
   backlightOn();
 
-  lcd.createChar(0, upArrow);
-  lcd.createChar(1, downArrow);
   lcd.begin(16, 2);
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -444,22 +440,26 @@ void initializeHardware(void) {
   Serial.print(F("Info: SPI Flash Initialization..."));
   if (flash.initialize()) {
     Serial.println(F("OK."));
+    init_spi_flash_ok = true;
   }
   else {
     Serial.println(F("Fail."));
+    init_spi_flash_ok = false;
   }
 
   // Initialize SHT25
   Serial.print(F("Info: SHT25 Initization..."));
   if (sht25.begin()) {
     Serial.println(F("OK."));
+    init_sht25_ok = true;
   }
   else {
     Serial.println(F("Failed."));
+    init_sht25_ok = false;
   }
 
   // Initialize NO2 Sensor
-  Serial.print(F("Info: NO2 Sensor Initization..."));
+  Serial.print(F("Info: NO2 Sensor AFE Initization..."));
   selectSlot2();
   if (lmp91000.configure(
         LMP91000_TIA_GAIN_350K | LMP91000_RLOAD_10OHM,
@@ -467,12 +467,24 @@ void initializeHardware(void) {
         | LMP91000_BIAS_SIGN_NEG | LMP91000_BIAS_8PCT,
         LMP91000_FET_SHORT_DISABLED | LMP91000_OP_MODE_AMPEROMETRIC)) {
     Serial.println(F("OK."));
+    init_no2_afe_ok = true;
   }
   else {
     Serial.println(F("Failed."));
+    init_no2_afe_ok = false;
   }
 
-  Serial.print(F("Info: CO Sensor Initization..."));
+  Serial.print(F("Info: NO2 Sensor ADC Initization..."));
+  if(MCP342x::errorNone == adc.convert(MCP342x::channel1, MCP342x::oneShot, MCP342x::resolution16, MCP342x::gain1)){
+    Serial.println(F("OK."));
+    init_no2_adc_ok = true;    
+  }
+  else{
+    Serial.println(F("Failed."));
+    init_no2_adc_ok = false;    
+  }
+
+  Serial.print(F("Info: CO Sensor AFE Initization..."));
   selectSlot1();
   if (lmp91000.configure(
         LMP91000_TIA_GAIN_350K | LMP91000_RLOAD_10OHM,
@@ -480,9 +492,21 @@ void initializeHardware(void) {
         | LMP91000_BIAS_SIGN_POS | LMP91000_BIAS_1PCT,
         LMP91000_FET_SHORT_DISABLED | LMP91000_OP_MODE_AMPEROMETRIC)) {
     Serial.println(F("OK."));
+    init_co_afe_ok = true;
   }
   else {
     Serial.println(F("Failed."));
+    init_co_afe_ok = false;
+  }
+  
+  Serial.print(F("Info: CO Sensor ADC Initization..."));
+  if(MCP342x::errorNone == adc.convert(MCP342x::channel1, MCP342x::oneShot, MCP342x::resolution16, MCP342x::gain1)){
+    Serial.println(F("OK."));
+    init_co_adc_ok = true;    
+  }
+  else{
+    Serial.println(F("Failed."));
+    init_co_adc_ok = false;    
   }
 
   selectNoSlot();
@@ -490,9 +514,11 @@ void initializeHardware(void) {
   Serial.print(F("Info: CC3000 Initialization..."));
   if (cc3000.begin()) {
     Serial.println(F("OK."));
+    init_cc3000_ok = true;
   }
   else {
     Serial.println(F("Failed."));
+    init_cc3000_ok = false;
   }
 }
 
@@ -2158,6 +2184,20 @@ void cc3000IpToArray(uint32_t ip, uint8_t * ip_array){
   }
 }
 
+/****** ADC SUPPORT FUNCTIONS ******/
+float burstSampleADC(void){
+  #define NUM_SAMPLES_PER_BURST (16)
+  MCP342x::Config status;
+  int32_t burst_sample_total = 0;
+  int32_t value = 0;
+  for(uint8_t ii = 0; ii < NUM_SAMPLES_PER_BURST; ii++){
+    adc.convertAndRead(MCP342x::channel1, MCP342x::oneShot, 
+      MCP342x::resolution16, MCP342x::gain1, 75, value, status);          
+    burst_sample_total += value;
+  }
+  return (1.0f * burst_sample_total) / NUM_SAMPLES_PER_BURST;
+}
+
 /****** MQTT SUPPORT FUNCTIONS ******/
 boolean mqttResolve(void){
   uint32_t ip = 0;
@@ -2261,7 +2301,7 @@ boolean mqqtPublish(char * topic, char *str){
 boolean publishHeartbeat(){
   char tmp[128] = { 0 };  
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
-  sprintf(tmp, "{\"converted-value\" : %d, \"converted-units\": \"\"}", sample);  
+  sprintf(tmp, "{\"converted-value\" : %d, \"firmware-version\": \"%s\"}", sample, firmware_version);  
   if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
      heartbeat_waveform_index = 0;
   }
