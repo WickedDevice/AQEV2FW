@@ -364,12 +364,13 @@ void loop() {
   char tmp[128] = { 0 };
   if(mqttReconnect()){
     if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){      
-      uint8_t sample = heartbeat_waveform[heartbeat_waveform_index++];
+      uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
+      sprintf(tmp, "{\"converted-value\" : %d, \"converted-units\": \"\"}", sample);
+      
       if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
          heartbeat_waveform_index = 0;
       }
       
-      sprintf(tmp, "{\"converted-value\" : %d, \"converted-units\": \"\"}", sample);
       mqqtPublish("/orgs/wd/aqe/heartbeat", tmp);
       
       previous_mqtt_publish_millis = current_millis;       
