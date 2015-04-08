@@ -24,8 +24,10 @@ SHT25 sht25;
 WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A1, A0);
 LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
-byte mqtt_server[] = { 0 };      
+byte mqtt_server[] = { 0 };    
 PubSubClient mqtt_client;
+char mqtt_client_id[32] = {0};
+WildFire_CC3000_Client wifiClient;
 
 // the software's operating mode
 #define MODE_CONFIG      (1)
@@ -359,15 +361,21 @@ void setup() {
 
 void loop() {
   unsigned long current_millis = millis();
+  char tmp[128] = { 0 };
   if(mqttReconnect()){
-    if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){
+    if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){      
+      uint8_t sample = heartbeat_waveform[heartbeat_waveform_index++];
+      if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
+         heartbeat_waveform_index = 0;
+      }
       
-      Serial.println(F("Info: MQTT message published."));
+      sprintf(tmp, "{\"converted-value\" : %d, \"converted-units\": \"\"}", sample);
+      mqqtPublish("/orgs/wd/aqe/heartbeat", tmp);
+      
       previous_mqtt_publish_millis = current_millis;       
     }
   }
   
-
   // pet the watchdog
   if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
     previous_tinywdt_millis = current_millis;
@@ -2185,11 +2193,9 @@ boolean mqttResolve(void){
 boolean mqttReconnect(void){
    static boolean first_access = true;
    static char mqtt_username[32] = {0};
-   static char mqtt_client_id[32] = {0};
    static char mqtt_password[32] = {0};
    static uint8_t mqtt_auth_enabled = 0;
    static uint32_t mqtt_port = 0;
-   static WildFire_CC3000_Client wifiClient;
    
    boolean loop_return_flag = true;
    
@@ -2207,7 +2213,7 @@ boolean mqttReconnect(void){
      mqtt_port = eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT);
 
      mqtt_client.setBrokerIP(mqtt_server);
-     mqtt_client.setPort(mqtt_port);     
+     mqtt_client.setPort(mqtt_port);
      mqtt_client.setClient(wifiClient);
           
    }
@@ -2238,4 +2244,14 @@ boolean mqttReconnect(void){
        return false;       
      }    
    }  
+}
+
+boolean mqqtPublish(char * topic, char *str){
+  Serial.print(F("MQTT Publishing..."));
+  if(mqtt_client.publish(topic, str)){
+    Serial.println(F("OK."));
+  } 
+  else {
+    Serial.println(F("Failed."));
+  }
 }
