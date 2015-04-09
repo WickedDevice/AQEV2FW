@@ -35,6 +35,10 @@ char firmware_version[16] = {0};
 float temperature_degc = 0.0f;
 float relative_humidity_percent = 0.0f;
 
+#define GAS_SENSOR_SAMPLE_BUFFER_DEPTH (16)
+float no2_sample_buffer[GAS_SENSOR_SAMPLE_BUFFER_DEPTH] = {0};
+float co_sample_buffer[GAS_SENSOR_SAMPLE_BUFFER_DEPTH] = {0};
+
 boolean init_sht25_ok = false;
 boolean init_co_afe_ok = false;
 boolean init_no2_afe_ok = false;
@@ -82,11 +86,11 @@ uint8_t mode = MODE_OPERATIONAL;
 //   * ... and make sure the addresses don't collide and start overlapping!
 //   T Add values down here by adding offsets to previously added values
 //  \/
-#define EEPROM_BACKUP_PRIVATE_KEY (EEPROM_CO_CAL_OFFSET + 4)
-#define EEPROM_BACKUP_CO_CAL_OFFSET (EEPROM_CO_CAL_SLOPE + 4)
+#define EEPROM_BACKUP_PRIVATE_KEY (EEPROM_BACKUP_CO_CAL_OFFSET + 4)
+#define EEPROM_BACKUP_CO_CAL_OFFSET (EEPROM_BACKUP_CO_CAL_SLOPE + 4)
 #define EEPROM_BACKUP_CO_CAL_SLOPE (EEPROM_BACKUP_CO_SENSITIVITY + 4)
-#define EEPROM_BACKUP_CO_SENSITIVITY (EEPROM_NO2_CAL_OFFSET + 4)
-#define EEPROM_BACKUP_NO2_CAL_OFFSET (EEPROM_NO2_CAL_SLOPE + 4)
+#define EEPROM_BACKUP_CO_SENSITIVITY (EEPROM_BACKUP_NO2_CAL_OFFSET + 4)
+#define EEPROM_BACKUP_NO2_CAL_OFFSET (EEPROM_BACKUP_NO2_CAL_SLOPE + 4)
 #define EEPROM_BACKUP_NO2_CAL_SLOPE (EEPROM_BACKUP_NO2_SENSITIVITY + 4)
 #define EEPROM_BACKUP_NO2_SENSITIVITY (EEPROM_BACKUP_MQTT_PASSWORD + 32)
 #define EEPROM_BACKUP_MQTT_PASSWORD (EEPROM_BACKUP_MAC_ADDRESS + 6)
@@ -224,7 +228,6 @@ const long tinywdt_interval = 1000;
 // mqtt publish timer intervals
 unsigned long previous_mqtt_publish_millis = 0;
 const long mqtt_publish_interval = 5000;
-
 
 #define NUM_HEARTBEAT_WAVEFORM_SAMPLES (84)
 const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
@@ -376,6 +379,9 @@ void loop() {
   static uint8_t num_mqtt_connect_retries = 0;
   static uint8_t num_mqtt_intervals_without_wifi = 0;
   
+  boolean no2_ready = collectNO2();
+  boolean co_ready = collectCO();
+  
   if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){   
     previous_mqtt_publish_millis = current_millis;      
     
@@ -399,21 +405,18 @@ void loop() {
           }
         }
         
-        if(init_no2_afe_ok && init_no2_adc_ok){
-          selectSlot2();
+        if(no2_ready){
           if(!publishNO2()){
             Serial.println(F("Error: Failed to publish NO2."));          
           }
         }
         
-        if(init_co_afe_ok && init_co_adc_ok){
-          selectSlot1();
+        if(co_ready){
           if(!publishCO()){
             Serial.println(F("Error: Failed to publish CO."));         
           }
         }
-              
-        selectNoSlot();     
+    
       }
       else{
         // not connected to MQTT server
@@ -2411,6 +2414,50 @@ boolean publishHumidity(){
   return false;
 }
 
+boolean collectNO2(void ){
+  static boolean buffer_filled = false;
+  static uint8_t sample_write_index = 0;
+  float raw_value = 0.0f;
+  
+  if(init_no2_afe_ok && init_no2_adc_ok){
+    selectSlot2();  
+    if(burstSampleADC(&raw_value)){      
+      no2_sample_buffer[sample_write_index++] = raw_value;
+      
+      if(sample_write_index == GAS_SENSOR_SAMPLE_BUFFER_DEPTH){
+        sample_write_index = 0; 
+        buffer_filled = true;
+      }
+    }
+  }
+    
+  selectNoSlot(); 
+    
+  return buffer_filled;  
+}
+
+boolean collectCO(void ){
+  static boolean buffer_filled = false;
+  static uint8_t sample_write_index = 0;
+  float raw_value = 0.0f;
+  
+  if(init_co_afe_ok && init_co_adc_ok){
+    selectSlot1();  
+    if(burstSampleADC(&raw_value)){   
+      co_sample_buffer[sample_write_index++] = raw_value;
+      
+      if(sample_write_index == GAS_SENSOR_SAMPLE_BUFFER_DEPTH){
+        sample_write_index = 0; 
+        buffer_filled = true;
+      }      
+    }
+  }
+    
+  selectNoSlot(); 
+    
+  return buffer_filled;  
+}
+
 void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float * temperature_compensated_value){
   static boolean first_access = true;
   static float no2_zero_volts = 0.0f;
@@ -2448,30 +2495,35 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
   }
 }
 
+float calculateAverage(float * buf, uint8_t num_samples){
+  float average = 0.0f;
+  for(uint8_t ii = 0; ii < num_samples; ii++){
+    average += buf[ii];
+  } 
+  
+  return average / num_samples;
+}
+
 boolean publishNO2(){
   char tmp[128] = { 0 };  
   char raw_value_string[16] = {0};  
   char converted_value_string[16] = {0};
   char compensated_value_string[16] = {0};
-  float raw_value = 0.0f;
-  if(burstSampleADC(&raw_value)){
-    float converted_value = 0.0f, compensated_value = 0.0f;    
-    no2_convert_from_volts_to_ppb(raw_value, &converted_value, &compensated_value);
-    dtostrf(raw_value, -8, 5, raw_value_string);
-    dtostrf(converted_value, -4, 2, converted_value_string);
-    dtostrf(compensated_value, -4, 2, compensated_value_string);    
-    sprintf(tmp, "{\"raw-value\" : %s, "
-      "\"raw-units\": \"volt\", "
-      "\"converted-value\" : %s, "
-      "\"converted-units\": \"ppb\", "
-      "\"compensated-value\": %s}", 
-      raw_value_string, 
-      converted_value_string, 
-      compensated_value_string);  
-    return mqqtPublish("/orgs/wd/aqe/no2", tmp);   
-  }
-  
-  return false;
+  float converted_value = 0.0f, compensated_value = 0.0f;    
+  float no2_moving_average = calculateAverage(no2_sample_buffer, GAS_SENSOR_SAMPLE_BUFFER_DEPTH);
+  no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
+  dtostrf(no2_moving_average, -8, 5, raw_value_string);
+  dtostrf(converted_value, -4, 2, converted_value_string);
+  dtostrf(compensated_value, -4, 2, compensated_value_string);    
+  sprintf(tmp, "{\"raw-value\" : %s, "
+    "\"raw-units\": \"volt\", "
+    "\"converted-value\" : %s, "
+    "\"converted-units\": \"ppb\", "
+    "\"compensated-value\": %s}", 
+    raw_value_string, 
+    converted_value_string, 
+    compensated_value_string);  
+  return mqqtPublish("/orgs/wd/aqe/no2", tmp);     
 }
 
 void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * temperature_compensated_value){
@@ -2517,23 +2569,19 @@ boolean publishCO(){
   char raw_value_string[16] = {0};  
   char converted_value_string[16] = {0};
   char compensated_value_string[16] = {0};
-  float raw_value = 0.0f;
-  if(burstSampleADC(&raw_value)){
-    float converted_value = 0.0f, compensated_value = 0.0f;    
-    co_convert_from_volts_to_ppm(raw_value, &converted_value, &compensated_value);
-    dtostrf(raw_value, -8, 5, raw_value_string);
-    dtostrf(converted_value, -4, 2, converted_value_string);
-    dtostrf(compensated_value, -4, 2, compensated_value_string);    
-    sprintf(tmp, "{\"raw-value\" : %s, "
-      "\"raw-units\": \"volt\", "
-      "\"converted-value\" : %s, "
-      "\"converted-units\": \"ppm\", "
-      "\"compensated-value\": %s}", 
-      raw_value_string, 
-      converted_value_string, 
-      compensated_value_string);  
-    return mqqtPublish("/orgs/wd/aqe/co", tmp);   
-  }
-  
-  return false;
+  float converted_value = 0.0f, compensated_value = 0.0f;   
+  float co_moving_average = calculateAverage(co_sample_buffer, GAS_SENSOR_SAMPLE_BUFFER_DEPTH);
+  co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
+  dtostrf(co_moving_average, -8, 5, raw_value_string);
+  dtostrf(converted_value, -4, 2, converted_value_string);
+  dtostrf(compensated_value, -4, 2, compensated_value_string);    
+  sprintf(tmp, "{\"raw-value\" : %s, "
+    "\"raw-units\": \"volt\", "
+    "\"converted-value\" : %s, "
+    "\"converted-units\": \"ppm\", "
+    "\"compensated-value\": %s}", 
+    raw_value_string, 
+    converted_value_string, 
+    compensated_value_string);  
+  return mqqtPublish("/orgs/wd/aqe/co", tmp);   
 }
