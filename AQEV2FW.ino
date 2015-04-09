@@ -374,7 +374,9 @@ void loop() {
   static uint8_t num_mqtt_connect_retries = 0;
   static uint8_t num_mqtt_intervals_without_wifi = 0;
   
-  if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){      
+  if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){   
+    previous_mqtt_publish_millis = current_millis;      
+    
     if(connectedToNetwork()){
       num_mqtt_intervals_without_wifi = 0;
       
@@ -403,8 +405,7 @@ void loop() {
           Serial.println(F("Error: Failed to publish CO."));         
         }
               
-        selectNoSlot();
-        previous_mqtt_publish_millis = current_millis;       
+        selectNoSlot();     
       }
       else{
         // not connected to MQTT server
@@ -2400,32 +2401,60 @@ boolean publishHumidity(){
   return false;
 }
 
+float no2_convert_from_volts_to_ppb(float volts){
+  return 0.0;
+}
+
 boolean publishNO2(){
   char tmp[128] = { 0 };  
   char raw_value_string[16] = {0};  
   char converted_value_string[16] = {0};
+  char compensated_value_string[16] = {0};
   float raw_value = 0.0;
   if(burstSampleADC(&raw_value)){
-    float converted_value = 0.0f;
+    float converted_value = no2_convert_from_volts_to_ppb(raw_value);
+    float compensated_value = 0.0f;
     dtostrf(raw_value, -8, 5, raw_value_string);
     dtostrf(converted_value, -8, 5, converted_value_string);
-    sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"ppb\"}", raw_value_string, converted_value_string);  
+    dtostrf(compensated_value, -8, 5, compensated_value_string);    
+    sprintf(tmp, "{\"raw-value\" : %s, "
+      "\"raw-units\": \"volt\", "
+      "\"converted-value\" : %s, "
+      "\"converted-units\": \"ppb\", "
+      "\"compensated-value\": %s}", 
+      raw_value_string, 
+      converted_value_string, 
+      compensated_value_string);  
     return mqqtPublish("/orgs/wd/aqe/no2", tmp);   
   }
   
   return false;
 }
 
+float co_convert_from_volts_to_ppm(float volts){
+  return 0.0;
+}
+
 boolean publishCO(){
   char tmp[128] = { 0 };  
   char raw_value_string[16] = {0};  
   char converted_value_string[16] = {0};
+  char compensated_value_string[16] = {0};
   float raw_value = 0.0;
   if(burstSampleADC(&raw_value)){
-    float converted_value = 0.0f;
+    float converted_value = co_convert_from_volts_to_ppm(raw_value);
+    float compensated_value = 0.0f;
     dtostrf(raw_value, -8, 5, raw_value_string);
     dtostrf(converted_value, -8, 5, converted_value_string);
-    sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"ppm\"}", raw_value_string, converted_value_string);  
+    dtostrf(compensated_value, -8, 5, compensated_value_string);    
+    sprintf(tmp, "{\"raw-value\" : %s, "
+      "\"raw-units\": \"volt\", "
+      "\"converted-value\" : %s, "
+      "\"converted-units\": \"ppm\", "
+      "\"compensated-value\": %s}", 
+      raw_value_string, 
+      converted_value_string, 
+      compensated_value_string);  
     return mqqtPublish("/orgs/wd/aqe/co", tmp);   
   }
   
