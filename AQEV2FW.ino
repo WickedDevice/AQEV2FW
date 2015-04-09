@@ -381,15 +381,27 @@ void loop() {
       if(mqttReconnect()){ 
         //connected to MQTT server and connected to Wi-Fi network        
         num_mqtt_connect_retries = 0;   
-        publishHeartbeat();
-        publishTemperature();
-        publishHumidity();
+        if(!publishHeartbeat()){
+          Serial.println(F("Error: Failed to publish Heartbeat."));  
+        }
+        
+        if(!publishTemperature()){          
+          Serial.println(F("Error: Failed to publish Temperature."));          
+        }
+        
+        if(!publishHumidity()){
+          Serial.println(F("Error: Failed to publish Humidity."));         
+        }
         
         selectSlot2();
-        publishNO2();
+        if(!publishNO2()){
+          Serial.println(F("Error: Failed to publish NO2."));          
+        }
         
         selectSlot1();
-        publishCO();
+        if(!publishCO()){
+          Serial.println(F("Error: Failed to publish CO."));         
+        }
               
         selectNoSlot();
         previous_mqtt_publish_millis = current_millis;       
@@ -2222,17 +2234,32 @@ void cc3000IpToArray(uint32_t ip, uint8_t * ip_array){
 /****** ADC SUPPORT FUNCTIONS ******/
 // returns the measured voltage in Volts
 // 62.5 microvolts resolution in 16-bit mode
-float burstSampleADC(void){
+boolean burstSampleADC(float * result){
   #define NUM_SAMPLES_PER_BURST (16)
   MCP342x::Config status;
   int32_t burst_sample_total = 0;
+  uint8_t num_samples = 0;
   int32_t value = 0;
-  for(uint8_t ii = 0; ii < NUM_SAMPLES_PER_BURST; ii++){
-    adc.convertAndRead(MCP342x::channel1, MCP342x::oneShot, 
-      MCP342x::resolution16, MCP342x::gain1, 75, value, status);          
-    burst_sample_total += value;
+  for(uint8_t ii = 0; ii < NUM_SAMPLES_PER_BURST; ii++){    
+    uint8_t err = adc.convertAndRead(MCP342x::channel1, MCP342x::oneShot, 
+      MCP342x::resolution16, MCP342x::gain1, 75000, value, status);          
+    if(err == 0){
+      burst_sample_total += value;
+      num_samples++;
+    }
+    else{  
+      Serial.print(F("Error: ADC Read Error ["));    
+      Serial.print((uint32_t) err, HEX); 
+      Serial.println(F("]"));
+    }
   }
-  return (62.5e-6f * burst_sample_total) / NUM_SAMPLES_PER_BURST;  
+  
+  if(num_samples > 0){
+    *result = (62.5e-6f * burst_sample_total) / num_samples;  
+    return true;
+  }
+
+  return false;
 }
 
 /****** MQTT SUPPORT FUNCTIONS ******/
@@ -2350,41 +2377,57 @@ boolean publishHeartbeat(){
 boolean publishTemperature(){
   char tmp[128] = { 0 };  
   char value_string[16] = {0};
-  float value = sht25.getTemperature();
-  dtostrf(value, -6, 2, value_string);
-  sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"degC\"}", value_string);    
-  return mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
+  float value = 0.0;
+  if(sht25.getTemperature(&value)){
+    dtostrf(value, -6, 2, value_string);
+    sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"degC\"}", value_string);    
+    return mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
+  }
+  
+  return false;
 }
 
 boolean publishHumidity(){
   char tmp[128] = { 0 };  
   char value_string[16] = {0};  
-  float value = sht25.getRelativeHumidity();  
-  dtostrf(value, -6, 2, value_string);
-  sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
-  return mqqtPublish("/orgs/wd/aqe/humidity", tmp);   
+  float value = 0.0;
+  if(sht25.getRelativeHumidity(&value)){
+    dtostrf(value, -6, 2, value_string);
+    sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
+    return mqqtPublish("/orgs/wd/aqe/humidity", tmp); 
+  }
+  
+  return false;
 }
 
 boolean publishNO2(){
   char tmp[128] = { 0 };  
   char raw_value_string[16] = {0};  
   char converted_value_string[16] = {0};
-  float raw_value = burstSampleADC();
-  float converted_value = 0.0f;
-  dtostrf(raw_value, -8, 5, raw_value_string);
-  dtostrf(converted_value, -8, 5, converted_value_string);
-  sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"ppb\"}", raw_value_string, converted_value_string);  
-  return mqqtPublish("/orgs/wd/aqe/no2", tmp);   
+  float raw_value = 0.0;
+  if(burstSampleADC(&raw_value)){
+    float converted_value = 0.0f;
+    dtostrf(raw_value, -8, 5, raw_value_string);
+    dtostrf(converted_value, -8, 5, converted_value_string);
+    sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"ppb\"}", raw_value_string, converted_value_string);  
+    return mqqtPublish("/orgs/wd/aqe/no2", tmp);   
+  }
+  
+  return false;
 }
 
 boolean publishCO(){
   char tmp[128] = { 0 };  
   char raw_value_string[16] = {0};  
   char converted_value_string[16] = {0};
-  float raw_value = burstSampleADC();
-  float converted_value = 0.0f;
-  dtostrf(raw_value, -8, 5, raw_value_string);
-  dtostrf(converted_value, -8, 5, converted_value_string);
-  sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"ppm\"}", raw_value_string, converted_value_string);  
-  return mqqtPublish("/orgs/wd/aqe/co", tmp);   
+  float raw_value = 0.0;
+  if(burstSampleADC(&raw_value)){
+    float converted_value = 0.0f;
+    dtostrf(raw_value, -8, 5, raw_value_string);
+    dtostrf(converted_value, -8, 5, converted_value_string);
+    sprintf(tmp, "{\"raw-value\" : %s, \"raw-units\": \"volt\", \"converted-value\" : %s, \"converted-units\": \"ppm\"}", raw_value_string, converted_value_string);  
+    return mqqtPublish("/orgs/wd/aqe/co", tmp);   
+  }
+  
+  return false;
 }
