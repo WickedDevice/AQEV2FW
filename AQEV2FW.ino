@@ -389,22 +389,28 @@ void loop() {
           Serial.println(F("Error: Failed to publish Heartbeat."));  
         }
         
-        if(!publishTemperature()){          
-          Serial.println(F("Error: Failed to publish Temperature."));          
+        if(init_sht25_ok){
+          if(!publishTemperature()){          
+            Serial.println(F("Error: Failed to publish Temperature."));          
+          }
+          
+          if(!publishHumidity()){
+            Serial.println(F("Error: Failed to publish Humidity."));         
+          }
         }
         
-        if(!publishHumidity()){
-          Serial.println(F("Error: Failed to publish Humidity."));         
+        if(init_no2_afe_ok && init_no2_adc_ok){
+          selectSlot2();
+          if(!publishNO2()){
+            Serial.println(F("Error: Failed to publish NO2."));          
+          }
         }
         
-        selectSlot2();
-        if(!publishNO2()){
-          Serial.println(F("Error: Failed to publish NO2."));          
-        }
-        
-        selectSlot1();
-        if(!publishCO()){
-          Serial.println(F("Error: Failed to publish CO."));         
+        if(init_co_afe_ok && init_co_adc_ok){
+          selectSlot1();
+          if(!publishCO()){
+            Serial.println(F("Error: Failed to publish CO."));         
+          }
         }
               
         selectNoSlot();     
@@ -2429,7 +2435,7 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
   }
   
   temperature_compensated_slope = no2_slope_ppb_per_volt;
-  temperature_compensated_slope /= (1 + (temperature_coefficient_of_span * (20 - temperature_degc)));
+  temperature_compensated_slope /= (1.0f + (temperature_coefficient_of_span * (20 - temperature_degc)));
   
   *converted_value = (volts - no2_zero_volts) * no2_slope_ppb_per_volt;
   if(*converted_value <= 0.0f){
@@ -2492,7 +2498,7 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
   }
   
   temperature_compensated_slope = co_slope_ppm_per_volt;
-  temperature_compensated_slope /= (1 + (temperature_coefficient_of_span * (20 - temperature_degc)));
+  temperature_compensated_slope /= (1.0f + (temperature_coefficient_of_span * (20 - temperature_degc)));
   
   
   *converted_value = (volts - co_zero_volts) * co_slope_ppm_per_volt;
