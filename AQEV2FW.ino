@@ -2418,8 +2418,8 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
   }
   
   *converted_value = (volts - no2_zero_volts) * no2_slope_ppb_per_volt;
-  if(converted_value < 0){
-    *converted_value = 0.0; 
+  if(*converted_value <= 0.0f){
+    *converted_value = 0.0f; 
   }
 }
 
@@ -2428,13 +2428,13 @@ boolean publishNO2(){
   char raw_value_string[16] = {0};  
   char converted_value_string[16] = {0};
   char compensated_value_string[16] = {0};
-  float raw_value = 0.0;
+  float raw_value = 0.0f;
   if(burstSampleADC(&raw_value)){
     float converted_value = 0.0f, compensated_value = 0.0f;    
     no2_convert_from_volts_to_ppb(raw_value, &converted_value, &compensated_value);
     dtostrf(raw_value, -8, 5, raw_value_string);
-    dtostrf(converted_value, -8, 5, converted_value_string);
-    dtostrf(compensated_value, -8, 5, compensated_value_string);    
+    dtostrf(converted_value, -4, 2, converted_value_string);
+    dtostrf(compensated_value, -4, 2, compensated_value_string);    
     sprintf(tmp, "{\"raw-value\" : %s, "
       "\"raw-units\": \"volt\", "
       "\"converted-value\" : %s, "
@@ -2462,8 +2462,8 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
   }
   
   *converted_value = (volts - co_zero_volts) * co_slope_ppm_per_volt;
-  if(converted_value < 0){
-    *converted_value = 0.0; 
+  if(*converted_value <= 0.0f){
+    *converted_value = 0.0f; 
   }
 }
 
@@ -2472,13 +2472,13 @@ boolean publishCO(){
   char raw_value_string[16] = {0};  
   char converted_value_string[16] = {0};
   char compensated_value_string[16] = {0};
-  float raw_value = 0.0;
+  float raw_value = 0.0f;
   if(burstSampleADC(&raw_value)){
     float converted_value = 0.0f, compensated_value = 0.0f;    
     co_convert_from_volts_to_ppm(raw_value, &converted_value, &compensated_value);
     dtostrf(raw_value, -8, 5, raw_value_string);
-    dtostrf(converted_value, -8, 5, converted_value_string);
-    dtostrf(compensated_value, -8, 5, compensated_value_string);    
+    dtostrf(converted_value, -4, 2, converted_value_string);
+    dtostrf(compensated_value, -4, 2, compensated_value_string);    
     sprintf(tmp, "{\"raw-value\" : %s, "
       "\"raw-units\": \"volt\", "
       "\"converted-value\" : %s, "
