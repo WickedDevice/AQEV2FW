@@ -371,21 +371,49 @@ void setup() {
 
 void loop() {
   unsigned long current_millis = millis();
-
-  if(mqttReconnect()){
-    if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){      
-      publishHeartbeat();
-      publishTemperature();
-      publishHumidity();
+  static uint8_t num_mqtt_connect_retries = 0;
+  static uint8_t num_mqtt_intervals_without_wifi = 0;
+  
+  if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){      
+    if(connectedToNetwork()){
+      num_mqtt_intervals_without_wifi = 0;
       
-      selectSlot2();
-      publishNO2();
+      if(mqttReconnect()){ 
+        //connected to MQTT server and connected to Wi-Fi network        
+        num_mqtt_connect_retries = 0;   
+        publishHeartbeat();
+        publishTemperature();
+        publishHumidity();
+        
+        selectSlot2();
+        publishNO2();
+        
+        selectSlot1();
+        publishCO();
+              
+        selectNoSlot();
+        previous_mqtt_publish_millis = current_millis;       
+      }
+      else{
+        // not connected to MQTT server
+        num_mqtt_connect_retries++;
+        if(num_mqtt_connect_retries >= 5){
+          Serial.println(F("Error: MQTT Connect Failed 5 consecutive times. Forcing reboot."));
+          Serial.flush();
+          tinywdt.force_reset();  
+        }
+      }
+    }
+    else{
+      // not connected to Wi-Fi network
+      num_mqtt_intervals_without_wifi++;
+      if(num_mqtt_intervals_without_wifi >= 5){
+        Serial.println(F("Error: WiFi Re-connect Failed 5 consecutive times. Forcing reboot."));
+        Serial.flush();
+        tinywdt.force_reset();  
+      }
       
-      selectSlot1();
-      publishCO();
-            
-      selectNoSlot();
-      previous_mqtt_publish_millis = current_millis;       
+      restartWifi();
     }
   }
   
@@ -2086,7 +2114,7 @@ void backlightOff(void) {
 boolean restartWifi(){
   boolean first_time = true;
   
-  while(!connectedToNetwork()){
+  if(!connectedToNetwork()){
     
     if(first_time){
       first_time = false;
@@ -2308,9 +2336,10 @@ boolean mqqtPublish(char * topic, char *str){
 
 
 boolean publishHeartbeat(){
+  static uint32_t post_counter = 0;
   char tmp[128] = { 0 };  
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
-  sprintf(tmp, "{\"converted-value\" : %d, \"firmware-version\": \"%s\"}", sample, firmware_version);  
+  sprintf(tmp, "{\"converted-value\" : %d, \"firmware-version\": \"%s\", \"counter\" : %lu}", sample, firmware_version, post_counter++);  
   if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
      heartbeat_waveform_index = 0;
   }
