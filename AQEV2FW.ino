@@ -32,6 +32,8 @@ PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
 WildFire_CC3000_Client wifiClient;
 char firmware_version[16] = {0};
+float temperature_degc = 0.0f;
+float relative_humidity_percent = 0.0f;
 
 boolean init_sht25_ok = false;
 boolean init_co_afe_ok = false;
@@ -1998,11 +2000,11 @@ void set_float_param(char * arg, float * eeprom_address, float (*conversion)(flo
 
 // convert from nA/ppm to ppb/V
 // from SPEC Sensors, Sensor Development Kit, User Manual, Rev. 1.5
-// M[V/ppm] = Sensitivity[nA/ppm] * TIA_Gain[kV/A] * 10^-9[A/nA] * 10^3[V/kV]
+// M[V/ppb] = Sensitivity[nA/ppm] * TIA_Gain[kV/A] * 10^-9[A/nA] * 10^3[V/kV] * 10^-3[ppb/ppm]
 // TIA_Gain[kV/A] for NO2 = 499
 // slope = 1/M
 float convert_no2_sensitivity_to_slope(float sensitivity) {
-  float ret = 1.0e6;
+  float ret = 1.0e9;
   ret /= sensitivity;
   ret /= 499.0;
   return ret;
@@ -2380,6 +2382,7 @@ boolean publishTemperature(){
   char value_string[16] = {0};
   float value = 0.0;
   if(sht25.getTemperature(&value)){
+    temperature_degc = value;
     dtostrf(value, -6, 2, value_string);
     sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"degC\"}", value_string);    
     return mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
@@ -2393,6 +2396,7 @@ boolean publishHumidity(){
   char value_string[16] = {0};  
   float value = 0.0;
   if(sht25.getRelativeHumidity(&value)){
+    relative_humidity_percent = value;
     dtostrf(value, -6, 2, value_string);
     sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
     return mqqtPublish("/orgs/wd/aqe/humidity", tmp); 
@@ -2401,8 +2405,22 @@ boolean publishHumidity(){
   return false;
 }
 
-float no2_convert_from_volts_to_ppb(float volts){
-  return 0.0;
+void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float * temperature_compensated_value){
+  static boolean first_access = true;
+  static float no2_zero_volts = 0.0f;
+  static float no2_slope_ppb_per_volt = 0.0f;
+  
+  if(first_access){
+    // NO2 has negative slope in circuit, more negative voltages correspond to higher levels of NO2
+    no2_slope_ppb_per_volt = -1.0 * eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE); 
+    no2_zero_volts = eeprom_read_float((const float *) EEPROM_NO2_CAL_OFFSET);
+    first_access = false;
+  }
+  
+  *converted_value = (volts - no2_zero_volts) * no2_slope_ppb_per_volt;
+  if(converted_value < 0){
+    *converted_value = 0.0; 
+  }
 }
 
 boolean publishNO2(){
@@ -2412,8 +2430,8 @@ boolean publishNO2(){
   char compensated_value_string[16] = {0};
   float raw_value = 0.0;
   if(burstSampleADC(&raw_value)){
-    float converted_value = no2_convert_from_volts_to_ppb(raw_value);
-    float compensated_value = 0.0f;
+    float converted_value = 0.0f, compensated_value = 0.0f;    
+    no2_convert_from_volts_to_ppb(raw_value, &converted_value, &compensated_value);
     dtostrf(raw_value, -8, 5, raw_value_string);
     dtostrf(converted_value, -8, 5, converted_value_string);
     dtostrf(compensated_value, -8, 5, compensated_value_string);    
@@ -2431,8 +2449,22 @@ boolean publishNO2(){
   return false;
 }
 
-float co_convert_from_volts_to_ppm(float volts){
-  return 0.0;
+void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * temperature_compensated_value){
+  static boolean first_access = true;
+  static float co_zero_volts = 0.0f;
+  static float co_slope_ppm_per_volt = 0.0f;
+  
+  if(first_access){
+    // CO has positive slope in circuit, more positive voltages correspond to higher levels of CO
+    co_slope_ppm_per_volt = eeprom_read_float((const float *) EEPROM_CO_CAL_SLOPE);
+    co_zero_volts = eeprom_read_float((const float *) EEPROM_CO_CAL_OFFSET);
+    first_access = false;
+  }
+  
+  *converted_value = (volts - co_zero_volts) * co_slope_ppm_per_volt;
+  if(converted_value < 0){
+    *converted_value = 0.0; 
+  }
 }
 
 boolean publishCO(){
@@ -2442,8 +2474,8 @@ boolean publishCO(){
   char compensated_value_string[16] = {0};
   float raw_value = 0.0;
   if(burstSampleADC(&raw_value)){
-    float converted_value = co_convert_from_volts_to_ppm(raw_value);
-    float compensated_value = 0.0f;
+    float converted_value = 0.0f, compensated_value = 0.0f;    
+    co_convert_from_volts_to_ppm(raw_value, &converted_value, &compensated_value);
     dtostrf(raw_value, -8, 5, raw_value_string);
     dtostrf(converted_value, -8, 5, converted_value_string);
     dtostrf(compensated_value, -8, 5, compensated_value_string);    

@@ -14,6 +14,7 @@ The baseline code for Air Quality Egg version 2 WildFire firmware
 * https://github.com/WickedDevice/SHT25
 * https://github.com/WickedDevice/WildFire_SPIFlash
 * https://github.com/knolleary/pubsubclient
+ * Note: Change MQTT_MAX_PACKET_SIZE define in PubSubClient.h to 512
 * https://github.com/PaulStoffregen/Time
 * https://github.com/PaulStoffregen/CapacitiveSensor
 * https://github.com/arduino-libraries/LiquidCrystal
