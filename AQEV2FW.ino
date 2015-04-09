@@ -2409,7 +2409,8 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
   static boolean first_access = true;
   static float no2_zero_volts = 0.0f;
   static float no2_slope_ppb_per_volt = 0.0f;
-  
+  float temperature_coefficient_of_span = 0.0f;
+  float temperature_compensated_slope = 0.0f;
   if(first_access){
     // NO2 has negative slope in circuit, more negative voltages correspond to higher levels of NO2
     no2_slope_ppb_per_volt = -1.0 * eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE); 
@@ -2417,9 +2418,27 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
     first_access = false;
   }
   
+  // piecewise temperature coefficient of span for NO2
+  // -20C to 20C  0.1%/degC 
+  // 20C to 50C   0.4%/degC
+  if(temperature_degc < 20.0f){
+    temperature_coefficient_of_span = 0.001f; // 0.1%
+  }
+  else{
+    temperature_coefficient_of_span = 0.004f; // 0.4%    
+  }
+  
+  temperature_compensated_slope = no2_slope_ppb_per_volt;
+  temperature_compensated_slope /= (1 + (temperature_coefficient_of_span * (20 - temperature_degc)));
+  
   *converted_value = (volts - no2_zero_volts) * no2_slope_ppb_per_volt;
   if(*converted_value <= 0.0f){
     *converted_value = 0.0f; 
+  }
+  
+  *temperature_compensated_value = (volts - no2_zero_volts) * temperature_compensated_slope;
+  if(*temperature_compensated_value <= 0.0f){
+    *temperature_compensated_value = 0.0f;
   }
 }
 
@@ -2453,18 +2472,38 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
   static boolean first_access = true;
   static float co_zero_volts = 0.0f;
   static float co_slope_ppm_per_volt = 0.0f;
-  
+  float temperature_coefficient_of_span = 0.0f;
+  float temperature_compensated_slope = 0.0f;  
   if(first_access){
     // CO has positive slope in circuit, more positive voltages correspond to higher levels of CO
     co_slope_ppm_per_volt = eeprom_read_float((const float *) EEPROM_CO_CAL_SLOPE);
     co_zero_volts = eeprom_read_float((const float *) EEPROM_CO_CAL_OFFSET);
     first_access = false;
   }
+
+  // piecewise temperature coefficient of span for NO2
+  // -20C to 20C  0.6%/degC
+  // 20C to 50C   0.4%/degC
+  if(temperature_degc < 20.0f){
+    temperature_coefficient_of_span = 0.006f; // 0.1%
+  }
+  else{
+    temperature_coefficient_of_span = 0.004f; // 0.4%    
+  }
+  
+  temperature_compensated_slope = co_slope_ppm_per_volt;
+  temperature_compensated_slope /= (1 + (temperature_coefficient_of_span * (20 - temperature_degc)));
+  
   
   *converted_value = (volts - co_zero_volts) * co_slope_ppm_per_volt;
   if(*converted_value <= 0.0f){
     *converted_value = 0.0f; 
   }
+  
+  *temperature_compensated_value = (volts - co_zero_volts) * temperature_compensated_slope;
+  if(*temperature_compensated_value <= 0.0f){
+    *temperature_compensated_value = 0.0f;
+  }  
 }
 
 boolean publishCO(){
