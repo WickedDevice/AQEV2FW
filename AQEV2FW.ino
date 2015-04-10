@@ -387,7 +387,7 @@ void setup() {
 
   Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
   setLCD_P(PSTR("OPERATIONAL MODE"));
-  delay(1000);
+  delay(LCD_SUCCESS_MESSAGE_DELAY);
   
   // Try and Connect to the Configured Network
   if(!restartWifi()){
@@ -396,14 +396,15 @@ void setup() {
     tinywdt.force_reset();
   }
   
+  tinywdt.pet();
   // Check for Firmware Updates 
-   
+  
   // Connect to MQTT server
   if(!mqttReconnect()){
     Serial.print(F("Error: Unable to connect to MQTT server"));
     Serial.flush();
     tinywdt.force_reset();    
-  }  
+  }
 }
 
 void loop() {
@@ -2211,6 +2212,17 @@ void updateLCD(const char str[], uint8_t pos_x, uint8_t pos_y, uint8_t num_chars
   }
 }
 
+void updateLCD(uint32_t ip, uint8_t line_number){
+  char tmp[17] = {0};
+  snprintf(tmp, 16, " %d.%d.%d.%d", 
+    (uint8_t)(ip >> 24),
+    (uint8_t)(ip >> 16),
+    (uint8_t)(ip >> 8),       
+    (uint8_t)(ip >> 0));    
+  
+  updateLCD(tmp, 1);
+}
+
 void updateLCD(const char str[], uint8_t line_number){
   // center the string on the line
   char tmp[17] = {0};  
@@ -2263,6 +2275,26 @@ void updateCornerDot(void){
   }
 }
 
+void updateLcdProgressDots(void){
+  static uint8_t cnt = 0;
+  cnt++;
+  uint8_t num_dots = cnt % 4;
+  switch(num_dots){
+    case 0: 
+      updateLCD("   ", 1); 
+      break;
+    case 1:
+      updateLCD(".  ", 1); 
+      break;
+    case 2:
+      updateLCD(".. ", 1); 
+      break;
+    case 3:
+      updateLCD("...", 1); 
+      break;          
+  } 
+}
+
 /****** WIFI SUPPORT FUNCTIONS ******/
 boolean restartWifi(){
   boolean first_time = true;
@@ -2278,8 +2310,11 @@ boolean restartWifi(){
       Serial.println(F("OK."));
     }
     
+    tinywdt.pet();
     reconnectToAccessPoint();
+    tinywdt.pet();    
     acquireIpAddress();    
+    tinywdt.pet();    
     displayConnectionDetails();
 
     // if (!mdns.begin("airqualityegg", cc3000)) {
@@ -2307,16 +2342,9 @@ bool displayConnectionDetails(void){
     Serial.print(F("Info: DHCPsrv: ")); cc3000.printIPdotsRev(dhcpserv); Serial.println();
     Serial.print(F("Info: DNSserv: ")); cc3000.printIPdotsRev(dnsserv); Serial.println();
     
-    char tmp[17] = {0};
-    snprintf(tmp, 16, " %d.%d.%d.%d", 
-      (uint8_t)(ipAddress >> 24),
-      (uint8_t)(ipAddress >> 16),
-      (uint8_t)(ipAddress >> 8),       
-      (uint8_t)(ipAddress >> 0));    
-    
-    updateLCD(tmp, 1);
-    delay(LCD_SUCCESS_MESSAGE_DELAY);
-    
+    updateLCD(ipAddress, 1);
+    delay(LCD_SUCCESS_MESSAGE_DELAY);  
+  
     return true;
   }
 }
@@ -2342,12 +2370,12 @@ void reconnectToAccessPoint(void){
         Serial.print(F("Error: Failed to connect to Access Point with SSID: "));
         Serial.println(ssid);
         Serial.flush();
-        updateLCD("    FAILED      ", 0, 1, 16);
+        updateLCD("FAILED", 1);
         delay(LCD_ERROR_MESSAGE_DELAY);
         tinywdt.force_reset();
       }
       Serial.println(F("OK."));
-      updateLCD("   CONNECTED    ", 0, 1, 16);
+      updateLCD("CONNECTED", 1);
       delay(LCD_SUCCESS_MESSAGE_DELAY);
       break;
     case CONNECT_METHOD_SMARTCONFIG:
@@ -2368,24 +2396,9 @@ void acquireIpAddress(void){
     /* Wait for DHCP to complete */
     Serial.print(F("Info: Request DHCP..."));
     setLCD_P(PSTR(" REQUESTING IP  "));   
-    uint8_t cnt = 0;
+
     while (!cc3000.checkDHCP()){
-      cnt++;
-      uint8_t num_dots = cnt % 4;
-      switch(num_dots){
-        case 0: 
-          updateLCD("   ", 6, 1, 3); 
-          break;
-        case 1:
-          updateLCD(".  ", 6, 1, 3); 
-          break;
-        case 2:
-          updateLCD(".. ", 6, 1, 3); 
-          break;
-        case 3:
-          updateLCD("...", 6, 1, 3); 
-          break;          
-      }
+      updateLcdProgressDots();
       delay(1000);
       // if this goes on for longer than a minute, 
       // tiny watchdog should automatically kick in
@@ -2447,6 +2460,8 @@ boolean mqttResolve(void){
   char mqtt_server_name[32] = {0};
   if(!resolved){
     eeprom_read_block(mqtt_server_name, (const void *) EEPROM_MQTT_SERVER_NAME, 31);
+    setLCD_P(PSTR("   RESOLVING"));
+    updateLCD(mqtt_server_name, 1);
     if  (!cc3000.getHostByName(mqtt_server_name, &ip) || (ip == 0))  {
       Serial.print(F("Error: Couldn't resolve '"));
       Serial.print(mqtt_server_name);
@@ -2460,7 +2475,7 @@ boolean mqttResolve(void){
       Serial.print(mqtt_server_name);
       Serial.print(F("\" to IP address "));
       cc3000.printIPdotsRev(ip);
-      Serial.println();
+      Serial.println();    
     }
   }
     
@@ -2480,7 +2495,7 @@ boolean mqttReconnect(void){
      return false;
    }
      
-   if(first_access){    
+   if(first_access){
      first_access = false;
      loop_return_flag = false;
      eeprom_read_block(mqtt_username, (const void *) EEPROM_MQTT_USERNAME, 31);
