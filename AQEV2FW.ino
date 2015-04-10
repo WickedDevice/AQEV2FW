@@ -493,7 +493,7 @@ void loop() {
 
 /****** INITIALIZATION SUPPORT FUNCTIONS ******/
 void init_firmware_version(void){
-  sprintf(firmware_version, "%d.%d.%d", 
+  snprintf(firmware_version, 15, "%d.%d.%d", 
     AQEV2FW_MAJOR_VERSION, 
     AQEV2FW_MINOR_VERSION, 
     AQEV2FW_PATCH_VERSION);
@@ -1493,7 +1493,7 @@ void restore(char * arg) {
     // convert it to a string, and store it to EEPROM
     uint8_t serial_number[8];
     sht25.getSerialNumber(serial_number);
-    sprintf((char *) tmp, "egg%02X%02X%02X%02X%02X%02X%02X%02X",
+    snprintf((char *) tmp, 31, "egg%02X%02X%02X%02X%02X%02X%02X%02X",
       serial_number[0],
       serial_number[1],
       serial_number[2],
@@ -2560,7 +2560,7 @@ boolean publishHeartbeat(){
   static uint32_t post_counter = 0;
   char tmp[128] = { 0 };  
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
-  sprintf(tmp, "{\"converted-value\" : %d, \"firmware-version\": \"%s\", \"counter\" : %lu}", sample, firmware_version, post_counter++);  
+  snprintf(tmp, 127, "{\"converted-value\" : %d, \"firmware-version\": \"%s\", \"counter\" : %lu}", sample, firmware_version, post_counter++);  
   if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
      heartbeat_waveform_index = 0;
   }
@@ -2574,7 +2574,7 @@ boolean publishTemperature(){
   float temperature_moving_average = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
   temperature_degc = temperature_moving_average;
   dtostrf(temperature_moving_average, -6, 2, value_string);
-  sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"degC\"}", value_string);    
+  snprintf(tmp, 127, "{\"converted-value\" : %s, \"converted-units\": \"degC\"}", value_string);    
   return mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
 }
 
@@ -2584,7 +2584,7 @@ boolean publishHumidity(){
   float humidity_moving_average = calculateAverage(humidity_sample_buffer, HUMIDITY_SAMPLE_BUFFER_DEPTH);
   relative_humidity_percent = humidity_moving_average;
   dtostrf(humidity_moving_average, -6, 2, value_string);
-  sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
+  snprintf(tmp, 127, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
   return mqqtPublish("/orgs/wd/aqe/humidity", tmp); 
 }
 
@@ -2703,7 +2703,7 @@ float calculateAverage(float * buf, uint8_t num_samples){
 }
 
 boolean publishNO2(){
-  char tmp[128] = { 0 };  
+  char tmp[512] = { 0 };  
   char raw_value_string[16] = {0};  
   char converted_value_string[16] = {0};
   char compensated_value_string[16] = {0};
@@ -2713,7 +2713,7 @@ boolean publishNO2(){
   dtostrf(no2_moving_average, -8, 5, raw_value_string);
   dtostrf(converted_value, -4, 2, converted_value_string);
   dtostrf(compensated_value, -4, 2, compensated_value_string);    
-  sprintf(tmp, "{\"raw-value\" : %s, "
+  snprintf(tmp, 511, "{\"raw-value\" : %s, "
     "\"raw-units\": \"volt\", "
     "\"converted-value\" : %s, "
     "\"converted-units\": \"ppb\", "
@@ -2763,7 +2763,7 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
 }
 
 boolean publishCO(){
-  char tmp[128] = { 0 };  
+  char tmp[512] = { 0 };  
   char raw_value_string[16] = {0};  
   char converted_value_string[16] = {0};
   char compensated_value_string[16] = {0};
@@ -2773,7 +2773,7 @@ boolean publishCO(){
   dtostrf(co_moving_average, -8, 5, raw_value_string);
   dtostrf(converted_value, -4, 2, converted_value_string);
   dtostrf(compensated_value, -4, 2, compensated_value_string);    
-  sprintf(tmp, "{\"raw-value\" : %s, "
+  snprintf(tmp, 511, "{\"raw-value\" : %s, "
     "\"raw-units\": \"volt\", "
     "\"converted-value\" : %s, "
     "\"converted-units\": \"ppm\", "
