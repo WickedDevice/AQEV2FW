@@ -14,7 +14,7 @@
 #include <util/crc16.h>
 
 // semantic versioning - see http://semver.org/
-#define AQEV2FW_MAJOR_VERSION 0
+#define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 1
 #define AQEV2FW_PATCH_VERSION 0
 
@@ -47,6 +47,9 @@ float temperature_sample_buffer[TEMPERATURE_SAMPLE_BUFFER_DEPTH] = {0};
 
 #define HUMIDITY_SAMPLE_BUFFER_DEPTH (16)
 float humidity_sample_buffer[HUMIDITY_SAMPLE_BUFFER_DEPTH] = {0};
+
+#define LCD_ERROR_MESSAGE_DELAY   (3000)
+#define LCD_SUCCESS_MESSAGE_DELAY (1000)
 
 boolean no2_ready = false;
 boolean co_ready = false;
@@ -289,6 +292,9 @@ void setup() {
     Serial.print(F("OPERATIONAL mode automatically begins after "));
     Serial.print(startup_time_period / 1000);
     Serial.println(F(" secs of no input."));
+    setLCD_P(PSTR("CONNECT TERMINAL"
+                  "FOR CONFIG MODE "));
+                  
     while (millis() < start + startup_time_period) { // can get away with this sort of thing at start up
       if (Serial.available()) {
         if (got_serial_input == false) {
@@ -305,10 +311,14 @@ void setup() {
 
       // output a countdown to the Serial Monitor
       if (millis() - start >= min_over) {
+        uint8_t countdown_value_display = (startup_time_period - 500 - min_over) / 1000;
         if (got_serial_input == false) {
-          Serial.print((startup_time_period - 500 - min_over) / 1000);
+          Serial.print(countdown_value_display);
           Serial.print(F("..."));
         }
+        
+        updateCornerDot();
+        
         min_over += 1000;
       }
     }
@@ -319,6 +329,8 @@ void setup() {
     const uint32_t idle_timeout_period_ms = 1000UL * 60UL * 5UL; // 5 minutes
     uint32_t idle_time_ms = 0;
     Serial.println(F("-~=* In CONFIG Mode *=~-"));
+    setLCD_P(PSTR("  CONFIG MODE"));
+    
     Serial.print(F("OPERATIONAL mode begins automatically after "));
     Serial.print((idle_timeout_period_ms / 1000UL) / 60UL);
     Serial.println(F(" mins without input."));
@@ -374,6 +386,8 @@ void setup() {
   }
 
   Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
+  setLCD_P(PSTR("OPERATIONAL MODE"));
+  delay(1000);
   
   // Try and Connect to the Configured Network
   if(!restartWifi()){
@@ -498,6 +512,19 @@ void initializeHardware(void) {
   Serial.println(F(" +------------------------------------+"));
   Serial.println();
 
+  pinMode(A6, OUTPUT);
+  backlightOn();
+
+  lcd.begin(16, 2);
+  setLCD_P(PSTR("AIR QUALITY EGG "));
+  char tmp[17] = {0};
+  snprintf(tmp, 16, "VERSION %d.%d.%d", 
+    AQEV2FW_MAJOR_VERSION, 
+    AQEV2FW_MINOR_VERSION,
+    AQEV2FW_PATCH_VERSION);
+    
+  updateLCD(tmp, 1);
+  
   Wire.begin();
 
   // Initialize slot select pins
@@ -511,17 +538,7 @@ void initializeHardware(void) {
   Serial.print(F("Info: Tiny Watchdog Initialization..."));
   tinywdt.begin(500, 60000);
   Serial.println(F("OK."));
-
-  pinMode(A6, OUTPUT);
-  backlightOn();
-
-  lcd.begin(16, 2);
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print(F("Air Quality Egg"));
-  lcd.setCursor(3, 1);
-  lcd.print(F("Version 2"));
-
+  
   // Initialize SPI Flash
   Serial.print(F("Info: SPI Flash Initialization..."));
   if (flash.initialize()) {
@@ -2160,6 +2177,91 @@ void backlightOff(void) {
   digitalWrite(A6, LOW);
 }
 
+void setLCD_P(const char str[] PROGMEM){  
+  char tmp[32] = {0};
+  strncpy_P(tmp, str, 32);
+  setLCD(tmp);
+}
+
+void setLCD(const char str[]){
+  char tmp[17] = {0};
+  strncpy(tmp, str, 16);
+  lcd.clear();
+  lcd.setCursor(0,0);
+  lcd.print(tmp);
+  
+  if(strlen(str) > 16){   
+    memset(tmp, 0, 16);
+    strncpy(tmp, str + 16, 16);
+    lcd.setCursor(0,1);  
+    lcd.print(tmp);     
+  }   
+}
+
+void updateLCD(const char str[], uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
+  char tmp[17] = {0};
+  strncpy(tmp, str, 16);
+  if(num_chars < 16){
+    tmp[num_chars] = '\0'; 
+  }    
+  
+  if((pos_x < 16) && (pos_y < 16)){
+    lcd.setCursor(pos_x, pos_y);
+    lcd.print(tmp);    
+  }
+}
+
+void updateLCD(const char str[], uint8_t line_number){
+  // center the string on the line
+  char tmp[17] = {0};  
+  uint16_t len = strlen(str);
+  if(len < 16){
+    uint8_t num_empty_chars_on_line = 16 - len;
+    // pad the front of the string with spaces
+    uint8_t half_num_empty_chars_on_line = num_empty_chars_on_line / 2;
+    for(uint8_t ii = 0; ii < half_num_empty_chars_on_line; ii++){
+      tmp[ii] = ' '; 
+    }    
+  }
+  
+  strcat(tmp, str); // concatenate the string into the front padding
+  
+  len = strlen(tmp);
+  if(len < 16){
+    // pad the tail of the string with spaces
+    uint8_t num_trailing_spaces = 16 - len;
+    for(uint8_t ii = 0; ii < num_trailing_spaces; ii++){
+      tmp[len + ii] = ' ';
+    }
+  }
+  
+  if(line_number < 2){
+    updateLCD(tmp, 0, line_number, 16);
+  }
+}
+
+void updateLCD(uint8_t value, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
+  char tmp[17] = {0};
+  snprintf(tmp, num_chars, "%d", value);
+  updateLCD(tmp, pos_x, pos_y, num_chars);
+}
+
+void updateLCD(char value, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
+  char tmp[17] = {0};
+  tmp[0] = value;
+  updateLCD(tmp, pos_x, pos_y, num_chars);
+}
+
+void updateCornerDot(void){
+  static uint8_t on = 0;
+  on = 1 - on;
+  if(on == 1){
+    updateLCD('.', 15, 1, 1);
+  } 
+  else{
+    updateLCD(' ', 15, 1, 1); 
+  }
+}
 
 /****** WIFI SUPPORT FUNCTIONS ******/
 boolean restartWifi(){
@@ -2204,6 +2306,17 @@ bool displayConnectionDetails(void){
     Serial.print(F("Info: Gateway: ")); cc3000.printIPdotsRev(gateway); Serial.println();
     Serial.print(F("Info: DHCPsrv: ")); cc3000.printIPdotsRev(dhcpserv); Serial.println();
     Serial.print(F("Info: DNSserv: ")); cc3000.printIPdotsRev(dnsserv); Serial.println();
+    
+    char tmp[17] = {0};
+    snprintf(tmp, 16, " %d.%d.%d.%d", 
+      (uint8_t)(ipAddress >> 24),
+      (uint8_t)(ipAddress >> 16),
+      (uint8_t)(ipAddress >> 8),       
+      (uint8_t)(ipAddress >> 0));    
+    
+    updateLCD(tmp, 1);
+    delay(LCD_SUCCESS_MESSAGE_DELAY);
+    
     return true;
   }
 }
@@ -2222,13 +2335,20 @@ void reconnectToAccessPoint(void){
       Serial.print(F("Info: Connecting to Access Point with SSID \""));
       Serial.print(ssid);
       Serial.print(F("\"..."));
+      setLCD_P(PSTR("CONNECTING TO AP"));
+      updateLCD(ssid, 1);
+      
       if(!cc3000.connectToAP(ssid, network_password, network_security_mode)) {
         Serial.print(F("Error: Failed to connect to Access Point with SSID: "));
         Serial.println(ssid);
         Serial.flush();
+        updateLCD("    FAILED      ", 0, 1, 16);
+        delay(LCD_ERROR_MESSAGE_DELAY);
         tinywdt.force_reset();
       }
       Serial.println(F("OK."));
+      updateLCD("   CONNECTED    ", 0, 1, 16);
+      delay(LCD_SUCCESS_MESSAGE_DELAY);
       break;
     case CONNECT_METHOD_SMARTCONFIG:
     case CONNECT_METHOD_PFOD:
@@ -2247,8 +2367,26 @@ void acquireIpAddress(void){
   if (memcmp(static_ip_address, noip, 4) == 0){
     /* Wait for DHCP to complete */
     Serial.print(F("Info: Request DHCP..."));
+    setLCD_P(PSTR(" REQUESTING IP  "));   
+    uint8_t cnt = 0;
     while (!cc3000.checkDHCP()){
-      delay(100);
+      cnt++;
+      uint8_t num_dots = cnt % 4;
+      switch(num_dots){
+        case 0: 
+          updateLCD("   ", 6, 1, 3); 
+          break;
+        case 1:
+          updateLCD(".  ", 6, 1, 3); 
+          break;
+        case 2:
+          updateLCD(".. ", 6, 1, 3); 
+          break;
+        case 3:
+          updateLCD("...", 6, 1, 3); 
+          break;          
+      }
+      delay(1000);
       // if this goes on for longer than a minute, 
       // tiny watchdog should automatically kick in
       // and reset the unit. If we don't want that to happen
