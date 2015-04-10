@@ -35,9 +35,23 @@ char firmware_version[16] = {0};
 float temperature_degc = 0.0f;
 float relative_humidity_percent = 0.0f;
 
-#define GAS_SENSOR_SAMPLE_BUFFER_DEPTH (16)
-float no2_sample_buffer[GAS_SENSOR_SAMPLE_BUFFER_DEPTH] = {0};
-float co_sample_buffer[GAS_SENSOR_SAMPLE_BUFFER_DEPTH] = {0};
+// samples are buffered approximately every two seconds
+#define NO2_SAMPLE_BUFFER_DEPTH (32)
+float no2_sample_buffer[NO2_SAMPLE_BUFFER_DEPTH] = {0};
+
+#define CO_SAMPLE_BUFFER_DEPTH (32)
+float co_sample_buffer[CO_SAMPLE_BUFFER_DEPTH] = {0};
+
+#define TEMPERATURE_SAMPLE_BUFFER_DEPTH (16)
+float temperature_sample_buffer[TEMPERATURE_SAMPLE_BUFFER_DEPTH] = {0};
+
+#define HUMIDITY_SAMPLE_BUFFER_DEPTH (16)
+float humidity_sample_buffer[HUMIDITY_SAMPLE_BUFFER_DEPTH] = {0};
+
+boolean no2_ready = false;
+boolean co_ready = false;
+boolean temperature_ready = false;
+boolean humidity_ready = false;
 
 boolean init_sht25_ok = false;
 boolean init_co_afe_ok = false;
@@ -229,6 +243,10 @@ const long tinywdt_interval = 1000;
 unsigned long previous_mqtt_publish_millis = 0;
 const long mqtt_publish_interval = 5000;
 
+// sensor sampling timer intervals
+unsigned long previous_sensor_sampling_millis = 0;
+const long sensor_sampling_interval = 2000;
+
 #define NUM_HEARTBEAT_WAVEFORM_SAMPLES (84)
 const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
   95, 94, 95, 96, 95, 94, 95, 96, 95, 94,
@@ -377,10 +395,17 @@ void setup() {
 void loop() {
   unsigned long current_millis = millis();
   static uint8_t num_mqtt_connect_retries = 0;
-  static uint8_t num_mqtt_intervals_without_wifi = 0;
+  static uint8_t num_mqtt_intervals_without_wifi = 0; 
   
-  boolean no2_ready = collectNO2();
-  boolean co_ready = collectCO();
+  if(current_millis - previous_sensor_sampling_millis >= sensor_sampling_interval){
+    previous_sensor_sampling_millis = current_millis;    
+    Serial.print(F("Info: Sampling Sensors @ "));
+    Serial.println(millis());
+    collectNO2();
+    collectCO();
+    collectTemperature();
+    collectHumidity();  
+  }
   
   if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){   
     previous_mqtt_publish_millis = current_millis;      
@@ -395,11 +420,13 @@ void loop() {
           Serial.println(F("Error: Failed to publish Heartbeat."));  
         }
         
-        if(init_sht25_ok){
+        if(temperature_ready){
           if(!publishTemperature()){          
             Serial.println(F("Error: Failed to publish Temperature."));          
           }
-          
+        }
+        
+        if(humidity_ready){
           if(!publishHumidity()){
             Serial.println(F("Error: Failed to publish Humidity."));         
           }
@@ -2247,7 +2274,7 @@ void cc3000IpToArray(uint32_t ip, uint8_t * ip_array){
 // returns the measured voltage in Volts
 // 62.5 microvolts resolution in 16-bit mode
 boolean burstSampleADC(float * result){
-  #define NUM_SAMPLES_PER_BURST (16)
+  #define NUM_SAMPLES_PER_BURST (8)
   MCP342x::Config status;
   int32_t burst_sample_total = 0;
   uint8_t num_samples = 0;
@@ -2360,7 +2387,9 @@ boolean mqttReconnect(void){
 
 boolean mqqtPublish(char * topic, char *str){
   boolean response_status = true;
-  Serial.print(F("MQTT Publishing..."));
+  Serial.print(F("MQTT publishing to topic "));
+  Serial.print(topic);
+  Serial.print(F("..."));
   if(mqtt_client.publish(topic, str)){
     Serial.println(F("OK."));
     response_status = true;
@@ -2389,33 +2418,54 @@ boolean publishHeartbeat(){
 boolean publishTemperature(){
   char tmp[128] = { 0 };  
   char value_string[16] = {0};
-  float value = 0.0;
-  if(sht25.getTemperature(&value)){
-    temperature_degc = value;
-    dtostrf(value, -6, 2, value_string);
-    sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"degC\"}", value_string);    
-    return mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
-  }
-  
-  return false;
+  float temperature_moving_average = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
+  temperature_degc = temperature_moving_average;
+  dtostrf(temperature_moving_average, -6, 2, value_string);
+  sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"degC\"}", value_string);    
+  return mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
 }
 
 boolean publishHumidity(){
   char tmp[128] = { 0 };  
   char value_string[16] = {0};  
-  float value = 0.0;
-  if(sht25.getRelativeHumidity(&value)){
-    relative_humidity_percent = value;
-    dtostrf(value, -6, 2, value_string);
-    sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
-    return mqqtPublish("/orgs/wd/aqe/humidity", tmp); 
-  }
-  
-  return false;
+  float humidity_moving_average = calculateAverage(humidity_sample_buffer, HUMIDITY_SAMPLE_BUFFER_DEPTH);
+  relative_humidity_percent = humidity_moving_average;
+  dtostrf(humidity_moving_average, -6, 2, value_string);
+  sprintf(tmp, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
+  return mqqtPublish("/orgs/wd/aqe/humidity", tmp); 
 }
 
-boolean collectNO2(void ){
-  static boolean buffer_filled = false;
+void collectTemperature(void){
+  static uint8_t sample_write_index = 0;
+  float raw_value = 0.0f;
+  if(init_sht25_ok){
+    if(sht25.getTemperature(&raw_value)){
+      temperature_sample_buffer[sample_write_index++] = raw_value;
+      
+      if(sample_write_index == TEMPERATURE_SAMPLE_BUFFER_DEPTH){
+        sample_write_index = 0; 
+        temperature_ready = true;
+      }
+    }
+  }
+}
+
+void collectHumidity(void){
+  static uint8_t sample_write_index = 0;
+  float raw_value = 0.0f;
+  if(init_sht25_ok){
+    if(sht25.getRelativeHumidity(&raw_value)){
+      humidity_sample_buffer[sample_write_index++] = raw_value;
+      
+      if(sample_write_index == HUMIDITY_SAMPLE_BUFFER_DEPTH){
+        sample_write_index = 0; 
+        humidity_ready = true;
+      }
+    }
+  }
+}
+
+void collectNO2(void ){
   static uint8_t sample_write_index = 0;
   float raw_value = 0.0f;
   
@@ -2424,20 +2474,17 @@ boolean collectNO2(void ){
     if(burstSampleADC(&raw_value)){      
       no2_sample_buffer[sample_write_index++] = raw_value;
       
-      if(sample_write_index == GAS_SENSOR_SAMPLE_BUFFER_DEPTH){
+      if(sample_write_index == NO2_SAMPLE_BUFFER_DEPTH){
         sample_write_index = 0; 
-        buffer_filled = true;
+        no2_ready = true;
       }
     }
   }
     
   selectNoSlot(); 
-    
-  return buffer_filled;  
 }
 
-boolean collectCO(void ){
-  static boolean buffer_filled = false;
+void collectCO(void ){
   static uint8_t sample_write_index = 0;
   float raw_value = 0.0f;
   
@@ -2446,16 +2493,14 @@ boolean collectCO(void ){
     if(burstSampleADC(&raw_value)){   
       co_sample_buffer[sample_write_index++] = raw_value;
       
-      if(sample_write_index == GAS_SENSOR_SAMPLE_BUFFER_DEPTH){
+      if(sample_write_index == CO_SAMPLE_BUFFER_DEPTH){
         sample_write_index = 0; 
-        buffer_filled = true;
+        co_ready = true;
       }      
     }
   }
     
-  selectNoSlot(); 
-    
-  return buffer_filled;  
+  selectNoSlot();     
 }
 
 void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float * temperature_compensated_value){
@@ -2510,7 +2555,7 @@ boolean publishNO2(){
   char converted_value_string[16] = {0};
   char compensated_value_string[16] = {0};
   float converted_value = 0.0f, compensated_value = 0.0f;    
-  float no2_moving_average = calculateAverage(no2_sample_buffer, GAS_SENSOR_SAMPLE_BUFFER_DEPTH);
+  float no2_moving_average = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
   no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
   dtostrf(no2_moving_average, -8, 5, raw_value_string);
   dtostrf(converted_value, -4, 2, converted_value_string);
@@ -2570,7 +2615,7 @@ boolean publishCO(){
   char converted_value_string[16] = {0};
   char compensated_value_string[16] = {0};
   float converted_value = 0.0f, compensated_value = 0.0f;   
-  float co_moving_average = calculateAverage(co_sample_buffer, GAS_SENSOR_SAMPLE_BUFFER_DEPTH);
+  float co_moving_average = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
   co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
   dtostrf(co_moving_average, -8, 5, raw_value_string);
   dtostrf(converted_value, -4, 2, converted_value_string);
@@ -2583,5 +2628,5 @@ boolean publishCO(){
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
-  return mqqtPublish("/orgs/wd/aqe/co", tmp);   
+  return mqqtPublish("/orgs/wd/aqe/co", tmp);
 }
