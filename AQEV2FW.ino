@@ -365,7 +365,7 @@ void setup() {
       // pet the watchdog once a ssecond
       if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
         idle_time_ms += tinywdt_interval;
-        tinywdt.pet();
+        petWatchdog();
         previous_tinywdt_millis = current_millis;
       }
 
@@ -379,7 +379,7 @@ void setup() {
   // re-check for valid configuration
   if (!checkConfigIntegrity()) {
     Serial.println(F("Info: Resetting prior to Loop because of invalid configuration"));
-    tinywdt.force_reset();
+    watchdogForceReset();
   }
   else {
     Serial.println(F("Beginning main Loop"));
@@ -393,18 +393,21 @@ void setup() {
   if(!restartWifi()){
     Serial.println(F("Error: Failed to connect to configured network. Rebooting."));
     Serial.flush();
-    tinywdt.force_reset();
+    watchdogForceReset();
   }
   
-  tinywdt.pet();
+  petWatchdog();
   // Check for Firmware Updates 
   
   // Connect to MQTT server
   if(!mqttReconnect()){
     Serial.print(F("Error: Unable to connect to MQTT server"));
     Serial.flush();
-    tinywdt.force_reset();    
+    watchdogForceReset();    
   }
+  
+  petWatchdog();
+  
 }
 
 void loop() {
@@ -466,7 +469,7 @@ void loop() {
         if(num_mqtt_connect_retries >= 5){
           Serial.println(F("Error: MQTT Connect Failed 5 consecutive times. Forcing reboot."));
           Serial.flush();
-          tinywdt.force_reset();  
+          watchdogForceReset();  
         }
       }
     }
@@ -476,7 +479,7 @@ void loop() {
       if(num_mqtt_intervals_without_wifi >= 5){
         Serial.println(F("Error: WiFi Re-connect Failed 5 consecutive times. Forcing reboot."));
         Serial.flush();
-        tinywdt.force_reset();  
+        watchdogForceReset();  
       }
       
       restartWifi();
@@ -487,7 +490,7 @@ void loop() {
   if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
     previous_tinywdt_millis = current_millis;
     Serial.println(F("Info: Watchdog Pet."));
-    tinywdt.pet();
+    petWatchdog();
   }
 }
 
@@ -537,7 +540,7 @@ void initializeHardware(void) {
 
   // Initialize Tiny Watchdog
   Serial.print(F("Info: Tiny Watchdog Initialization..."));
-  tinywdt.begin(500, 60000);
+  watchdogInitialize();
   Serial.println(F("OK."));
   
   // Initialize SPI Flash
@@ -2312,11 +2315,11 @@ boolean restartWifi(){
       Serial.println(F("OK."));
     }
     
-    tinywdt.pet();
+    petWatchdog();
     reconnectToAccessPoint();
-    tinywdt.pet();    
+    petWatchdog();    
     acquireIpAddress();    
-    tinywdt.pet();    
+    petWatchdog();    
     displayConnectionDetails();
 
     // if (!mdns.begin("airqualityegg", cc3000)) {
@@ -2374,7 +2377,7 @@ void reconnectToAccessPoint(void){
         Serial.flush();
         updateLCD("FAILED", 1);
         delay(LCD_ERROR_MESSAGE_DELAY);
-        tinywdt.force_reset();
+        watchdogForceReset();
       }
       Serial.println(F("OK."));
       updateLCD("CONNECTED", 1);
@@ -2790,4 +2793,16 @@ boolean publishCO(){
     converted_value_string, 
     compensated_value_string);  
   return mqqtPublish("/orgs/wd/aqe/co", tmp);
+}
+
+void petWatchdog(void){
+  tinywdt.pet(); 
+}
+
+void watchdogForceReset(void){
+  tinywdt.force_reset(); 
+}
+
+void watchdogInitialize(void){
+  tinywdt.begin(500, 60000); 
 }
