@@ -406,7 +406,12 @@ void setup() {
     Serial.print(F("Error: Unable to connect to MQTT server"));
     Serial.flush();
     watchdogForceReset();    
-  }     
+  }
+  
+  petWatchdog();
+  setLCD_P(PSTR("TEMP ---  CO ---"
+                "NO2  ---  RH ---"));       
+  delay(LCD_SUCCESS_MESSAGE_DELAY);      
 }
 
 void loop() {
@@ -2334,7 +2339,7 @@ void updateLCD(float value, uint8_t pos_x, uint8_t pos_y, uint8_t field_width){
       // if it only has an integer part, it may need to be padded
       // to the field width
       char fmt_string[17] = {0};
-      integer_part = (int32_t) (value + 0.5f);
+      integer_part = (int32_t) (value + 0.5f); 
       snprintf(fmt_string, 16, "%%%dld", field_width); 
       // this amounts to something like "%3ld", where 3 is the field_width
       snprintf(tmp, 16, fmt_string, integer_part);      
