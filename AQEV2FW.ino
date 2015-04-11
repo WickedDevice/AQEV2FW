@@ -409,8 +409,8 @@ void setup() {
   }
   
   petWatchdog();
-  setLCD_P(PSTR("TEMP ---  CO ---"
-                "NO2  ---  RH ---"));       
+  setLCD_P(PSTR("TEMP ---  RH ---"
+                "NO2  ---  CO ---"));       
   delay(LCD_SUCCESS_MESSAGE_DELAY);      
 }
 
@@ -437,9 +437,9 @@ void loop() {
       
       if(mqttReconnect()){ 
         updateLCD("TEMP", 0, 0, 4);
-        updateLCD("CO", 10, 0, 2);
+        updateLCD("RH", 10, 0, 2);         
         updateLCD("NO2", 0, 1, 3);
-        updateLCD("RH", 10, 1, 2); 
+        updateLCD("CO", 10, 1, 2);        
                       
         //connected to MQTT server and connected to Wi-Fi network        
         num_mqtt_connect_retries = 0;   
@@ -464,11 +464,11 @@ void loop() {
             Serial.println(F("Error: Failed to publish Humidity."));         
           }
           else{
-            updateLCD(relative_humidity_percent, 13, 1, 3);  
+            updateLCD(relative_humidity_percent, 13, 0, 3);  
           }
         }
         else{
-          updateLCD("---", 13, 1, 3);
+          updateLCD("---", 13, 0, 3);
         }
         
         if(no2_ready){
@@ -488,11 +488,11 @@ void loop() {
             Serial.println(F("Error: Failed to publish CO."));         
           }
           else{
-            updateLCD(co_ppm, 13, 0, 3); 
+            updateLCD(co_ppm, 13, 1, 3); 
           }
         }
         else{
-          updateLCD("---", 13, 0, 3);  
+          updateLCD("---", 13, 1, 3);  
         }
     
       }
