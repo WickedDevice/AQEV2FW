@@ -25,12 +25,14 @@ LMP91000 lmp91000;
 MCP342x adc;
 SHT25 sht25;
 WildFire_SPIFlash flash;
-CapacitiveSensor touch = CapacitiveSensor(A1, A0);
+CapacitiveSensor touch = CapacitiveSensor(A0, A1);
 LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
 byte mqtt_server[4] = { 0 };    
 PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
 WildFire_CC3000_Client wifiClient;
+
+unsigned long current_millis = 0;
 char firmware_version[16] = {0};
 float temperature_degc = 0.0f;
 float relative_humidity_percent = 0.0f;
@@ -49,6 +51,9 @@ float temperature_sample_buffer[TEMPERATURE_SAMPLE_BUFFER_DEPTH] = {0};
 
 #define HUMIDITY_SAMPLE_BUFFER_DEPTH (16)
 float humidity_sample_buffer[HUMIDITY_SAMPLE_BUFFER_DEPTH] = {0};
+
+#define TOUCH_SAMPLE_BUFFER_DEPTH (4)
+float touch_sample_buffer[TOUCH_SAMPLE_BUFFER_DEPTH] = {0};
 
 #define LCD_ERROR_MESSAGE_DELAY   (4000)
 #define LCD_SUCCESS_MESSAGE_DELAY (2000)
@@ -252,6 +257,14 @@ const long mqtt_publish_interval = 5000;
 unsigned long previous_sensor_sampling_millis = 0;
 const long sensor_sampling_interval = 2000;
 
+// touch sampling timer intervals
+unsigned long previous_touch_sampling_millis = 0;
+const long touch_sampling_interval = 200;
+
+// progress dots timer intervals
+unsigned long previous_progress_dots_millis = 0;
+const long progress_dots_interval = 1000;
+
 #define NUM_HEARTBEAT_WAVEFORM_SAMPLES (84)
 const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
   95, 94, 95, 96, 95, 94, 95, 96, 95, 94,
@@ -268,8 +281,9 @@ uint8_t heartbeat_waveform_index = 0;
 
 void setup() {
   // initialize hardware
-  initializeHardware();
-
+  initializeHardware(); 
+  backlightOff();
+  
   // check for initial integrity of configuration in eeprom
   if (!checkConfigIntegrity()) {
     Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
@@ -297,7 +311,16 @@ void setup() {
     setLCD_P(PSTR("CONNECT TERMINAL"
                   "FOR CONFIG MODE "));
                   
-    while (millis() < start + startup_time_period) { // can get away with this sort of thing at start up
+    current_millis = millis();
+    while (current_millis < start + startup_time_period) { // can get away with this sort of thing at start up
+      current_millis = millis();
+      
+      if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
+        previous_touch_sampling_millis = current_millis;    
+        collectTouch();    
+        processTouchQuietly();  
+      }      
+    
       if (Serial.available()) {
         if (got_serial_input == false) {
           Serial.println();
@@ -353,7 +376,13 @@ void setup() {
 
     prompt();
     for (;;) {
-      unsigned long current_millis = millis();
+      current_millis = millis();
+
+      if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
+        previous_touch_sampling_millis = current_millis;    
+        collectTouch();    
+        processTouchQuietly();  
+      }
 
       // stuck in this loop until the command line receives an exit command
       if (Serial.available()) {
@@ -415,7 +444,7 @@ void setup() {
 }
 
 void loop() {
-  unsigned long current_millis = millis();
+  current_millis = millis();
   static uint8_t num_mqtt_connect_retries = 0;
   static uint8_t num_mqtt_intervals_without_wifi = 0; 
   
@@ -427,6 +456,12 @@ void loop() {
     collectCO();
     collectTemperature();
     collectHumidity();  
+  }
+
+  if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
+    previous_touch_sampling_millis = current_millis;    
+    collectTouch();    
+    processTouchQuietly();  
   }
   
   if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){   
@@ -552,6 +587,31 @@ void initializeHardware(void) {
   pinMode(A6, OUTPUT);
   backlightOn();
 
+  // smiley face
+  byte smiley[8] = {
+          B00000,
+          B00000,
+          B01010,
+          B00000,
+          B10001,
+          B01110,
+          B00000,
+          B00000
+  };
+  
+  byte frownie[8] = {
+          B00000,
+          B00000,
+          B01010,
+          B00000,
+          B01110,
+          B10001,
+          B00000,
+          B00000
+  };
+  
+  lcd.createChar(0, smiley);
+  lcd.createChar(1, frownie);  
   lcd.begin(16, 2);
   setLCD_P(PSTR("AIR QUALITY EGG "));
   char tmp[17] = {0};
@@ -2214,6 +2274,16 @@ void backlightOff(void) {
   digitalWrite(A6, LOW);
 }
 
+void lcdFrownie(uint8_t pos_x, uint8_t pos_y){
+  lcd.setCursor(pos_x, pos_y);
+  lcd.write((byte) 1); 
+}
+
+void lcdSmiley(uint8_t pos_x, uint8_t pos_y){
+  lcd.setCursor(pos_x, pos_y);
+  lcd.write((byte) 0); 
+}
+
 void setLCD_P(const char str[] PROGMEM){  
   char tmp[33] = {0};
   strncpy_P(tmp, str, 32);
@@ -2482,6 +2552,7 @@ bool displayConnectionDetails(void){
     Serial.print(F("Info: DNSserv: ")); cc3000.printIPdotsRev(dnsserv); Serial.println();
     
     updateLCD(ipAddress, 1);
+    lcdSmiley(15, 1); // lower right corner
     delay(LCD_SUCCESS_MESSAGE_DELAY);  
   
     return true;
@@ -2510,11 +2581,13 @@ void reconnectToAccessPoint(void){
         Serial.println(ssid);
         Serial.flush();
         updateLCD("FAILED", 1);
+        lcdFrownie(15, 1);
         delay(LCD_ERROR_MESSAGE_DELAY);
         watchdogForceReset();
       }
       Serial.println(F("OK."));
       updateLCD("CONNECTED", 1);
+      lcdSmiley(15, 1);
       delay(LCD_SUCCESS_MESSAGE_DELAY);
       break;
     case CONNECT_METHOD_SMARTCONFIG:
@@ -2535,15 +2608,28 @@ void acquireIpAddress(void){
     /* Wait for DHCP to complete */
     Serial.print(F("Info: Request DHCP..."));
     setLCD_P(PSTR(" REQUESTING IP  "));   
-
-    while (!cc3000.checkDHCP()){
-      updateLcdProgressDots();
-      delay(1000);
+    
+    while (!cc3000.checkDHCP()){      
       // if this goes on for longer than a minute, 
       // tiny watchdog should automatically kick in
       // and reset the unit. If we don't want that to happen
       // we would need to pet the tiny watchdog every so often
       // in this loop.
+      
+      current_millis = millis();
+      if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
+        previous_touch_sampling_millis = current_millis;    
+        collectTouch();    
+        processTouchQuietly();  
+      }      
+
+      if(current_millis - previous_progress_dots_millis >= progress_dots_interval){
+        previous_progress_dots_millis = current_millis;
+        updateLcdProgressDots();
+      }     
+     
+     delay(100); 
+      
     }   
     Serial.println(F("OK.")); 
   }
@@ -2606,7 +2692,8 @@ boolean mqttResolve(void){
       Serial.print(mqtt_server_name);
       Serial.println(F("'"));
       
-      updateLCD("FAILED", 1);      
+      updateLCD("FAILED", 1);
+      lcdFrownie(15, 1);
       delay(LCD_ERROR_MESSAGE_DELAY);
       return false;
     }  
@@ -2619,7 +2706,8 @@ boolean mqttResolve(void){
       cc3000.printIPdotsRev(ip);
       
       updateLCD(ip, 1);      
-      delay(LCD_SUCCESS_MESSAGE_DELAY);      
+      lcdSmiley(15, 1);
+      delay(LCD_SUCCESS_MESSAGE_DELAY);          
       Serial.println();    
     }
   }
@@ -2761,6 +2849,55 @@ void collectHumidity(void){
       }
     }
   }
+}
+
+void collectTouch(void){
+  static uint8_t sample_write_index = 0;
+  touch_sample_buffer[sample_write_index++] = touch.capacitiveSensor(30);
+  
+  if(sample_write_index == TOUCH_SAMPLE_BUFFER_DEPTH){
+    sample_write_index = 0; 
+  }
+}
+
+void processTouchVerbose(boolean verbose_output){
+  const uint32_t touch_event_threshold = 85UL;  
+  static unsigned long touch_start_millis = 0UL;
+  const long backlight_interval = 10000L; 
+  static boolean backlight_is_on = false;;
+  
+  float touch_moving_average = calculateAverage(touch_sample_buffer, TOUCH_SAMPLE_BUFFER_DEPTH); 
+  if(verbose_output){
+    Serial.print(F("Info: Average Touch Reading: "));
+    Serial.println(touch_moving_average);
+  }
+  
+  if(touch_moving_average > touch_event_threshold){
+    backlightOn();
+    backlight_is_on = true;
+    if(verbose_output){
+      Serial.println(F("Info: Turning backlight on."));
+    }
+    touch_start_millis = current_millis;
+  } 
+  
+  if((current_millis - touch_start_millis) >= backlight_interval) {        
+    if(backlight_is_on){      
+      if(verbose_output){
+        Serial.println(F("Info: Turning backlight off (timer expired)."));   
+      }
+      backlightOff();      
+      backlight_is_on = false;      
+    }
+  }  
+}
+
+void processTouch(void){
+  processTouchVerbose(true);
+}
+
+void processTouchQuietly(void){
+  processTouchVerbose(false);
 }
 
 void collectNO2(void ){
