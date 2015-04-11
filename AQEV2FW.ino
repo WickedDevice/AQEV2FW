@@ -34,6 +34,8 @@ WildFire_CC3000_Client wifiClient;
 char firmware_version[16] = {0};
 float temperature_degc = 0.0f;
 float relative_humidity_percent = 0.0f;
+float no2_ppb = 0.0f;
+float co_ppm = 0.0f;
 
 // samples are buffered approximately every two seconds
 #define NO2_SAMPLE_BUFFER_DEPTH (32)
@@ -48,8 +50,8 @@ float temperature_sample_buffer[TEMPERATURE_SAMPLE_BUFFER_DEPTH] = {0};
 #define HUMIDITY_SAMPLE_BUFFER_DEPTH (16)
 float humidity_sample_buffer[HUMIDITY_SAMPLE_BUFFER_DEPTH] = {0};
 
-#define LCD_ERROR_MESSAGE_DELAY   (3000)
-#define LCD_SUCCESS_MESSAGE_DELAY (1000)
+#define LCD_ERROR_MESSAGE_DELAY   (4000)
+#define LCD_SUCCESS_MESSAGE_DELAY (2000)
 
 boolean no2_ready = false;
 boolean co_ready = false;
@@ -404,10 +406,7 @@ void setup() {
     Serial.print(F("Error: Unable to connect to MQTT server"));
     Serial.flush();
     watchdogForceReset();    
-  }
-  
-  petWatchdog();
-  
+  }     
 }
 
 void loop() {
@@ -432,6 +431,11 @@ void loop() {
       num_mqtt_intervals_without_wifi = 0;
       
       if(mqttReconnect()){ 
+        updateLCD("TEMP", 0, 0, 4);
+        updateLCD("CO", 10, 0, 2);
+        updateLCD("NO2", 0, 1, 3);
+        updateLCD("RH", 10, 1, 2); 
+                      
         //connected to MQTT server and connected to Wi-Fi network        
         num_mqtt_connect_retries = 0;   
         if(!publishHeartbeat()){
@@ -442,24 +446,48 @@ void loop() {
           if(!publishTemperature()){          
             Serial.println(F("Error: Failed to publish Temperature."));          
           }
+          else{
+            updateLCD(temperature_degc, 5, 0, 3);             
+          }
         }
+        else{
+            updateLCD("---", 5, 0, 3);
+        }        
         
         if(humidity_ready){
           if(!publishHumidity()){
             Serial.println(F("Error: Failed to publish Humidity."));         
           }
+          else{
+            updateLCD(relative_humidity_percent, 13, 1, 3);  
+          }
+        }
+        else{
+          updateLCD("---", 13, 1, 3);
         }
         
         if(no2_ready){
           if(!publishNO2()){
             Serial.println(F("Error: Failed to publish NO2."));          
           }
+          else{
+            updateLCD(no2_ppb, 5, 1, 3);  
+          }
+        }
+        else{
+          updateLCD("---", 5, 1, 3); 
         }
         
         if(co_ready){
           if(!publishCO()){
             Serial.println(F("Error: Failed to publish CO."));         
           }
+          else{
+            updateLCD(co_ppm, 13, 0, 3); 
+          }
+        }
+        else{
+          updateLCD("---", 13, 0, 3);  
         }
     
       }
@@ -2217,6 +2245,105 @@ void updateLCD(const char str[], uint8_t pos_x, uint8_t pos_y, uint8_t num_chars
   }
 }
 
+void updateLCD(float value, uint8_t pos_x, uint8_t pos_y, uint8_t field_width){
+  char tmp[17] = {0};
+  boolean requires_minus_sign = false;
+  boolean requires_leading_zero = false; 
+  boolean requires_decimal_point = false;
+  
+  uint8_t available_field_width_remaining_for_digits = field_width;
+  uint8_t num_digits_before_the_decimal_point = 0;
+  uint8_t num_digits_after_the_decimal_point = 0;
+  // we only have field_width digits available
+  // one of those *may* be a '.'
+  // one of those *may* be a '-'
+  
+  if(value < 0.0f){
+    requires_minus_sign = true;
+    value *= -1.0f;   
+    if(available_field_width_remaining_for_digits > 0){
+      available_field_width_remaining_for_digits -= 1; // because requires_minus_sign  
+    }
+  }  
+  
+  // deal with the value as though it's positive from here forward    
+  
+  if(value < 1.0f){
+    requires_leading_zero = true; 
+    requires_decimal_point = true;
+    if(available_field_width_remaining_for_digits > 1){
+      available_field_width_remaining_for_digits -= 2; // because requires_leading_zero and requires_decimal_point
+    }
+  }
+  
+  // whether it requires a decimal point otherwise we need to 
+  // determine based on the available space remaining for digits  
+  // and the number of digits the number 'naturally' has before
+  // the decimal point
+  if(!requires_decimal_point){
+    float x = value;    
+    do {
+      x /= 10.0f; 
+      num_digits_before_the_decimal_point++;
+    } 
+    while(x >= 1.0f);
+    
+    // if the number of digits that must be displayed before the decimal point
+    // leaves room for any additional digits, then the displaying of it requires a decimal point
+    if(num_digits_before_the_decimal_point + 1 < available_field_width_remaining_for_digits){
+      requires_decimal_point = true;
+      if(available_field_width_remaining_for_digits > 0){
+        available_field_width_remaining_for_digits -= 1; // because requires_decimal_point
+      }      
+    }
+  }
+  
+  // it may be implausible to display the number in the field width at all at this point
+  // if it can't be displayed, show '*' for all the entire field_width
+  if(available_field_width_remaining_for_digits == 0){
+    for(uint8_t ii = 0; (ii < field_width) && (ii < 16); ii++){
+      tmp[ii] = '*';       
+    }
+  }
+  else{  
+    // if it requires a decimal point, determine the num digits after the decimal point to display
+    // based on the num_digits_before_the_decimal_point and the field_width
+    int32_t integer_part = (int32_t) value; 
+    int32_t decimal_part = 0;
+    if(requires_decimal_point){
+      num_digits_after_the_decimal_point = available_field_width_remaining_for_digits - num_digits_before_the_decimal_point;
+      
+      // compute the whole and fractional parts of the number  
+      // remember it's guaranteed to be positive here
+      float fractional_part = value - (1.0f * integer_part);  
+      for(uint8_t ii = 0; ii < num_digits_after_the_decimal_point; ii++){
+        fractional_part *= 10.0f;
+      }      
+      fractional_part += 0.5f; // round to nearest
+      decimal_part = (int32_t) fractional_part;                 
+    }   
+
+    // now that we have the fractional part and the decimal part
+    // lets finally display the thing    
+    if(requires_decimal_point){
+      // if it's got a decimal part to display, it is guaranteed to fill
+      // the entire field
+      snprintf(tmp, 16, "%ld.%ld", integer_part, decimal_part);
+    }
+    else{
+      // if it only has an integer part, it may need to be padded
+      // to the field width
+      char fmt_string[17] = {0};
+      integer_part = (int32_t) (value + 0.5f);
+      snprintf(fmt_string, 16, "%%%dld", field_width); 
+      // this amounts to something like "%3ld", where 3 is the field_width
+      snprintf(tmp, 16, fmt_string, integer_part);      
+    }    
+  }
+    
+  updateLCD(tmp, pos_x, pos_y, field_width);  
+}
+
 void updateLCD(uint32_t ip, uint8_t line_number){
   char tmp[17] = {0};
   snprintf(tmp, 16, "%d.%d.%d.%d", 
@@ -2231,17 +2358,19 @@ void updateLCD(uint32_t ip, uint8_t line_number){
 void updateLCD(const char str[], uint8_t line_number){
   // center the string on the line
   char tmp[17] = {0};  
-  uint16_t len = strlen(str);
-  if(len < 16){
-    uint8_t num_empty_chars_on_line = 16 - len;
+  uint16_t original_len = strlen(str);
+  if(original_len < 16){
+    uint8_t num_empty_chars_on_line = 16 - original_len;
     // pad the front of the string with spaces
     uint8_t half_num_empty_chars_on_line = num_empty_chars_on_line / 2;
     for(uint8_t ii = 0; ii < half_num_empty_chars_on_line; ii++){
       tmp[ii] = ' '; 
     }    
   }
-  
-  strcat(tmp, str); // concatenate the string into the front padding
+  uint16_t len = strlen(tmp);  // length of the front padding    
+  if((original_len + len) <= 16){
+    strcat(tmp, str); // concatenate the string into the front padding-
+  }
   
   len = strlen(tmp);
   if(len < 16){
@@ -2257,9 +2386,9 @@ void updateLCD(const char str[], uint8_t line_number){
   }
 }
 
-void updateLCD(uint8_t value, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
+void updateLCD(int32_t value, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
   char tmp[17] = {0};
-  snprintf(tmp, num_chars, "%d", value);
+  snprintf(tmp, num_chars, "%ld", value);
   updateLCD(tmp, pos_x, pos_y, num_chars);
 }
 
@@ -2721,6 +2850,7 @@ boolean publishNO2(){
   float converted_value = 0.0f, compensated_value = 0.0f;    
   float no2_moving_average = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
   no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
+  no2_ppb = compensated_value;  
   dtostrf(no2_moving_average, -8, 5, raw_value_string);
   dtostrf(converted_value, -4, 2, converted_value_string);
   dtostrf(compensated_value, -4, 2, compensated_value_string);    
@@ -2781,6 +2911,7 @@ boolean publishCO(){
   float converted_value = 0.0f, compensated_value = 0.0f;   
   float co_moving_average = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
   co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
+  co_ppm = compensated_value;  
   dtostrf(co_moving_average, -8, 5, raw_value_string);
   dtostrf(converted_value, -4, 2, converted_value_string);
   dtostrf(compensated_value, -4, 2, compensated_value_string);    
