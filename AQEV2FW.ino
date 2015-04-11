@@ -15,7 +15,7 @@
 
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
-#define AQEV2FW_MINOR_VERSION 1
+#define AQEV2FW_MINOR_VERSION 0
 #define AQEV2FW_PATCH_VERSION 0
 
 WildFire wf;
@@ -27,7 +27,7 @@ SHT25 sht25;
 WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A1, A0);
 LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
-byte mqtt_server[] = { 0 };    
+byte mqtt_server[4] = { 0 };    
 PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
 WildFire_CC3000_Client wifiClient;
@@ -2179,19 +2179,21 @@ void backlightOff(void) {
 }
 
 void setLCD_P(const char str[] PROGMEM){  
-  char tmp[32] = {0};
+  char tmp[33] = {0};
   strncpy_P(tmp, str, 32);
   setLCD(tmp);
 }
 
 void setLCD(const char str[]){
-  char tmp[17] = {0};
+  char tmp[17] = {0};  
+  uint16_t original_length = strlen(str);
   strncpy(tmp, str, 16);
+  uint16_t len = strlen(tmp);
   lcd.clear();
   lcd.setCursor(0,0);
   lcd.print(tmp);
-  
-  if(strlen(str) > 16){   
+
+  if(original_length > 16){   
     memset(tmp, 0, 16);
     strncpy(tmp, str + 16, 16);
     lcd.setCursor(0,1);  
@@ -2206,7 +2208,7 @@ void updateLCD(const char str[], uint8_t pos_x, uint8_t pos_y, uint8_t num_chars
     tmp[num_chars] = '\0'; 
   }    
   
-  if((pos_x < 16) && (pos_y < 16)){
+  if((pos_x < 16) && (pos_y < 2)){
     lcd.setCursor(pos_x, pos_y);
     lcd.print(tmp);    
   }
@@ -2214,7 +2216,7 @@ void updateLCD(const char str[], uint8_t pos_x, uint8_t pos_y, uint8_t num_chars
 
 void updateLCD(uint32_t ip, uint8_t line_number){
   char tmp[17] = {0};
-  snprintf(tmp, 16, " %d.%d.%d.%d", 
+  snprintf(tmp, 16, "%d.%d.%d.%d", 
     (uint8_t)(ip >> 24),
     (uint8_t)(ip >> 16),
     (uint8_t)(ip >> 8),       
@@ -2466,6 +2468,9 @@ boolean mqttResolve(void){
       Serial.print(F("Error: Couldn't resolve '"));
       Serial.print(mqtt_server_name);
       Serial.println(F("'"));
+      
+      updateLCD("FAILED", 1);      
+      delay(LCD_ERROR_MESSAGE_DELAY);
       return false;
     }  
     else{
@@ -2475,6 +2480,9 @@ boolean mqttResolve(void){
       Serial.print(mqtt_server_name);
       Serial.print(F("\" to IP address "));
       cc3000.printIPdotsRev(ip);
+      
+      updateLCD(ip, 1);      
+      delay(LCD_SUCCESS_MESSAGE_DELAY);      
       Serial.println();    
     }
   }
