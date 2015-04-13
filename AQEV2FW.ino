@@ -78,7 +78,6 @@ boolean init_cc3000_ok = false;
 #define SUBMODE_NORMAL   (3)
 #define SUBMODE_ZEROING  (4)
 
-
 uint8_t mode = MODE_OPERATIONAL;
 
 // the config mode state machine's return values
@@ -274,6 +273,10 @@ const long touch_sampling_interval = 200;
 unsigned long previous_progress_dots_millis = 0;
 const long progress_dots_interval = 1000;
 
+// zero check timer intervals
+unsigned long previous_zero_check_millis = 0;
+const long zero_check_interval = 5000;
+
 #define NUM_HEARTBEAT_WAVEFORM_SAMPLES (84)
 const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
   95, 94, 95, 96, 95, 94, 95, 96, 95, 94,
@@ -298,10 +301,13 @@ void setup() {
   
   integrity_check_passed = checkConfigIntegrity();
   valid_ssid_passed = valid_ssid_config();  
+  uint8_t target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
+  boolean ok_to_exit_config_mode = true;  
   
+  // config mode processing loop
   do{
     // check for initial integrity of configuration in eeprom
-    if (!integrity_check_passed) {
+    if(!integrity_check_passed) {
       Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
       configInject("aqe\r");
       Serial.println();
@@ -309,7 +315,7 @@ void setup() {
                     "  CHECK FAILED  "));
       mode = MODE_CONFIG;
     }
-    else if(!valid_ssid_passed){
+    else if(mode_requires_wifi(target_mode) && !valid_ssid_passed){
       Serial.println(F("Info: No valid SSID configured, automatically falling back to CONFIG mode."));
       configInject("aqe\r");
       Serial.println();
@@ -430,35 +436,59 @@ void setup() {
     }
     
     integrity_check_passed = checkConfigIntegrity();
-    valid_ssid_passed = valid_ssid_config();
+    valid_ssid_passed = valid_ssid_config();    
+    ok_to_exit_config_mode = true;
     
-  } while(!integrity_check_passed || !valid_ssid_passed);
+    target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);      
+       
+    if(!integrity_check_passed){
+      ok_to_exit_config_mode = false;
+    }
+    else if(mode_requires_wifi(target_mode) && !valid_ssid_passed){
+      ok_to_exit_config_mode = false;
+    }
+    
+  } while(!ok_to_exit_config_mode);
 
   Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
   setLCD_P(PSTR("OPERATIONAL MODE"));
   delay(LCD_SUCCESS_MESSAGE_DELAY);
   
-  // Try and Connect to the Configured Network
-  if(!restartWifi()){
-    Serial.println(F("Error: Failed to connect to configured network. Rebooting."));
-    Serial.flush();
-    watchdogForceReset();
+  // ... but *which* operational mode are we in?
+  mode = target_mode;
+  
+  if(mode_requires_wifi(mode)){
+    // Try and Connect to the Configured Network
+    if(!restartWifi()){
+      Serial.println(F("Error: Failed to connect to configured network. Rebooting."));
+      Serial.flush();
+      watchdogForceReset();
+    }
+  
+    petWatchdog();
+  
+    // Check for Firmware Updates 
+  
+    // Connect to MQTT server
+    if(!mqttReconnect()){
+      Serial.print(F("Error: Unable to connect to MQTT server"));
+      Serial.flush();
+      watchdogForceReset();    
+    }
+    
+    petWatchdog();
   }
   
-  petWatchdog();
-  // Check for Firmware Updates 
-  
-  // Connect to MQTT server
-  if(!mqttReconnect()){
-    Serial.print(F("Error: Unable to connect to MQTT server"));
-    Serial.flush();
-    watchdogForceReset();    
+  if(mode == SUBMODE_NORMAL){
+    setLCD_P(PSTR("TEMP ---  RH ---"
+                  "NO2  ---  CO ---"));           
+    delay(LCD_SUCCESS_MESSAGE_DELAY);                          
   }
-  
-  petWatchdog();
-  setLCD_P(PSTR("TEMP ---  RH ---"
-                "NO2  ---  CO ---"));       
-  delay(LCD_SUCCESS_MESSAGE_DELAY);      
+  else{
+    setLCD_P(PSTR("ZERO-ING SENSORS"
+                  "NO2  ---  CO ---"));           
+    delay(LCD_SUCCESS_MESSAGE_DELAY);                              
+  }
 }
 
 void loop() {
@@ -480,7 +510,24 @@ void loop() {
     processTouchQuietly();  
   }  
 
-  loop_wifi_mqtt_mode();
+  // the following loop routines *must* return reasonably frequently
+  // so that the watchdog timer is serviced
+  switch(mode){
+    case SUBMODE_NORMAL:
+      loop_wifi_mqtt_mode();
+      break;
+    case SUBMODE_ZEROING: 
+      if(loop_zeroing_mode()){
+        mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
+        if(mode != SUBMODE_NORMAL){
+          eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);       
+        }
+        watchdogForceReset();
+      }
+      break;
+    default: // unkown operating mode, nothing to be done 
+      break;
+  }
   
   // pet the watchdog
   if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
@@ -3159,6 +3206,37 @@ void loop_wifi_mqtt_mode(void){
       
       restartWifi();
     }
-  }
+  }    
+}
+
+boolean loop_zeroing_mode(void){
+  boolean complete = false;
+  
+  if(current_millis - previous_zero_check_millis >= zero_check_interval){   
+    if(no2_ready){
+      updateLCD(no2_ppb, 5, 1, 3);  
+    }
+    else{
+      updateLCD("---", 5, 1, 3); 
+    }
     
+    if(co_ready){
+      updateLCD(co_ppm, 13, 1, 3); 
+    }
+    else{
+      updateLCD("---", 13, 1, 3);  
+    }  
+  }
+  
+  return complete;
+}
+
+boolean mode_requires_wifi(uint8_t opmode){
+  boolean requires_wifi = false;
+  
+  if(opmode == SUBMODE_NORMAL){
+    requires_wifi = true;
+  } 
+  
+  return requires_wifi;
 }
