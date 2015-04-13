@@ -3313,16 +3313,20 @@ void printCsvDataLine(const char * augmented_header){
   static boolean first = true;
   if(first){
     first = false;
-    Serial.print(F("csv: Timestamp[milliseconds],Temperature[degC],"
+    Serial.print(F("csv: "
+                   "Timestamp[milliseconds],"
+                   "Temperature[degC],"
                    "Humidity[percent],"
                    "NO2[ppb],"
                    "CO[ppm]"));
+                   
     if(augmented_header != 0){
       Serial.print(F(","));
       Serial.print(augmented_header); 
     }
     Serial.println();
   }  
+  
   Serial.print(F("csv: "));
   Serial.print(millis());
   Serial.print(F(","));
