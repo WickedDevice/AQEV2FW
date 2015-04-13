@@ -74,6 +74,11 @@ boolean init_cc3000_ok = false;
 // the software's operating mode
 #define MODE_CONFIG      (1)
 #define MODE_OPERATIONAL (2)
+// submodes of normal behavior
+#define SUBMODE_NORMAL   (3)
+#define SUBMODE_ZEROING  (4)
+
+
 uint8_t mode = MODE_OPERATIONAL;
 
 // the config mode state machine's return values
@@ -105,6 +110,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_MQTT_AUTH          (EEPROM_MQTT_CLIENT_ID - 1)     // MQTT authentication enabled, single byte value 0 = disabled or 1 = enabled
 #define EEPROM_MQTT_PORT          (EEPROM_MQTT_AUTH - 4)          // MQTT authentication enabled, reserve four bytes, even though you only need two for a port
 #define EEPROM_UPDATE_SERVER_NAME (EEPROM_MQTT_PORT - 32)         // string, the DNS name of the Firmware Update server (default update.wickeddevice.com), up to 32 characters (one of which is a null terminator)
+#define EEPROM_OPERATIONAL_MODE   (EEPROM_UPDATE_SERVER_NAME - 1) // operational mode encoded as a single byte value (e.g. NORMAL, ZEROING, etc.)
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
@@ -168,6 +174,7 @@ void set_co_slope(char * arg);
 void set_co_offset(char * arg);
 void set_co_sensitivity(char * arg);
 void set_private_key(char * arg);
+void set_operational_mode(char * arg);
 
 // Note to self:
 //   When implementing a new parameter, ask yourself:
@@ -213,6 +220,7 @@ char * commands[] = {
   "co_slope  ",
   "co_off    ",
   "key       ",
+  "opmode    ",
   0
 };
 
@@ -242,6 +250,7 @@ void (*command_functions[])(char * arg) = {
   set_co_slope,
   set_co_offset,
   set_private_key,
+  set_operational_mode,
   0
 };
 
@@ -280,141 +289,150 @@ const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
 uint8_t heartbeat_waveform_index = 0;
 
 void setup() {
+  boolean integrity_check_passed = false;
+  boolean valid_ssid_passed = false;
+  
   // initialize hardware
   initializeHardware(); 
   backlightOff();
   
-  // check for initial integrity of configuration in eeprom
-  if (!checkConfigIntegrity()) {
-    Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
-    configInject("aqe\r");
-    Serial.println();
-    mode = MODE_CONFIG;
-  }
-  else if(!valid_ssid_config()){
-    Serial.println(F("Info: No valid SSID configured, automatically falling back to CONFIG mode."));
-    configInject("aqe\r");
-    Serial.println();
-    mode = MODE_CONFIG;
-  }
-  else {
-    // if the appropriate escape sequence is received within 8 seconds
-    // go into config mode
-    const long startup_time_period = 12000;
-    long start = millis();
-    long min_over = 100;
-    boolean got_serial_input = false;
-    Serial.println(F("Enter 'aqe' for CONFIG mode."));
-    Serial.print(F("OPERATIONAL mode automatically begins after "));
-    Serial.print(startup_time_period / 1000);
-    Serial.println(F(" secs of no input."));
-    setLCD_P(PSTR("CONNECT TERMINAL"
-                  "FOR CONFIG MODE "));
-                  
-    current_millis = millis();
-    while (current_millis < start + startup_time_period) { // can get away with this sort of thing at start up
+  integrity_check_passed = checkConfigIntegrity();
+  valid_ssid_passed = valid_ssid_config();  
+  
+  do{
+    // check for initial integrity of configuration in eeprom
+    if (!integrity_check_passed) {
+      Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
+      configInject("aqe\r");
+      Serial.println();
+      setLCD_P(PSTR("CONFIG INTEGRITY"
+                    "  CHECK FAILED  "));
+      mode = MODE_CONFIG;
+    }
+    else if(!valid_ssid_passed){
+      Serial.println(F("Info: No valid SSID configured, automatically falling back to CONFIG mode."));
+      configInject("aqe\r");
+      Serial.println();
+      setLCD_P(PSTR("   VALID SSID   "
+                    "    REQUIRED    "));      
+      mode = MODE_CONFIG;
+    }
+    else {
+      // if the appropriate escape sequence is received within 8 seconds
+      // go into config mode
+      const long startup_time_period = 12000;
+      long start = millis();
+      long min_over = 100;
+      boolean got_serial_input = false;
+      Serial.println(F("Enter 'aqe' for CONFIG mode."));
+      Serial.print(F("OPERATIONAL mode automatically begins after "));
+      Serial.print(startup_time_period / 1000);
+      Serial.println(F(" secs of no input."));
+      setLCD_P(PSTR("CONNECT TERMINAL"
+                    "FOR CONFIG MODE "));
+                    
       current_millis = millis();
+      while (current_millis < start + startup_time_period) { // can get away with this sort of thing at start up
+        current_millis = millis();
+        
+        if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
+          previous_touch_sampling_millis = current_millis;    
+          collectTouch();    
+          processTouchQuietly();  
+        }      
       
-      if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
-        previous_touch_sampling_millis = current_millis;    
-        collectTouch();    
-        processTouchQuietly();  
-      }      
-    
-      if (Serial.available()) {
-        if (got_serial_input == false) {
-          Serial.println();
+        if (Serial.available()) {
+          if (got_serial_input == false) {
+            Serial.println();
+          }
+          got_serial_input = true;
+  
+          start = millis(); // reset the timeout
+          if (CONFIG_MODE_GOT_INIT == configModeStateMachine(Serial.read(), false)) {
+            mode = MODE_CONFIG;
+            break;
+          }
         }
-        got_serial_input = true;
-
-        start = millis(); // reset the timeout
-        if (CONFIG_MODE_GOT_INIT == configModeStateMachine(Serial.read(), false)) {
-          mode = MODE_CONFIG;
-          break;
+  
+        // output a countdown to the Serial Monitor
+        if (millis() - start >= min_over) {
+          uint8_t countdown_value_display = (startup_time_period - 500 - min_over) / 1000;
+          if (got_serial_input == false) {
+            Serial.print(countdown_value_display);
+            Serial.print(F("..."));
+          }
+          
+          updateCornerDot();
+          
+          min_over += 1000;
         }
-      }
-
-      // output a countdown to the Serial Monitor
-      if (millis() - start >= min_over) {
-        uint8_t countdown_value_display = (startup_time_period - 500 - min_over) / 1000;
-        if (got_serial_input == false) {
-          Serial.print(countdown_value_display);
-          Serial.print(F("..."));
-        }
-        
-        updateCornerDot();
-        
-        min_over += 1000;
       }
     }
-  }
-  Serial.println();
-
-  if (mode == MODE_CONFIG) {
-    const uint32_t idle_timeout_period_ms = 1000UL * 60UL * 5UL; // 5 minutes
-    uint32_t idle_time_ms = 0;
-    Serial.println(F("-~=* In CONFIG Mode *=~-"));
-    setLCD_P(PSTR("  CONFIG MODE"));
-    
-    Serial.print(F("OPERATIONAL mode begins automatically after "));
-    Serial.print((idle_timeout_period_ms / 1000UL) / 60UL);
-    Serial.println(F(" mins without input."));
-    Serial.println(F("Enter 'help' for a list of available commands, "));
-    Serial.println(F("      ...or 'help <cmd>' for help on a specific command"));
-
-    configInject("get settings\r");
     Serial.println();
-    Serial.println(F(" @=============================================================@"));
-    Serial.println(F(" # GETTING STARTED                                             #"));
-    Serial.println(F(" #-------------------------------------------------------------#"));
-    Serial.println(F(" #   First type 'ssid your_ssid_here' and & press <enter>      #"));
-    Serial.println(F(" #   Then type 'pwd your_network_password' & press <enter>     #"));
-    Serial.println(F(" #   Then type 'get settings' & press <enter> to review config #"));
-    Serial.println(F(" #   Finally, type 'exit' to go into OPERATIONAL mode,         #"));
-    Serial.println(F(" #     and verify that the Egg connects to your network!       #")); 
-    Serial.println(F(" @=============================================================@"));
-
-    prompt();
-    for (;;) {
-      current_millis = millis();
-
-      if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
-        previous_touch_sampling_millis = current_millis;    
-        collectTouch();    
-        processTouchQuietly();  
+  
+    if (mode == MODE_CONFIG) {
+      const uint32_t idle_timeout_period_ms = 1000UL * 60UL * 5UL; // 5 minutes
+      uint32_t idle_time_ms = 0;
+      Serial.println(F("-~=* In CONFIG Mode *=~-"));
+      if(integrity_check_passed && valid_ssid_passed){
+        setLCD_P(PSTR("  CONFIG MODE"));
       }
-
-      // stuck in this loop until the command line receives an exit command
-      if (Serial.available()) {
-        idle_time_ms = 0;
-        // if you get serial traffic, pass it along to the configModeStateMachine for consumption
-        if (CONFIG_MODE_GOT_EXIT == configModeStateMachine(Serial.read(), false)) {
+      
+      Serial.print(F("OPERATIONAL mode begins automatically after "));
+      Serial.print((idle_timeout_period_ms / 1000UL) / 60UL);
+      Serial.println(F(" mins without input."));
+      Serial.println(F("Enter 'help' for a list of available commands, "));
+      Serial.println(F("      ...or 'help <cmd>' for help on a specific command"));
+  
+      configInject("get settings\r");
+      Serial.println();
+      Serial.println(F(" @=============================================================@"));
+      Serial.println(F(" # GETTING STARTED                                             #"));
+      Serial.println(F(" #-------------------------------------------------------------#"));
+      Serial.println(F(" #   First type 'ssid your_ssid_here' and & press <enter>      #"));
+      Serial.println(F(" #   Then type 'pwd your_network_password' & press <enter>     #"));
+      Serial.println(F(" #   Then type 'get settings' & press <enter> to review config #"));
+      Serial.println(F(" #   Finally, type 'exit' to go into OPERATIONAL mode,         #"));
+      Serial.println(F(" #     and verify that the Egg connects to your network!       #")); 
+      Serial.println(F(" @=============================================================@"));
+  
+      prompt();
+      for (;;) {
+        current_millis = millis();
+  
+        if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
+          previous_touch_sampling_millis = current_millis;    
+          collectTouch();    
+          processTouchQuietly();  
+        }
+  
+        // stuck in this loop until the command line receives an exit command
+        if (Serial.available()) {
+          idle_time_ms = 0;
+          // if you get serial traffic, pass it along to the configModeStateMachine for consumption
+          if (CONFIG_MODE_GOT_EXIT == configModeStateMachine(Serial.read(), false)) {
+            break;
+          }
+        }
+  
+        // pet the watchdog once a ssecond
+        if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
+          idle_time_ms += tinywdt_interval;
+          petWatchdog();
+          previous_tinywdt_millis = current_millis;
+        }
+  
+        if (idle_time_ms >= idle_timeout_period_ms) {
+          Serial.println(F("Info: Idle time expired, exiting CONFIG mode."));
           break;
         }
       }
-
-      // pet the watchdog once a ssecond
-      if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
-        idle_time_ms += tinywdt_interval;
-        petWatchdog();
-        previous_tinywdt_millis = current_millis;
-      }
-
-      if (idle_time_ms >= idle_timeout_period_ms) {
-        Serial.println(F("Info: Idle time expired, exiting CONFIG mode."));
-        break;
-      }
     }
-  }
-
-  // re-check for valid configuration
-  if (!checkConfigIntegrity()) {
-    Serial.println(F("Info: Resetting prior to Loop because of invalid configuration"));
-    watchdogForceReset();
-  }
-  else {
-    Serial.println(F("Beginning main Loop"));
-  }
+    
+    integrity_check_passed = checkConfigIntegrity();
+    valid_ssid_passed = valid_ssid_config();
+    
+  } while(!integrity_check_passed || !valid_ssid_passed);
 
   Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
   setLCD_P(PSTR("OPERATIONAL MODE"));
@@ -445,9 +463,7 @@ void setup() {
 
 void loop() {
   current_millis = millis();
-  static uint8_t num_mqtt_connect_retries = 0;
-  static uint8_t num_mqtt_intervals_without_wifi = 0; 
-  
+
   if(current_millis - previous_sensor_sampling_millis >= sensor_sampling_interval){
     previous_sensor_sampling_millis = current_millis;    
     Serial.print(F("Info: Sampling Sensors @ "));
@@ -462,97 +478,9 @@ void loop() {
     previous_touch_sampling_millis = current_millis;    
     collectTouch();    
     processTouchQuietly();  
-  }
-  
-  if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){   
-    previous_mqtt_publish_millis = current_millis;      
-    
-    if(connectedToNetwork()){
-      num_mqtt_intervals_without_wifi = 0;
-      
-      if(mqttReconnect()){ 
-        updateLCD("TEMP", 0, 0, 4);
-        updateLCD("RH", 10, 0, 2);         
-        updateLCD("NO2", 0, 1, 3);
-        updateLCD("CO", 10, 1, 2);        
-                      
-        //connected to MQTT server and connected to Wi-Fi network        
-        num_mqtt_connect_retries = 0;   
-        if(!publishHeartbeat()){
-          Serial.println(F("Error: Failed to publish Heartbeat."));  
-        }
-        
-        if(temperature_ready){
-          if(!publishTemperature()){          
-            Serial.println(F("Error: Failed to publish Temperature."));          
-          }
-          else{
-            updateLCD(temperature_degc, 5, 0, 3);             
-          }
-        }
-        else{
-            updateLCD("---", 5, 0, 3);
-        }        
-        
-        if(humidity_ready){
-          if(!publishHumidity()){
-            Serial.println(F("Error: Failed to publish Humidity."));         
-          }
-          else{
-            updateLCD(relative_humidity_percent, 13, 0, 3);  
-          }
-        }
-        else{
-          updateLCD("---", 13, 0, 3);
-        }
-        
-        if(no2_ready){
-          if(!publishNO2()){
-            Serial.println(F("Error: Failed to publish NO2."));          
-          }
-          else{
-            updateLCD(no2_ppb, 5, 1, 3);  
-          }
-        }
-        else{
-          updateLCD("---", 5, 1, 3); 
-        }
-        
-        if(co_ready){
-          if(!publishCO()){
-            Serial.println(F("Error: Failed to publish CO."));         
-          }
-          else{
-            updateLCD(co_ppm, 13, 1, 3); 
-          }
-        }
-        else{
-          updateLCD("---", 13, 1, 3);  
-        }
-    
-      }
-      else{
-        // not connected to MQTT server
-        num_mqtt_connect_retries++;
-        if(num_mqtt_connect_retries >= 5){
-          Serial.println(F("Error: MQTT Connect Failed 5 consecutive times. Forcing reboot."));
-          Serial.flush();
-          watchdogForceReset();  
-        }
-      }
-    }
-    else{
-      // not connected to Wi-Fi network
-      num_mqtt_intervals_without_wifi++;
-      if(num_mqtt_intervals_without_wifi >= 5){
-        Serial.println(F("Error: WiFi Re-connect Failed 5 consecutive times. Forcing reboot."));
-        Serial.flush();
-        watchdogForceReset();  
-      }
-      
-      restartWifi();
-    }
-  }
+  }  
+
+  loop_wifi_mqtt_mode();
   
   // pet the watchdog
   if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
@@ -985,6 +913,7 @@ void help_menu(char * arg) {
       Serial.println(F("      co_slope - CO sensors slope [ppm/V]"));
       Serial.println(F("      co_off - CO sensors offset [V]"));
       Serial.println(F("      key - lol, sorry, that's also not happening!"));
+      Serial.println(F("      opmode - the Operational Mode the Egg is configured for"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));
     }
@@ -1000,6 +929,7 @@ void help_menu(char * arg) {
       Serial.println(F("      defaults - performs 'method direct'"));
       Serial.println(F("                 performs 'security wpa2'"));
       Serial.println(F("                 performs 'use dhcp'"));
+      Serial.println(F("                 performs 'opmode normal'"));
       Serial.println(F("                 performs 'mqttsrv opensensors.io'"));
       Serial.println(F("                 performs 'mqttport 1883'"));           
       Serial.println(F("                 performs 'mqttauth enable'"));        
@@ -1163,6 +1093,13 @@ void help_menu(char * arg) {
       Serial.println(F("   <string> is a 64-character string representing "));
       Serial.println(F("      a 32-byte (256-bit) hexadecimal value of the private key"));
     }
+    else if (strncmp("opmode", arg, 6) == 0) {
+      Serial.println(F("opmode <mode>"));
+      Serial.println(F("   <mode> is one of:"));
+      Serial.println(F("      normal - publish data to MQTT server over Wi-Fi"));
+      Serial.println(F("      zero - perform sensor zero-ing function, and resume normal mode when complete."));
+      Serial.println(F("             Note: This process may take several hours to complete from cold start."));      
+    }    
     else {
       Serial.print(F("Error: There is no help available for command \""));
       Serial.print(arg);
@@ -1383,6 +1320,25 @@ void print_eeprom_mqtt_authentication(){
   }
 }
 
+void print_eeprom_operational_mode(uint8_t opmode){   
+  switch (opmode) {
+    case SUBMODE_NORMAL:
+      Serial.println(F("Normal"));
+      break;
+    case SUBMODE_ZEROING:
+      Serial.println(F("Zeroing"));
+      break;
+    default:
+      Serial.print(F("Error: Unknown operational mode [0x"));
+      if (opmode < 0x10) {
+        Serial.print(F("0"));
+      }
+      Serial.print(opmode, HEX);
+      Serial.println(F("]"));
+      break;
+  }  
+}
+
 void print_eeprom_value(char * arg) {
   if (strncmp(arg, "mac", 3) == 0) {
     print_eeprom_mac();
@@ -1432,11 +1388,19 @@ void print_eeprom_value(char * arg) {
   else if(strncmp(arg, "mqttauth", 8) == 0) {
     Serial.println(eeprom_read_byte((const uint8_t *) EEPROM_MQTT_AUTH));    
   }
+  else if(strncmp(arg, "opmode", 6) == 0) {
+     print_eeprom_operational_mode(eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE));
+  }
   else if (strncmp(arg, "settings", 8) == 0) {
     char allff[64] = {0};
     memset(allff, 0xff, 64);
 
     // print all the settings to the screen in an orderly fashion
+    Serial.println(F(" +-------------------------------------------------------------+"));
+    Serial.println(F(" | Operational Mode:                                           |"));
+    Serial.println(F(" +-------------------------------------------------------------+"));
+    Serial.print(F("    "));
+    print_eeprom_operational_mode(eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE));
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | Network Settings:                                           |"));
     Serial.println(F(" +-------------------------------------------------------------+"));
@@ -1536,6 +1500,7 @@ void restore(char * arg) {
     configInject("method direct\r");
     configInject("security wpa2\r");
     configInject("use dhcp\r");
+    configInject("opmode normal\r");
     configInject("mqttsrv opensensors.io\r");
     configInject("mqttport 1883\r");        
     configInject("mqttauth enable\r");    
@@ -1767,6 +1732,27 @@ void set_network_security_mode(char * arg) {
   }
 
   if (valid) {
+    recomputeAndStoreConfigChecksum();
+  }
+}
+
+void set_operational_mode(char * arg) {
+  boolean valid = true;
+  if (strncmp("normal", arg, 6) == 0) {
+    eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);
+  }
+  else if (strncmp("zero", arg, 4) == 0) {
+    eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_ZEROING);
+  }
+  else {
+    Serial.print(F("Error: Invalid operational mode entered - \""));
+    Serial.print(arg);
+    Serial.println(F("\""));
+    Serial.println(F("       valid options are: 'normal', 'zero'"));
+    valid = false;
+  }
+
+  if(valid) {
     recomputeAndStoreConfigChecksum();
   }
 }
@@ -3078,4 +3064,101 @@ void watchdogForceReset(void){
 
 void watchdogInitialize(void){
   tinywdt.begin(500, 60000); 
+}
+
+// modal operation loop functions
+void loop_wifi_mqtt_mode(void){
+  static uint8_t num_mqtt_connect_retries = 0;
+  static uint8_t num_mqtt_intervals_without_wifi = 0; 
+
+  if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){   
+    previous_mqtt_publish_millis = current_millis;      
+    
+    if(connectedToNetwork()){
+      num_mqtt_intervals_without_wifi = 0;
+      
+      if(mqttReconnect()){ 
+        updateLCD("TEMP", 0, 0, 4);
+        updateLCD("RH", 10, 0, 2);         
+        updateLCD("NO2", 0, 1, 3);
+        updateLCD("CO", 10, 1, 2);
+                      
+        //connected to MQTT server and connected to Wi-Fi network        
+        num_mqtt_connect_retries = 0;   
+        if(!publishHeartbeat()){
+          Serial.println(F("Error: Failed to publish Heartbeat."));  
+        }
+        
+        if(temperature_ready){
+          if(!publishTemperature()){          
+            Serial.println(F("Error: Failed to publish Temperature."));          
+          }
+          else{
+            updateLCD(temperature_degc, 5, 0, 3);             
+          }
+        }
+        else{
+            updateLCD("---", 5, 0, 3);
+        }        
+        
+        if(humidity_ready){
+          if(!publishHumidity()){
+            Serial.println(F("Error: Failed to publish Humidity."));         
+          }
+          else{
+            updateLCD(relative_humidity_percent, 13, 0, 3);  
+          }
+        }
+        else{
+          updateLCD("---", 13, 0, 3);
+        }
+        
+        if(no2_ready){
+          if(!publishNO2()){
+            Serial.println(F("Error: Failed to publish NO2."));          
+          }
+          else{
+            updateLCD(no2_ppb, 5, 1, 3);  
+          }
+        }
+        else{
+          updateLCD("---", 5, 1, 3); 
+        }
+        
+        if(co_ready){
+          if(!publishCO()){
+            Serial.println(F("Error: Failed to publish CO."));         
+          }
+          else{
+            updateLCD(co_ppm, 13, 1, 3); 
+          }
+        }
+        else{
+          updateLCD("---", 13, 1, 3);  
+        }
+    
+      }
+      else{
+        // not connected to MQTT server
+        num_mqtt_connect_retries++;
+        if(num_mqtt_connect_retries >= 5){
+          Serial.println(F("Error: MQTT Connect Failed 5 consecutive times. Forcing reboot."));
+          Serial.flush();
+          watchdogForceReset();  
+        }
+      }
+    }
+    else{
+      // not connected to Wi-Fi network
+      num_mqtt_intervals_without_wifi++;
+      if(num_mqtt_intervals_without_wifi >= 5){
+        Serial.println(F("Error: WiFi Re-connect Failed 5 consecutive times. Forcing reboot."));
+        Serial.flush();
+        watchdogForceReset();  
+      }
+      
+      restartWifi();
+    }
+  }
+    
 }
