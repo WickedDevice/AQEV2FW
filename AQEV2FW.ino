@@ -3008,15 +3008,6 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
   }
 }
 
-float calculateAverage(float * buf, uint8_t num_samples){
-  float average = 0.0f;
-  for(uint8_t ii = 0; ii < num_samples; ii++){
-    average += buf[ii];
-  } 
-  
-  return average / num_samples;
-}
-
 boolean publishNO2(){
   char tmp[512] = { 0 };  
   char raw_value_string[16] = {0};  
@@ -3211,8 +3202,22 @@ void loop_wifi_mqtt_mode(void){
 
 boolean loop_zeroing_mode(void){
   boolean complete = false;
+  boolean no2_zero_complete = false;
+  boolean co_zero_complete = false;
   
-  if(current_millis - previous_zero_check_millis >= zero_check_interval){   
+  #define NO2_ZEROING_SAMPLE_BUFFER_DEPTH (512)
+  static uint16_t no2_zeroing_sample_buffer_index = 0;
+  static boolean no2_zeroing_sample_buffer_full = false;
+  static float no2_zeroing_sample_buffer[NO2_ZEROING_SAMPLE_BUFFER_DEPTH] = {0};  
+  
+  #define CO_ZEROING_SAMPLE_BUFFER_DEPTH (512)
+  static uint16_t co_zeroing_sample_buffer_index = 0;  
+  static boolean co_zeroing_sample_buffer_full = false;  
+  static float co_zeroing_sample_buffer[CO_ZEROING_SAMPLE_BUFFER_DEPTH] = {0};
+  
+  if(current_millis - previous_zero_check_millis >= zero_check_interval){  
+    previous_zero_check_millis = current_millis;
+    // handle display updates
     if(no2_ready){
       updateLCD(no2_ppb, 5, 1, 3);  
     }
@@ -3225,10 +3230,149 @@ boolean loop_zeroing_mode(void){
     }
     else{
       updateLCD("---", 13, 1, 3);  
-    }  
+    }    
+    
+    // accrue moving average voltage samples
+    float no2_sample = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
+    no2_zeroing_sample_buffer[no2_zeroing_sample_buffer_index++] = no2_sample;
+    if(no2_zeroing_sample_buffer_index >= NO2_ZEROING_SAMPLE_BUFFER_DEPTH){
+      no2_zeroing_sample_buffer_index = 0; 
+      no2_zeroing_sample_buffer_full = true;
+    }
+    
+    float co_sample = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
+    co_zeroing_sample_buffer[co_zeroing_sample_buffer_index++] = co_sample;
+    if(co_zeroing_sample_buffer_index >= CO_ZEROING_SAMPLE_BUFFER_DEPTH){
+      co_zeroing_sample_buffer_index = 0; 
+      co_zeroing_sample_buffer_full = true;
+    }
+    
+    // output a line of CSV data, and augment the header row with statistics columns
+    printCsvDataLine("NO2_mean[V],NO2_stdev[V],CO_mean[V],CO_stdev[V]");
+    
+    // if enough samples have been collected, calculate statistics and augment the csv line
+    if(no2_zeroing_sample_buffer_full){      
+      float no2_mean = calculateAverage(no2_zeroing_sample_buffer, NO2_ZEROING_SAMPLE_BUFFER_DEPTH);
+      float no2_stdev = calculateStandardDeviation(no2_zeroing_sample_buffer, NO2_ZEROING_SAMPLE_BUFFER_DEPTH, no2_mean);
+      Serial.print(no2_mean, 8);
+      Serial.print(F(","));
+      Serial.print(no2_stdev, 8);     
+      
+      const float no2_convergence_std_threshold = 0.001f;
+      if(no2_stdev < no2_convergence_std_threshold){
+        
+      }
+    }
+    else{
+      Serial.print(F("---,---"));      
+    }
+    Serial.print(F(","));       
+    
+    if(co_zeroing_sample_buffer_full){
+      float co_mean = calculateAverage(co_zeroing_sample_buffer, CO_ZEROING_SAMPLE_BUFFER_DEPTH);
+      float co_stdev = calculateStandardDeviation(co_zeroing_sample_buffer, CO_ZEROING_SAMPLE_BUFFER_DEPTH, co_mean); 
+      Serial.print(co_mean, 8);
+      Serial.print(F(","));
+      Serial.print(co_stdev, 8);    
+      
+      const float co_convergence_std_threshold = 0.001f;
+      if(co_stdev < co_convergence_std_threshold){
+        
+      }      
+    }
+    else{
+      Serial.print(F("---,---"));       
+    } 
+    Serial.println();
+    // no trailing comma    
   }
   
   return complete;
+}
+
+float calculateAverage(float * buf, uint16_t num_samples){
+  float average = 0.0f;
+  for(uint16_t ii = 0; ii < num_samples; ii++){
+    average += buf[ii];
+  } 
+  
+  return average / num_samples;
+}
+
+float calculateStandardDeviation(float * buf, uint16_t num_samples, float mean){
+  float sum_of_squares_of_differences_from_mean = 0.0f;
+  for(uint16_t ii = 0; ii < num_samples; ii++){
+     float sample_difference_from_mean = (buf[ii] - mean);
+     sum_of_squares_of_differences_from_mean += sample_difference_from_mean * sample_difference_from_mean;
+  }
+  float average_sum_square_difference = sum_of_squares_of_differences_from_mean / num_samples;
+  return sqrt(average_sum_square_difference);
+}
+
+void printCsvDataLine(const char * augmented_header){
+  static boolean first = true;
+  if(first){
+    first = false;
+    Serial.print(F("csv: Temperature[degC],"
+                   "Humidity[percent],"
+                   "NO2[ppb],"
+                   "CO[ppm]"));
+    if(augmented_header != 0){
+      Serial.print(F(","));
+      Serial.print(augmented_header); 
+    }
+    Serial.println();
+  }  
+  Serial.print(F("csv: "));
+  
+  if(temperature_ready){
+    temperature_degc = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
+    Serial.print(temperature_degc, 2);
+  }
+  else{
+    Serial.print(F("---"));
+  }
+  Serial.print(F(","));
+  
+  if(humidity_ready){
+    relative_humidity_percent = calculateAverage(humidity_sample_buffer, HUMIDITY_SAMPLE_BUFFER_DEPTH);
+    Serial.print(relative_humidity_percent, 2);
+  }
+  else{
+    Serial.print(F("---"));
+  }    
+  Serial.print(F(","));
+  
+  if(no2_ready){
+    float converted_value = 0.0f, compensated_value = 0.0f;    
+    float no2_moving_average = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
+    no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
+    no2_ppb = compensated_value;      
+    Serial.print(no2_ppb, 2);
+  }
+  else{
+    Serial.print(F("---"));
+  }
+  Serial.print(F(","));
+  
+  if(co_ready){
+    float converted_value = 0.0f, compensated_value = 0.0f;   
+    float co_moving_average = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
+    co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
+    co_ppm = compensated_value;     
+    Serial.print(co_ppm, 2);
+  }
+  else{
+    Serial.print(F("---"));
+  }   
+  
+  if(augmented_header != 0){
+    Serial.print(F(","));
+  }
+  else{
+    Serial.println();
+  }
+  
 }
 
 boolean mode_requires_wifi(uint8_t opmode){
