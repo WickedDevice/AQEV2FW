@@ -3313,7 +3313,7 @@ void printCsvDataLine(const char * augmented_header){
   static boolean first = true;
   if(first){
     first = false;
-    Serial.print(F("csv: Temperature[degC],"
+    Serial.print(F("csv: Timestamp[milliseconds],Temperature[degC],"
                    "Humidity[percent],"
                    "NO2[ppb],"
                    "CO[ppm]"));
@@ -3324,6 +3324,8 @@ void printCsvDataLine(const char * augmented_header){
     Serial.println();
   }  
   Serial.print(F("csv: "));
+  Serial.print(millis());
+  Serial.print(F(","));
   
   if(temperature_ready){
     temperature_degc = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
