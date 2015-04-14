@@ -2951,7 +2951,7 @@ float toFahrenheit(float degC){
 
 boolean publishTemperature(){
   char tmp[128] = { 0 };  
-  char value_string[16] = {0};
+  char value_string[64] = {0};
   float temperature_moving_average = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
   temperature_degc = temperature_moving_average;
   float reported_temperature = temperature_degc;
@@ -2965,7 +2965,7 @@ boolean publishTemperature(){
 
 boolean publishHumidity(){
   char tmp[128] = { 0 };  
-  char value_string[16] = {0};  
+  char value_string[64] = {0};  
   float humidity_moving_average = calculateAverage(humidity_sample_buffer, HUMIDITY_SAMPLE_BUFFER_DEPTH);
   relative_humidity_percent = humidity_moving_average;
   dtostrf(humidity_moving_average, -6, 2, value_string);
@@ -3132,9 +3132,9 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
 
 boolean publishNO2(){
   char tmp[512] = { 0 };  
-  char raw_value_string[16] = {0};  
-  char converted_value_string[16] = {0};
-  char compensated_value_string[16] = {0};
+  char raw_value_string[64] = {0};  
+  char converted_value_string[64] = {0};
+  char compensated_value_string[64] = {0};
   float converted_value = 0.0f, compensated_value = 0.0f;    
   float no2_moving_average = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
   no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
@@ -3193,9 +3193,9 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
 
 boolean publishCO(){
   char tmp[512] = { 0 };  
-  char raw_value_string[16] = {0};  
-  char converted_value_string[16] = {0};
-  char compensated_value_string[16] = {0};
+  char raw_value_string[64] = {0};  
+  char converted_value_string[64] = {0};
+  char compensated_value_string[64] = {0};
   float converted_value = 0.0f, compensated_value = 0.0f;   
   float co_moving_average = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
   co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
