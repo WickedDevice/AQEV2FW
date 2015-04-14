@@ -522,6 +522,11 @@ void loop() {
         if(mode != SUBMODE_NORMAL){
           eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);       
         }
+        
+        // reset because Zero-ing is complete
+        updateLCD("COMPLETE", 1);
+        lcdSmiley(15, 1);
+        delay(LCD_SUCCESS_MESSAGE_DELAY);                
         watchdogForceReset();
       }
       break;
@@ -2643,6 +2648,9 @@ void acquireIpAddress(void){
     Serial.print(F("Info: Request DHCP..."));
     setLCD_P(PSTR(" REQUESTING IP  "));   
     
+    const long dhcp_timeout_duration_ms = 60000L;
+    unsigned long previous_dhcp_timeout_millis = current_millis;
+
     while (!cc3000.checkDHCP()){      
       // if this goes on for longer than a minute, 
       // tiny watchdog should automatically kick in
@@ -2662,6 +2670,15 @@ void acquireIpAddress(void){
         updateLcdProgressDots();
       }     
      
+      if(current_millis - previous_dhcp_timeout_millis >= dhcp_timeout_duration_ms){
+        Serial.println(F("Error: Failed to acquire IP address via DHCP. Rebooting."));
+        Serial.flush();
+        updateLCD("FAILED", 1);
+        lcdFrownie(15, 1);
+        delay(LCD_ERROR_MESSAGE_DELAY);        
+        watchdogForceReset();
+      }
+
      delay(100); 
       
     }   
@@ -3201,6 +3218,10 @@ void loop_wifi_mqtt_mode(void){
         if(num_mqtt_connect_retries >= 5){
           Serial.println(F("Error: MQTT Connect Failed 5 consecutive times. Forcing reboot."));
           Serial.flush();
+          setLCD_P(PSTR("  MQTT SERVER   "
+                        "    FAILURE     "));
+          lcdFrownie(15, 1);
+          delay(LCD_ERROR_MESSAGE_DELAY);                  
           watchdogForceReset();  
         }
       }
@@ -3218,6 +3239,10 @@ void loop_wifi_mqtt_mode(void){
       if(num_mqtt_intervals_without_wifi >= 5){
         Serial.println(F("Error: Wi-Fi Re-connect Failed 5 consecutive times. Forcing reboot."));
         Serial.flush();
+        setLCD_P(PSTR(" WI-FI NETWORK  "
+                      "    FAILURE     "));
+        lcdFrownie(15, 1);
+        delay(LCD_ERROR_MESSAGE_DELAY);           
         watchdogForceReset();  
       }
       
