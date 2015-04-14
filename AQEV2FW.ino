@@ -2650,7 +2650,7 @@ void acquireIpAddress(void){
     
     const long dhcp_timeout_duration_ms = 60000L;
     unsigned long previous_dhcp_timeout_millis = current_millis;
-
+    uint32_t ii = 0;
     while (!cc3000.checkDHCP()){      
       // if this goes on for longer than a minute, 
       // tiny watchdog should automatically kick in
@@ -2680,6 +2680,10 @@ void acquireIpAddress(void){
       }
 
      delay(100); 
+     ii++;
+     if((ii % 10) == 0){
+       petWatchdog();
+     }
       
     }   
     Serial.println(F("OK.")); 
