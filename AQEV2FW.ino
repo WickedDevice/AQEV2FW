@@ -344,7 +344,7 @@ void setup() {
         if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
           previous_touch_sampling_millis = current_millis;    
           collectTouch();    
-          processTouchQuietly();  
+          processTouchQuietly();
         }      
       
         if (Serial.available()) {
@@ -608,6 +608,7 @@ void initializeHardware(void) {
 
   // Initialize Tiny Watchdog
   Serial.print(F("Info: Tiny Watchdog Initialization..."));
+  delay(1000); // wait a second to let things settle down before initializing the watchdog
   watchdogInitialize();
   Serial.println(F("OK."));
   
@@ -2884,6 +2885,9 @@ void collectHumidity(void){
   }
 }
 
+// TODO: create a vector to collect a touch sample every half second or so
+//       and move all calls to collectTouch out of main processing into vector
+
 void collectTouch(void){
   static uint8_t sample_write_index = 0;
   touch_sample_buffer[sample_write_index++] = touch.capacitiveSensor(30);
@@ -2896,7 +2900,7 @@ void collectTouch(void){
 void processTouchVerbose(boolean verbose_output){
   const uint32_t touch_event_threshold = 85UL;  
   static unsigned long touch_start_millis = 0UL;
-  const long backlight_interval = 10000L; 
+  const long backlight_interval = 60000L; 
   static boolean backlight_is_on = false;;
   
   float touch_moving_average = calculateAverage(touch_sample_buffer, TOUCH_SAMPLE_BUFFER_DEPTH); 
@@ -3098,6 +3102,12 @@ void petWatchdog(void){
 
 void watchdogForceReset(void){
   tinywdt.force_reset(); 
+  Serial.println(F("Error: Watchdog Force Restart failed. Manual reset is required."));
+  setLCD_P(PSTR("AUTORESET FAILED"
+                " RESET REQUIRED "));
+  for(;;){
+    delay(1000);
+  }
 }
 
 void watchdogInitialize(void){
@@ -3179,6 +3189,14 @@ void loop_wifi_mqtt_mode(void){
       else{
         // not connected to MQTT server
         num_mqtt_connect_retries++;
+        Serial.print(F("Warn: Failed to connect to MQTT server "));
+        Serial.print(num_mqtt_connect_retries);
+        Serial.print(F(" consecutive time"));
+        if(num_mqtt_connect_retries > 1){
+          Serial.print(F("s"));           
+        }
+        Serial.println();
+        
         if(num_mqtt_connect_retries >= 5){
           Serial.println(F("Error: MQTT Connect Failed 5 consecutive times. Forcing reboot."));
           Serial.flush();
@@ -3189,8 +3207,15 @@ void loop_wifi_mqtt_mode(void){
     else{
       // not connected to Wi-Fi network
       num_mqtt_intervals_without_wifi++;
+      Serial.print(F("Warn: Failed to connect to Wi-Fi network "));
+      Serial.print(num_mqtt_intervals_without_wifi);
+      Serial.print(F(" consecutive time"));
+      if(num_mqtt_intervals_without_wifi > 1){
+        Serial.print(F("s"));
+      }
+      Serial.println();      
       if(num_mqtt_intervals_without_wifi >= 5){
-        Serial.println(F("Error: WiFi Re-connect Failed 5 consecutive times. Forcing reboot."));
+        Serial.println(F("Error: Wi-Fi Re-connect Failed 5 consecutive times. Forcing reboot."));
         Serial.flush();
         watchdogForceReset();  
       }
@@ -3362,6 +3387,7 @@ void printCsvDataLine(const char * augmented_header){
   Serial.print(F(","));
   
   if(co_ready){
+    
     float converted_value = 0.0f, compensated_value = 0.0f;   
     float co_moving_average = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
     co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
