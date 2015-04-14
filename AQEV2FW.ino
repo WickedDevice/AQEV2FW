@@ -724,7 +724,7 @@ boolean checkConfigIntegrity(void) {
 // returns true if the function is in config mode
 uint8_t configModeStateMachine(char b, boolean reset_buffers) {
   static boolean received_init_code = false;
-  const uint8_t buf_max_write_idx = 126; // [63] must always have a null-terminator
+  const uint8_t buf_max_write_idx = 126; // [127] must always have a null-terminator
   static char buf[128] = {0}; // buffer to hold commands / data
   static uint8_t buf_idx = 0;  // current number of bytes in buf
   boolean line_terminated = false;
@@ -743,8 +743,14 @@ uint8_t configModeStateMachine(char b, boolean reset_buffers) {
   //  if(b < 0x10) Serial.print('0');
   //  Serial.println(b, HEX);
 
+  // if you are at the last write-able location in the buffer
+  // the only legal characters to accept are a backspace, a newline, or a carriage return
+  // reject anything else implicitly
+  if((buf_idx == buf_max_write_idx) && (b != 0x7F) && (b != 0x0D) && (b != 0x0A)){
+    Serial.println(F("Warn: Input buffer full and cannot accept new characters. Press enter to clear buffers."));
+  }
   // the following logic rejects all non-printable characters besides 0D, 0A, and 7F
-  if (b == 0x7F) { // backspace key is special
+  else if (b == 0x7F) { // backspace key is special
     if (buf_idx > 0) {
       buf_idx--;
       buf[buf_idx] = '\0';
@@ -887,9 +893,9 @@ void configInject(char * str) {
 }
 
 void lowercase(char * str) {
-  uint8_t len = strlen(str);
-  if (len < 255) { // guard against an infinite loop
-    for (uint8_t ii = 0; ii < len; ii++) {
+  uint16_t len = strlen(str);
+  if (len < 0xFFFF) {
+    for (uint16_t ii = 0; ii < len; ii++) {
       str[ii] = tolower(str[ii]);
     }
   }
@@ -1682,6 +1688,14 @@ void set_mac_address(char * arg) {
 
   // parse the argument string, expected to be of the form ab:01:33:51:c8:77
   while (token != NULL) {
+    if(num_tokens > 5){
+      Serial.println(F("Error: Too many octets passed to setmac: "));
+      Serial.print(F("       "));
+      Serial.println(arg);
+      Serial.println();
+      return;
+    }    
+    
     if ((strlen(token) == 2) && isxdigit(token[0]) && isxdigit(token[1]) && (num_tokens < 6)) {
       _mac_address[num_tokens++] = (uint8_t) strtoul(token, NULL, 16);
     }
@@ -1691,6 +1705,8 @@ void set_mac_address(char * arg) {
       Serial.println(F("\""));
       return; // return early
     }
+
+    
     token = strtok(NULL, ":");
   }
 
