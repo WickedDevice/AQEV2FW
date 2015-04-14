@@ -608,7 +608,7 @@ void initializeHardware(void) {
 
   // Initialize Tiny Watchdog
   Serial.print(F("Info: Tiny Watchdog Initialization..."));
-  delay(1000); // wait a second to let things settle down before initializing the watchdog
+  delay(500); // wait a bit to let things settle down before initializing the watchdog
   watchdogInitialize();
   Serial.println(F("OK."));
   
@@ -3105,6 +3105,7 @@ void watchdogForceReset(void){
   Serial.println(F("Error: Watchdog Force Restart failed. Manual reset is required."));
   setLCD_P(PSTR("AUTORESET FAILED"
                 " RESET REQUIRED "));
+  backlightOn();                
   for(;;){
     delay(1000);
   }
