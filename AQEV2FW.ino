@@ -466,6 +466,10 @@ void setup() {
   if(mode_requires_wifi(mode)){
     // Try and Connect to the Configured Network
     if(!restartWifi()){
+      // technically this code should be unreachable
+      // because error conditions internal to the restartWifi function
+      // should restart the unit at a finer granularity
+      // but this additional report should be harmless at any rate
       Serial.println(F("Error: Failed to connect to configured network. Rebooting."));
       Serial.flush();
       watchdogForceReset();
@@ -477,7 +481,11 @@ void setup() {
   
     // Connect to MQTT server
     if(!mqttReconnect()){
-      Serial.print(F("Error: Unable to connect to MQTT server"));
+      setLCD_P(PSTR("  MQTT CONNECT  "
+                    "     FAILED     "));
+      lcdFrownie(15, 1);
+      delay(LCD_ERROR_MESSAGE_DELAY);
+      Serial.println(F("Error: Unable to connect to MQTT server"));
       Serial.flush();
       watchdogForceReset();    
     }
@@ -2821,6 +2829,8 @@ boolean mqttResolve(void){
     eeprom_read_block(mqtt_server_name, (const void *) EEPROM_MQTT_SERVER_NAME, 31);
     setLCD_P(PSTR("   RESOLVING"));
     updateLCD(mqtt_server_name, 1);
+    delay(LCD_SUCCESS_MESSAGE_DELAY);
+    
     if  (!cc3000.getHostByName(mqtt_server_name, &ip) || (ip == 0))  {
       Serial.print(F("Error: Couldn't resolve '"));
       Serial.print(mqtt_server_name);
