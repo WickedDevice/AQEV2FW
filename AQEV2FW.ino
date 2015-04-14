@@ -520,7 +520,8 @@ void loop() {
       if(loop_zeroing_mode()){
         mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
         if(mode != SUBMODE_NORMAL){
-          eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);       
+          eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);
+          recomputeAndStoreConfigChecksum();        
         }
         
         // reset because Zero-ing is complete
@@ -2314,13 +2315,17 @@ void backlightOff(void) {
 }
 
 void lcdFrownie(uint8_t pos_x, uint8_t pos_y){
-  lcd.setCursor(pos_x, pos_y);
-  lcd.write((byte) 1); 
+  if((pos_x < 16) && (pos_y < 2)){
+    lcd.setCursor(pos_x, pos_y);
+    lcd.write((byte) 1); 
+  }
 }
 
 void lcdSmiley(uint8_t pos_x, uint8_t pos_y){
-  lcd.setCursor(pos_x, pos_y);
-  lcd.write((byte) 0); 
+  if((pos_x < 16) && (pos_y < 2)){
+    lcd.setCursor(pos_x, pos_y);
+    lcd.write((byte) 0); 
+  }
 }
 
 void setLCD_P(const char str[] PROGMEM){  
