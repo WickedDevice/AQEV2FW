@@ -34,6 +34,8 @@ WildFire_CC3000_Client wifiClient;
 
 unsigned long current_millis = 0;
 char firmware_version[16] = {0};
+uint8_t temperature_units = 'C';
+
 float temperature_degc = 0.0f;
 float relative_humidity_percent = 0.0f;
 float no2_ppb = 0.0f;
@@ -110,6 +112,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_MQTT_PORT          (EEPROM_MQTT_AUTH - 4)          // MQTT authentication enabled, reserve four bytes, even though you only need two for a port
 #define EEPROM_UPDATE_SERVER_NAME (EEPROM_MQTT_PORT - 32)         // string, the DNS name of the Firmware Update server (default update.wickeddevice.com), up to 32 characters (one of which is a null terminator)
 #define EEPROM_OPERATIONAL_MODE   (EEPROM_UPDATE_SERVER_NAME - 1) // operational mode encoded as a single byte value (e.g. NORMAL, ZEROING, etc.)
+#define EEPROM_TEMPERATURE_UNITS  (EEPROM_OPERATIONAL_MODE - 1)   // temperature units 'F' for Fahrenheit and 'C' for Celsius
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
@@ -174,6 +177,7 @@ void set_co_offset(char * arg);
 void set_co_sensitivity(char * arg);
 void set_private_key(char * arg);
 void set_operational_mode(char * arg);
+void set_temperature_units(char * arg);
 
 // Note to self:
 //   When implementing a new parameter, ask yourself:
@@ -220,6 +224,7 @@ char * commands[] = {
   "co_off    ",
   "key       ",
   "opmode    ",
+  "tempunit  ",
   0
 };
 
@@ -250,6 +255,7 @@ void (*command_functions[])(char * arg) = {
   set_co_offset,
   set_private_key,
   set_operational_mode,
+  set_temperature_units,
   0
 };
 
@@ -477,6 +483,12 @@ void setup() {
     }
     
     petWatchdog();
+  }
+  
+  // get the temperature units
+  temperature_units = eeprom_read_byte((const uint8_t *) EEPROM_TEMPERATURE_UNITS);
+  if((temperature_units != 'C') && (temperature_units != 'F')){
+    temperature_units = 'C';
   }
   
   if(mode == SUBMODE_NORMAL){
@@ -974,6 +986,7 @@ void help_menu(char * arg) {
       Serial.println(F("      co_off - CO sensors offset [V]"));
       Serial.println(F("      key - lol, sorry, that's also not happening!"));
       Serial.println(F("      opmode - the Operational Mode the Egg is configured for"));
+      Serial.println(F("      tempunit - the unit of measure Temperature is reported in (F or C)"));      
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));
     }
@@ -990,6 +1003,7 @@ void help_menu(char * arg) {
       Serial.println(F("                 performs 'security wpa2'"));
       Serial.println(F("                 performs 'use dhcp'"));
       Serial.println(F("                 performs 'opmode normal'"));
+      Serial.println(F("                 performs 'tempunit C'"));      
       Serial.println(F("                 performs 'mqttsrv opensensors.io'"));
       Serial.println(F("                 performs 'mqttport 1883'"));           
       Serial.println(F("                 performs 'mqttauth enable'"));        
@@ -1160,6 +1174,12 @@ void help_menu(char * arg) {
       Serial.println(F("      zero - perform sensor zero-ing function, and resume normal mode when complete."));
       Serial.println(F("             Note: This process may take several hours to complete from cold start."));      
     }    
+    else if (strncmp("tempunit", arg, 8) == 0) {
+      Serial.println(F("tempunit <unit>"));
+      Serial.println(F("   <unit> is one of:"));      
+      Serial.println(F("      C - report temperature in Celsius"));
+      Serial.println(F("      F - report temperature in Fahrenheit"));      
+    }
     else {
       Serial.print(F("Error: There is no help available for command \""));
       Serial.print(arg);
@@ -1399,6 +1419,26 @@ void print_eeprom_operational_mode(uint8_t opmode){
   }  
 }
 
+void print_eeprom_temperature_units(){   
+  uint8_t tempunit = eeprom_read_byte((uint8_t *) EEPROM_TEMPERATURE_UNITS);
+  switch (tempunit) {
+    case 'C':
+      Serial.println(F("Celsius"));
+      break;
+    case 'F':
+      Serial.println(F("Fahrenheit"));
+      break;
+    default:
+      Serial.print(F("Error: Unknown temperature units [0x"));
+      if (tempunit < 0x10) {
+        Serial.print(F("0"));
+      }
+      Serial.print(tempunit, HEX);
+      Serial.println(F("]"));
+      break;
+  }  
+}
+
 void print_eeprom_value(char * arg) {
   if (strncmp(arg, "mac", 3) == 0) {
     print_eeprom_mac();
@@ -1451,16 +1491,21 @@ void print_eeprom_value(char * arg) {
   else if(strncmp(arg, "opmode", 6) == 0) {
      print_eeprom_operational_mode(eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE));
   }
+  else if(strncmp(arg, "tempunit", 8) == 0) {
+     print_eeprom_temperature_units();
+  }
   else if (strncmp(arg, "settings", 8) == 0) {
     char allff[64] = {0};
     memset(allff, 0xff, 64);
 
     // print all the settings to the screen in an orderly fashion
     Serial.println(F(" +-------------------------------------------------------------+"));
-    Serial.println(F(" | Operational Mode:                                           |"));
+    Serial.println(F(" | Preferences/Options:                                        |"));
     Serial.println(F(" +-------------------------------------------------------------+"));
-    Serial.print(F("    "));
+    Serial.print(F("    Operational Mode: "));
     print_eeprom_operational_mode(eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE));
+    Serial.print(F("    Temperature Units: "));
+    print_eeprom_temperature_units();
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | Network Settings:                                           |"));
     Serial.println(F(" +-------------------------------------------------------------+"));
@@ -1561,6 +1606,7 @@ void restore(char * arg) {
     configInject("security wpa2\r");
     configInject("use dhcp\r");
     configInject("opmode normal\r");
+    configInject("tempunit C\r");    
     configInject("mqttsrv opensensors.io\r");
     configInject("mqttport 1883\r");        
     configInject("mqttauth enable\r");    
@@ -1825,6 +1871,18 @@ void set_operational_mode(char * arg) {
   if(valid) {
     recomputeAndStoreConfigChecksum();
   }
+}
+
+void set_temperature_units(char * arg){
+  if((strlen(arg) != 1) || ((arg[0] != 'C') && (arg[0] != 'F'))){
+    Serial.print(F("Error: temperature unit must be 'C' or 'F', but received '"));
+    Serial.print(arg);
+    Serial.println(F("'"));
+    return;
+  }  
+  
+  eeprom_write_byte((uint8_t *) EEPROM_TEMPERATURE_UNITS, arg[0]);
+  recomputeAndStoreConfigChecksum();
 }
 
 void set_static_ip_address(char * arg) {
@@ -2877,13 +2935,21 @@ boolean publishHeartbeat(){
   return mqqtPublish("/orgs/wd/aqe/heartbeat", tmp); 
 }
 
+float toFahrenheit(float degC){
+  return  (degC * 9.0f / 5.0f) + 32.0;
+}
+
 boolean publishTemperature(){
   char tmp[128] = { 0 };  
   char value_string[16] = {0};
   float temperature_moving_average = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
   temperature_degc = temperature_moving_average;
-  dtostrf(temperature_moving_average, -6, 2, value_string);
-  snprintf(tmp, 127, "{\"converted-value\" : %s, \"converted-units\": \"degC\"}", value_string);    
+  float reported_temperature = temperature_degc;
+  if(temperature_units == 'F'){
+    reported_temperature = toFahrenheit(temperature_degc);
+  }
+  dtostrf(reported_temperature, -6, 2, value_string);  
+  snprintf(tmp, 127, "{\"converted-value\" : %s, \"converted-units\": \"deg%c\"}", value_string, temperature_units);    
   return mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
 }
 
@@ -3146,8 +3212,9 @@ void watchdogForceReset(void){
   tinywdt.force_reset(); 
   Serial.println(F("Error: Watchdog Force Restart failed. Manual reset is required."));
   setLCD_P(PSTR("AUTORESET FAILED"
-                " RESET REQUIRED "));
+                " RESET REQUIRED "));                
   backlightOn();                
+  delay(LCD_ERROR_MESSAGE_DELAY);  
   for(;;){
     delay(1000);
   }
@@ -3185,7 +3252,11 @@ void loop_wifi_mqtt_mode(void){
             Serial.println(F("Error: Failed to publish Temperature."));          
           }
           else{
-            updateLCD(temperature_degc, 5, 0, 3);             
+            float reported_temperature = temperature_degc;
+            if(temperature_units == 'F'){
+              reported_temperature = toFahrenheit(temperature_degc);
+            }
+            updateLCD(reported_temperature, 5, 0, 3);             
           }
         }
         else{
@@ -3409,7 +3480,11 @@ void printCsvDataLine(const char * augmented_header){
   
   if(temperature_ready){
     temperature_degc = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
-    Serial.print(temperature_degc, 2);
+    float reported_temperature = temperature_degc;
+    if(temperature_units == 'F'){
+      reported_temperature = toFahrenheit(temperature_degc);
+    }    
+    Serial.print(reported_temperature, 2);
   }
   else{
     Serial.print(F("---"));
