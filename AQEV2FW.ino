@@ -27,7 +27,7 @@ SHT25 sht25;
 WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A0, A1);
 LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
-byte mqtt_server[4] = { 0 };    
+byte mqtt_server_ip[4] = { 0 };    
 PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
 WildFire_CC3000_Client wifiClient;
@@ -2446,102 +2446,194 @@ void updateLCD(const char str[], uint8_t pos_x, uint8_t pos_y, uint8_t num_chars
   }
 }
 
-void updateLCD(float value, uint8_t pos_x, uint8_t pos_y, uint8_t field_width){
-  char tmp[17] = {0};
-  boolean requires_minus_sign = false;
-  boolean requires_leading_zero = false; 
-  boolean requires_decimal_point = false;
-  
-  uint8_t available_field_width_remaining_for_digits = field_width;
-  uint8_t num_digits_before_the_decimal_point = 0;
-  uint8_t num_digits_after_the_decimal_point = 0;
-  // we only have field_width digits available
-  // one of those *may* be a '.'
-  // one of those *may* be a '-'
-  
-  if(value < 0.0f){
-    requires_minus_sign = true;
-    value *= -1.0f;   
-    if(available_field_width_remaining_for_digits > 0){
-      available_field_width_remaining_for_digits -= 1; // because requires_minus_sign  
-    }
-  }  
-  
-  // deal with the value as though it's positive from here forward    
-  
-  if(value < 1.0f){
-    requires_leading_zero = true; 
-    requires_decimal_point = true;
-    if(available_field_width_remaining_for_digits > 1){
-      available_field_width_remaining_for_digits -= 2; // because requires_leading_zero and requires_decimal_point
+boolean index_of(char ch, char * str, uint16_t * index){
+  uint16_t len = strlen(str);
+  for(uint16_t ii = 0; ii < len; ii++){
+    if(str[ii] == ch){
+      *index = ii;
+      return true;     
     }
   }
   
-  // whether it requires a decimal point otherwise we need to 
-  // determine based on the available space remaining for digits  
-  // and the number of digits the number 'naturally' has before
-  // the decimal point
-  if(!requires_decimal_point){
-    float x = value;    
-    do {
-      x /= 10.0f; 
-      num_digits_before_the_decimal_point++;
-    } 
-    while(x >= 1.0f);
-    
-    // if the number of digits that must be displayed before the decimal point
-    // leaves room for any additional digits, then the displaying of it requires a decimal point
-    if(num_digits_before_the_decimal_point + 1 < available_field_width_remaining_for_digits){
-      requires_decimal_point = true;
-      if(available_field_width_remaining_for_digits > 0){
-        available_field_width_remaining_for_digits -= 1; // because requires_decimal_point
-      }      
-    }
-  }
-  
-  // it may be implausible to display the number in the field width at all at this point
-  // if it can't be displayed, show '*' for all the entire field_width
-  if(available_field_width_remaining_for_digits == 0){
-    for(uint8_t ii = 0; (ii < field_width) && (ii < 16); ii++){
-      tmp[ii] = '*';       
-    }
-  }
-  else{  
-    // if it requires a decimal point, determine the num digits after the decimal point to display
-    // based on the num_digits_before_the_decimal_point and the field_width
-    int32_t integer_part = (int32_t) value; 
-    int32_t decimal_part = 0;
-    if(requires_decimal_point){
-      num_digits_after_the_decimal_point = available_field_width_remaining_for_digits - num_digits_before_the_decimal_point;
-      
-      // compute the whole and fractional parts of the number  
-      // remember it's guaranteed to be positive here
-      float fractional_part = value - (1.0f * integer_part);  
-      for(uint8_t ii = 0; ii < num_digits_after_the_decimal_point; ii++){
-        fractional_part *= 10.0f;
-      }      
-      fractional_part += 0.5f; // round to nearest
-      decimal_part = (int32_t) fractional_part;                 
-    }   
+  return false;
+}
 
-    // now that we have the fractional part and the decimal part
-    // lets finally display the thing    
-    if(requires_decimal_point){
-      // if it's got a decimal part to display, it is guaranteed to fill
-      // the entire field
-      snprintf(tmp, 16, "%ld.%ld", integer_part, decimal_part);
+void ltrim_string(char * str){
+  uint16_t num_leading_spaces = 0;
+  uint16_t len = strlen(str);
+  for(uint16_t ii = 0; ii < len; ii++){
+    if(str[ii] != ' '){
+      break;      
+    }     
+    num_leading_spaces++;
+  }
+  
+  if(num_leading_spaces > 0){
+    // copy the string left, including the null terminator
+    // which is why this loop is <= len
+    for(uint16_t ii = 0; ii <= len; ii++){
+      str[ii] = str[ii + num_leading_spaces];
+    }
+  }
+}
+
+void rtrim_string(char * str){
+  char * pstr = str;
+  uint16_t space_index = 0;
+
+  // find the first non-space character
+  while(*pstr == ' '){
+    pstr++;
+  }
+  
+  if(index_of(' ', pstr, &space_index)){
+    // if there's a space, null it
+    str[space_index] = '\0';
+  }
+}
+
+void trim_string(char * str){
+  ltrim_string(str);
+  
+  //Serial.print(F("ltrim: "));
+  //Serial.println(str);
+  
+  rtrim_string(str);
+  
+  //Serial.print(F("rtrim: "));
+  //Serial.println(str);  
+}
+
+// returns false if truncating the string to the field width
+// would result in alter the whole number part of the represented value
+// otherwise truncates the string to the field_width and returns true
+boolean truncate_float_string(char * str, uint8_t field_width){
+  // if there is a decimal point in the string after the field_width character
+  // the value doesn't fit on a line at all, let alone after truncation
+  // examples for field_width := 3
+  //             v-- field boundardy (for field_width := 3)
+  // Case 0:  0.3|4  is ok (and will be truncated to 0.3)
+  // Case 0b: 0. |   is ok (and will be truncated to 0)    
+  // Case 0c: -0.|3  is ok (and will be truncated to 0)            
+  // Case 1:  1.2|4  is ok (and will be truncated to 1.2)
+  // Case 1b: 1. |   is ok (and will be truncated to 1)
+  // Case 1c: 1  |   is ok (and will be truncated to 1)
+  // Case 2b: 12.|5  is ok (and will be truncated to 13)  
+  // Cas3 2c: 12.|   is ok (and will be truncated to 12)
+  // Cas3 2d: 12 |   is ok (and will be truncated to 12)  
+  // Case 3:  123|.4 is ok (and will be truncated to 123)
+  // Case 3b: 123|.  is ok (and will be truncated to 123)
+  // Case 3c: 123|   is ok (and will be truncated to 123)
+  // Case 3d: -12|3  is not ok (because it would be truncated to -12)  
+  // Case 3f: -12|3. is not ok (because it would be truncated to -12)  
+  // Case 4:  123|4  is not ok (because it would be truncated to 123)
+  // Case 4b: 123|4. is not ok (because it would be truncated to 123)
+  //          012|345678901234567 (index for reference)
+  
+  uint16_t period_index = 0;
+
+  // first trim the string to remove leading and trailing ' ' characters
+  trim_string(str);  
+
+  uint16_t len = strlen(str);
+  boolean string_contains_decimal_point = index_of('.', str, &period_index);
+
+  //Serial.print(F("len > field_width: "));
+  //Serial.print(len);
+  //Serial.print(F(" > "));
+  //Serial.print(field_width);
+  //Serial.print(F(", string_contains_decimal_point = "));
+  //Serial.print(string_contains_decimal_point);
+  //Serial.print(F(", period_index = "));
+  //Serial.println(period_index);
+  
+  if(len > field_width){   
+    if(string_contains_decimal_point){
+      // there's a decimal point in the string somewhere
+      // and the string is longer than the field width
+      if(period_index > field_width){
+        // the decimal point occurs at least 
+        // two characters past the field boundary
+        return false;
+      }
     }
     else{
-      // if it only has an integer part, it may need to be padded
-      // to the field width
-      char fmt_string[17] = {0};
-      integer_part = (int32_t) (value + 0.5f); 
-      snprintf(fmt_string, 16, "%%%dld", field_width); 
-      // this amounts to something like "%3ld", where 3 is the field_width
-      snprintf(tmp, 16, fmt_string, integer_part);      
-    }    
+      // it's a pure whole number
+      // and there's not enough room in the field to hold it
+      return false;
+    }            
+  } 
+  
+  // first truncate the string to the field width if it's longer than the field width
+  if(len > field_width){
+    str[field_width] = '\0';
+    //Serial.print(F("truncated step 1: "));
+    //Serial.println(str);
   }
+  
+  len = strlen(str);
+  // if the last character in the string is a decimal point, lop it off
+  if((len > 0) && (str[len-1] == '.')){
+     str[len-1] = '\0';
+     //Serial.print(F("truncated step 2:"));
+     //Serial.println(str);
+  }    
+      
+  // it's already adequately truncated if len <= field_width
+  return true;
+}
+
+// the caller must ensure that there is adequate memory
+// allocated to str, so that it can be safely padded 
+// to target length
+void leftpad_string(char * str, uint16_t target_length){
+  uint16_t len = strlen(str);  
+  if(len < target_length){
+    uint16_t pad_amount = target_length - len;
+
+    // shift the string (including the null temrinator) right by the pad amount
+    // by walking backwards from the end to the start
+    // and copying characters over (copying the null terminator is why it starts at len)
+    for(int16_t ii = len; ii >= 0; ii--){
+      str[ii + pad_amount] = str[ii];
+    } 
     
+    // then put spaces in the front 
+    for(uint16_t ii = 0; ii < pad_amount; ii++){
+      str[ii] = ' ';
+    }
+  }
+}
+
+void updateLCD(float value, uint8_t pos_x, uint8_t pos_y, uint8_t field_width){
+  char tmp[64] = {0};
+  char asterisks_field[17] = {0};
+
+  for(uint8_t ii = 0; (ii < field_width) && (ii < 16); ii++){
+     asterisks_field[ii] = '*'; 
+  }
+  
+  //Serial.print(F("value: "));
+  //Serial.println(value,8);  
+  
+  dtostrf(value, -16, 6, tmp);
+  
+  //Serial.print(F("dtostrf: "));
+  //Serial.println(tmp);
+  
+  if(!truncate_float_string(tmp, field_width)){
+    updateLCD(asterisks_field, pos_x, pos_y, field_width);
+    return;
+  }   
+  
+  //Serial.print(F("truncate: "));
+  //Serial.println(tmp);
+  
+
+  leftpad_string(tmp, field_width); 
+  //Serial.print(F("leftpad_string: "));
+  //Serial.println(tmp);
+      
   updateLCD(tmp, pos_x, pos_y, field_width);  
 }
 
@@ -2843,7 +2935,7 @@ boolean mqttResolve(void){
     }  
     else{
       resolved = true;
-      cc3000IpToArray(ip, mqtt_server);      
+      cc3000IpToArray(ip, mqtt_server_ip);      
       Serial.print(F("Info: Resolved \""));
       Serial.print(mqtt_server_name);
       Serial.print(F("\" to IP address "));
@@ -2881,7 +2973,7 @@ boolean mqttReconnect(void){
      mqtt_auth_enabled = eeprom_read_byte((const uint8_t *) EEPROM_MQTT_AUTH);
      mqtt_port = eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT);
 
-     mqtt_client.setBrokerIP(mqtt_server);
+     mqtt_client.setBrokerIP(mqtt_server_ip);
      mqtt_client.setPort(mqtt_port);
      mqtt_client.setClient(wifiClient);
           
