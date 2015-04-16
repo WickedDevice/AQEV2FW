@@ -3349,56 +3349,77 @@ void loop_wifi_mqtt_mode(void){
           Serial.println(F("Error: Failed to publish Heartbeat."));  
         }
         
-        if(temperature_ready){
-          if(!publishTemperature()){          
-            Serial.println(F("Error: Failed to publish Temperature."));          
-          }
-          else{
-            float reported_temperature = temperature_degc;
-            if(temperature_units == 'F'){
-              reported_temperature = toFahrenheit(temperature_degc);
+        if(init_sht25_ok){
+          if(temperature_ready){
+            if(!publishTemperature()){          
+              Serial.println(F("Error: Failed to publish Temperature."));          
             }
-            updateLCD(reported_temperature, 5, 0, 3);             
+            else{
+              float reported_temperature = temperature_degc;
+              if(temperature_units == 'F'){
+                reported_temperature = toFahrenheit(temperature_degc);
+              }
+              updateLCD(reported_temperature, 5, 0, 3);             
+            }
           }
-        }
-        else{
+          else{
             updateLCD("---", 5, 0, 3);
-        }        
+          }        
+        }
+        else{
+          // sht25 is not ok
+          updateLCD("XXX", 5, 0, 3);
+        }
         
-        if(humidity_ready){
-          if(!publishHumidity()){
-            Serial.println(F("Error: Failed to publish Humidity."));         
+        if(init_sht25_ok){
+          if(humidity_ready){
+            if(!publishHumidity()){
+              Serial.println(F("Error: Failed to publish Humidity."));         
+            }
+            else{
+              updateLCD(relative_humidity_percent, 13, 0, 3);  
+            }
           }
           else{
-            updateLCD(relative_humidity_percent, 13, 0, 3);  
+            updateLCD("---", 13, 0, 3);
           }
         }
         else{
-          updateLCD("---", 13, 0, 3);
+          updateLCD("XXX", 13, 0, 3);
         }
         
-        if(no2_ready){
-          if(!publishNO2()){
-            Serial.println(F("Error: Failed to publish NO2."));          
+        if(init_no2_afe_ok && init_no2_adc_ok){
+          if(no2_ready){
+            if(!publishNO2()){
+              Serial.println(F("Error: Failed to publish NO2."));          
+            }
+            else{
+              updateLCD(no2_ppb, 5, 1, 3);  
+            }
           }
           else{
-            updateLCD(no2_ppb, 5, 1, 3);  
+            updateLCD("---", 5, 1, 3); 
           }
         }
         else{
-          updateLCD("---", 5, 1, 3); 
+          updateLCD("XXX", 5, 1, 3); 
         }
         
-        if(co_ready){
-          if(!publishCO()){
-            Serial.println(F("Error: Failed to publish CO."));         
+        if(init_co_afe_ok && init_co_adc_ok){
+          if(co_ready){
+            if(!publishCO()){
+              Serial.println(F("Error: Failed to publish CO."));         
+            }
+            else{
+              updateLCD(co_ppm, 13, 1, 3); 
+            }
           }
           else{
-            updateLCD(co_ppm, 13, 1, 3); 
+            updateLCD("---", 13, 1, 3);  
           }
         }
         else{
-          updateLCD("---", 13, 1, 3);  
+          updateLCD("XXX", 13, 1, 3);
         }
     
       }
