@@ -3488,19 +3488,29 @@ boolean loop_zeroing_mode(void){
   if(current_millis - previous_zero_check_millis >= zero_check_interval){  
     previous_zero_check_millis = current_millis;
     // handle display updates
-    if(no2_ready){
-      updateLCD(no2_ppb, 5, 1, 3);  
+    if(init_no2_afe_ok && init_no2_adc_ok){
+      if(no2_ready){
+        updateLCD(no2_ppb, 5, 1, 3);  
+      }
+      else{
+        updateLCD("---", 5, 1, 3); 
+      }
     }
     else{
-      updateLCD("---", 5, 1, 3); 
+      updateLCD("XXX", 5, 1, 3); 
     }
     
-    if(co_ready){
-      updateLCD(co_ppm, 13, 1, 3); 
+    if(init_no2_afe_ok && init_no2_adc_ok){
+      if(co_ready){
+        updateLCD(co_ppm, 13, 1, 3); 
+      }
+      else{
+        updateLCD("---", 13, 1, 3);  
+      }    
     }
     else{
-      updateLCD("---", 13, 1, 3);  
-    }    
+      updateLCD("XXX", 13, 1, 3);  
+    }
     
     // accrue moving average voltage samples
     float no2_sample = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
