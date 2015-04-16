@@ -411,9 +411,8 @@ void setup() {
       prompt();
       for (;;) {
         current_millis = millis();
-
         if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
-          previous_touch_sampling_millis = current_millis;    
+          previous_touch_sampling_millis = current_millis;   
           collectTouch();    
           processTouchQuietly();  
         }
@@ -427,7 +426,7 @@ void setup() {
           }
         }
   
-        // pet the watchdog once a ssecond
+        // pet the watchdog once a ssecond      
         if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
           idle_time_ms += tinywdt_interval;
           petWatchdog();
@@ -576,6 +575,10 @@ void initializeHardware(void) {
   Serial.begin(115200);
 
   init_firmware_version();
+  
+  // without this line, if the touch hardware is absent
+  // serial input processing grinds to a snails pace
+  touch.set_CS_Timeout_Millis(100); 
 
   Serial.println(F(" +------------------------------------+"));
   Serial.println(F(" |   Welcome to Air Quality Egg 2.0   |"));
