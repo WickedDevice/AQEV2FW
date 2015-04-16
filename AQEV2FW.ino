@@ -411,7 +411,7 @@ void setup() {
       prompt();
       for (;;) {
         current_millis = millis();
-  
+
         if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
           previous_touch_sampling_millis = current_millis;    
           collectTouch();    
@@ -638,6 +638,7 @@ void initializeHardware(void) {
   watchdogInitialize();
   Serial.println(F("OK."));
   
+  /*
   // Initialize SPI Flash
   Serial.print(F("Info: SPI Flash Initialization..."));
   if (flash.initialize()) {
@@ -648,6 +649,7 @@ void initializeHardware(void) {
     Serial.println(F("Fail."));
     init_spi_flash_ok = false;
   }
+  */
 
   // Initialize SHT25
   Serial.print(F("Info: SHT25 Initization..."));
@@ -2347,7 +2349,7 @@ void set_private_key(char * arg) {
     recomputeAndStoreConfigChecksum();
   }
   else {
-    Serial.println(F("Error: Private key must be exactly characters long, "));
+    Serial.println(F("Error: Private key must be exactly 64 characters long, "));
     Serial.print(F("       but was "));
     Serial.print(len);
     Serial.println(F(" characters long."));
@@ -3323,7 +3325,7 @@ void watchdogForceReset(void){
 }
 
 void watchdogInitialize(void){
-  tinywdt.begin(500, 60000); 
+  tinywdt.begin(100, 60000); 
 }
 
 // modal operation loop functions
@@ -3471,19 +3473,58 @@ void loop_wifi_mqtt_mode(void){
 }
 
 boolean loop_zeroing_mode(void){
+  static boolean first_time = true;
   boolean complete = false;
   boolean no2_zero_complete = false;
   boolean co_zero_complete = false;
   
-  #define NO2_ZEROING_SAMPLE_BUFFER_DEPTH (512)
+  const long no2_warmup_interval = 60000L * 30L; // 30 minutes
+  const long no2_convergence_interval = 60000L * 5L; // 5 minutes
+  static unsigned long no2_initial_millis_warmup_time = 0;
+  static unsigned long no2_initial_millis_convergence_time = 0;  
+  static boolean no2_warmup_complete = false;
+  float no2_best_fit_slope = 0.0f;
+  float no2_best_fit_intercept = 0.0f;
+  
+  const long co_warmup_interval = 60000L * 30L; // 30 minutes
+  const long co_convergence_interval = 60000L * 5L; // 5 minutes
+  static unsigned long co_initial_millis_warmup_time = 0;
+  static unsigned long co_initial_millis_convergence_time = 0;    
+  static boolean co_warmup_complete = false;
+  float co_best_fit_slope = 0.0f;
+  float co_best_fit_intercept = 0.0f;
+  
+  // the following buffers hold the window window of time over
+  // which the best fit least squares slope is calculated
+  // the depth is based on a sampling interval of 5 seconds
+  // as dictated by zero_check_interval, so 60 samples is 5 minutes
+  // 5 [minutes] * 60 [seconds/minute] / 5 [seconds/sample] = 60 samples
+  #define NO2_ZEROING_SAMPLE_BUFFER_DEPTH (60)
   static uint16_t no2_zeroing_sample_buffer_index = 0;
   static boolean no2_zeroing_sample_buffer_full = false;
   static float no2_zeroing_sample_buffer[NO2_ZEROING_SAMPLE_BUFFER_DEPTH] = {0};  
+  static float no2_zeroing_time_buffer[NO2_ZEROING_SAMPLE_BUFFER_DEPTH] = {0};
   
-  #define CO_ZEROING_SAMPLE_BUFFER_DEPTH (512)
+  
+  #define CO_ZEROING_SAMPLE_BUFFER_DEPTH (60)
   static uint16_t co_zeroing_sample_buffer_index = 0;  
   static boolean co_zeroing_sample_buffer_full = false;  
   static float co_zeroing_sample_buffer[CO_ZEROING_SAMPLE_BUFFER_DEPTH] = {0};
+  static float co_zeroing_time_buffer[CO_ZEROING_SAMPLE_BUFFER_DEPTH] = {0};    
+  
+  if(first_time){
+    no2_initial_millis_warmup_time = current_millis;
+    co_initial_millis_warmup_time = current_millis;    
+    first_time = false;
+  }
+  
+  if(current_millis - no2_initial_millis_warmup_time >= no2_warmup_interval){
+    no2_warmup_complete = true;
+  }  
+
+  if(current_millis - co_initial_millis_warmup_time >= co_warmup_interval){
+    co_warmup_complete = true;
+  }  
   
   if(current_millis - previous_zero_check_millis >= zero_check_interval){  
     previous_zero_check_millis = current_millis;
@@ -3514,57 +3555,110 @@ boolean loop_zeroing_mode(void){
     
     // accrue moving average voltage samples
     float no2_sample = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
-    no2_zeroing_sample_buffer[no2_zeroing_sample_buffer_index++] = no2_sample;
+    no2_zeroing_sample_buffer[no2_zeroing_sample_buffer_index] = no2_sample;
+    no2_zeroing_time_buffer[no2_zeroing_sample_buffer_index] = current_millis / 1000.0f;
+    no2_zeroing_sample_buffer_index++;
     if(no2_zeroing_sample_buffer_index >= NO2_ZEROING_SAMPLE_BUFFER_DEPTH){
-      no2_zeroing_sample_buffer_index = 0; 
+      no2_zeroing_sample_buffer_index = 0;
       no2_zeroing_sample_buffer_full = true;
     }
     
     float co_sample = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
-    co_zeroing_sample_buffer[co_zeroing_sample_buffer_index++] = co_sample;
+    co_zeroing_sample_buffer[co_zeroing_sample_buffer_index] = co_sample;
+    co_zeroing_time_buffer[co_zeroing_sample_buffer_index] = current_millis / 1000.0f;
+    co_zeroing_sample_buffer_index++;
     if(co_zeroing_sample_buffer_index >= CO_ZEROING_SAMPLE_BUFFER_DEPTH){
       co_zeroing_sample_buffer_index = 0; 
       co_zeroing_sample_buffer_full = true;
     }
     
     // output a line of CSV data, and augment the header row with statistics columns
-    printCsvDataLine("NO2_mean[V],NO2_stdev[V],CO_mean[V],CO_stdev[V]");
+    printCsvDataLine("NO2_mean[V],NO2_stdev[V],NO2_slope[V/minute],NO2_intercept[V],CO_mean[V],CO_stdev[V],CO_slope[V/minute],CO_intercept[V],");
     
     // if enough samples have been collected, calculate statistics and augment the csv line
     if(no2_zeroing_sample_buffer_full){      
       float no2_mean = calculateAverage(no2_zeroing_sample_buffer, NO2_ZEROING_SAMPLE_BUFFER_DEPTH);
       float no2_stdev = calculateStandardDeviation(no2_zeroing_sample_buffer, NO2_ZEROING_SAMPLE_BUFFER_DEPTH, no2_mean);
+      float time_mean = calculateAverage(no2_zeroing_time_buffer, NO2_ZEROING_SAMPLE_BUFFER_DEPTH);      
+      float no2_best_fit_slope = 0.0f;
+      float no2_best_fit_intercept = 0.0f;
+
+      calculateBestFit(no2_zeroing_time_buffer, time_mean,  // X-values and mean of X-values
+                       no2_zeroing_sample_buffer, no2_mean, // Y-values and mean of Y-values
+                       NO2_ZEROING_SAMPLE_BUFFER_DEPTH,     // number of data points
+                       &no2_best_fit_slope, &no2_best_fit_intercept); // outputs
+      
       Serial.print(no2_mean, 8);
       Serial.print(F(","));
-      Serial.print(no2_stdev, 8);     
+      Serial.print(no2_stdev, 8);  
+      Serial.print(F(","));
+      Serial.print(no2_best_fit_slope * 60.0f, 8); // converted from V/s to V/minute
+      Serial.print(F(","));
+      Serial.print(no2_best_fit_intercept, 8);
       
-      const float no2_convergence_std_threshold = 0.001f;
-      if(no2_stdev < no2_convergence_std_threshold){
+      if(no2_warmup_complete){
+        // we can start to consider convergence exit criteria
+        boolean no2_converging = false;        
+        const float best_fit_slope_epsilon = 0.01;
         
-      }
+        if(!no2_converging){
+          no2_initial_millis_convergence_time = current_millis;
+        }
+        
+        if(current_millis - no2_initial_millis_convergence_time >= no2_convergence_interval){
+          no2_zero_complete = true;
+        }
+      }      
     }
     else{
-      Serial.print(F("---,---"));      
+      // what to print before enough data has been collected for statistics
+      Serial.print(F("---,---,---,---"));      
     }
     Serial.print(F(","));       
     
     if(co_zeroing_sample_buffer_full){
       float co_mean = calculateAverage(co_zeroing_sample_buffer, CO_ZEROING_SAMPLE_BUFFER_DEPTH);
       float co_stdev = calculateStandardDeviation(co_zeroing_sample_buffer, CO_ZEROING_SAMPLE_BUFFER_DEPTH, co_mean); 
+      float time_mean = calculateAverage(co_zeroing_time_buffer, CO_ZEROING_SAMPLE_BUFFER_DEPTH);      
+      float co_best_fit_slope = 0.0f;
+      float co_best_fit_intercept = 0.0f;
+
+      calculateBestFit(co_zeroing_time_buffer, time_mean,  // X-values and mean of X-values
+                       co_zeroing_sample_buffer, co_mean, // Y-values and mean of Y-values
+                       CO_ZEROING_SAMPLE_BUFFER_DEPTH,     // number of data points
+                       &co_best_fit_slope, &co_best_fit_intercept); // outputs      
+      
       Serial.print(co_mean, 8);
       Serial.print(F(","));
       Serial.print(co_stdev, 8);    
+      Serial.print(F(","));
+      Serial.print(co_best_fit_slope * 60.0f, 8);  // converted from V/s to V/minute
+      Serial.print(F(","));
+      Serial.print(co_best_fit_intercept, 8);
       
-      const float co_convergence_std_threshold = 0.001f;
-      if(co_stdev < co_convergence_std_threshold){
+      if(co_warmup_complete){
+        // we can start to consider convergence exit criteria
+        boolean co_converging = false;
+
+        if(!co_converging){
+          co_initial_millis_convergence_time = current_millis;
+        }
         
-      }      
+        if(current_millis - co_initial_millis_convergence_time >= co_convergence_interval){
+          co_zero_complete = true;
+        } 
+      }                 
     }
     else{
-      Serial.print(F("---,---"));       
+      // what to print before enough data has been collected for statistics
+      Serial.print(F("---,---,---,---"));       
     } 
     Serial.println();
     // no trailing comma    
+  }
+  
+  if(no2_zero_complete && co_zero_complete){
+    complete = true; 
   }
   
   return complete;
@@ -3589,6 +3683,20 @@ float calculateStandardDeviation(float * buf, uint16_t num_samples, float mean){
   return sqrt(average_sum_square_difference);
 }
 
+// calculates line of best fit, using least squares method
+void calculateBestFit(float * x, float xmean, float * y, float ymean, uint16_t num_values, float * best_fit_slope, float * best_fit_intercept){
+  float numerator = 0.0f;
+  float denominator = 0.0f;
+  
+  for(uint16_t ii = 0; ii < num_values; ii++){
+    numerator += (x[ii] - xmean) * (y[ii] - ymean);
+    denominator += (x[ii] - xmean) * (x[ii] - xmean);
+  }
+  
+  *best_fit_slope = numerator / denominator;
+  *best_fit_intercept = ymean - (*best_fit_slope) * xmean;
+}
+
 void printCsvDataLine(const char * augmented_header){
   static boolean first = true;
   if(first){
@@ -3608,7 +3716,7 @@ void printCsvDataLine(const char * augmented_header){
   }  
   
   Serial.print(F("csv: "));
-  Serial.print(millis());
+  Serial.print(current_millis);
   Serial.print(F(","));
   
   if(temperature_ready){
