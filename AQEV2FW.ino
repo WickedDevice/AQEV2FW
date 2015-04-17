@@ -35,6 +35,7 @@ WildFire_CC3000_Client wifiClient;
 unsigned long current_millis = 0;
 char firmware_version[16] = {0};
 uint8_t temperature_units = 'C';
+const float reported_temperature_offset_degC = 3.4f;
 
 float temperature_degc = 0.0f;
 float relative_humidity_percent = 0.0f;
@@ -3051,7 +3052,7 @@ boolean publishTemperature(){
   char value_string[64] = {0};
   float temperature_moving_average = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
   temperature_degc = temperature_moving_average;
-  float reported_temperature = temperature_degc;
+  float reported_temperature = temperature_degc - reported_temperature_offset_degC;
   if(temperature_units == 'F'){
     reported_temperature = toFahrenheit(temperature_degc);
   }
@@ -3360,7 +3361,7 @@ void loop_wifi_mqtt_mode(void){
               Serial.println(F("Error: Failed to publish Temperature."));          
             }
             else{
-              float reported_temperature = temperature_degc;
+              float reported_temperature = temperature_degc - reported_temperature_offset_degC;
               if(temperature_units == 'F'){
                 reported_temperature = toFahrenheit(temperature_degc);
               }
@@ -3724,7 +3725,7 @@ void printCsvDataLine(const char * augmented_header){
   
   if(temperature_ready){
     temperature_degc = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
-    float reported_temperature = temperature_degc;
+    float reported_temperature = temperature_degc - reported_temperature_offset_degC;
     if(temperature_units == 'F'){
       reported_temperature = toFahrenheit(temperature_degc);
     }    
