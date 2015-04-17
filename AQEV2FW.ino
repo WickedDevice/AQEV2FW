@@ -18,6 +18,8 @@
 #define AQEV2FW_MINOR_VERSION 0
 #define AQEV2FW_PATCH_VERSION 0
 
+#define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
+
 WildFire wf;
 WildFire_CC3000 cc3000;
 TinyWatchdog tinywdt;
@@ -3040,7 +3042,7 @@ boolean publishHeartbeat(){
      heartbeat_waveform_index = 0;
   }
   
-  return mqqtPublish("/orgs/wd/aqe/heartbeat", tmp); 
+  return mqqtPublish(MQTT_TOPIC_PREFIX "heartbeat", tmp); 
 }
 
 float toFahrenheit(float degC){
@@ -3058,7 +3060,7 @@ boolean publishTemperature(){
   }
   dtostrf(reported_temperature, -6, 2, value_string);  
   snprintf(tmp, 127, "{\"converted-value\" : %s, \"converted-units\": \"deg%c\"}", value_string, temperature_units);    
-  return mqqtPublish("/orgs/wd/aqe/temperature", tmp);   
+  return mqqtPublish(MQTT_TOPIC_PREFIX "temperature", tmp);   
 }
 
 boolean publishHumidity(){
@@ -3068,7 +3070,7 @@ boolean publishHumidity(){
   relative_humidity_percent = humidity_moving_average;
   dtostrf(humidity_moving_average, -6, 2, value_string);
   snprintf(tmp, 127, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
-  return mqqtPublish("/orgs/wd/aqe/humidity", tmp); 
+  return mqqtPublish(MQTT_TOPIC_PREFIX "humidity", tmp); 
 }
 
 void collectTemperature(void){
@@ -3248,7 +3250,7 @@ boolean publishNO2(){
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
-  return mqqtPublish("/orgs/wd/aqe/no2", tmp);     
+  return mqqtPublish(MQTT_TOPIC_PREFIX "no2", tmp);     
 }
 
 void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * temperature_compensated_value){
@@ -3309,7 +3311,7 @@ boolean publishCO(){
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
-  return mqqtPublish("/orgs/wd/aqe/co", tmp);
+  return mqqtPublish(MQTT_TOPIC_PREFIX "co", tmp);
 }
 
 void petWatchdog(void){
