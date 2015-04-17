@@ -35,7 +35,7 @@ WildFire_CC3000_Client wifiClient;
 unsigned long current_millis = 0;
 char firmware_version[16] = {0};
 uint8_t temperature_units = 'C';
-const float reported_temperature_offset_degC = 6.0f;
+const float reported_temperature_offset_degC = 3.5f;
 
 float temperature_degc = 0.0f;
 float relative_humidity_percent = 0.0f;
