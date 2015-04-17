@@ -3054,7 +3054,7 @@ boolean publishTemperature(){
   temperature_degc = temperature_moving_average;
   float reported_temperature = temperature_degc - reported_temperature_offset_degC;
   if(temperature_units == 'F'){
-    reported_temperature = toFahrenheit(temperature_degc);
+    reported_temperature = toFahrenheit(reported_temperature);
   }
   dtostrf(reported_temperature, -6, 2, value_string);  
   snprintf(tmp, 127, "{\"converted-value\" : %s, \"converted-units\": \"deg%c\"}", value_string, temperature_units);    
@@ -3363,7 +3363,7 @@ void loop_wifi_mqtt_mode(void){
             else{
               float reported_temperature = temperature_degc - reported_temperature_offset_degC;
               if(temperature_units == 'F'){
-                reported_temperature = toFahrenheit(temperature_degc);
+                reported_temperature = toFahrenheit(reported_temperature);
               }
               updateLCD(reported_temperature, 5, 0, 3);             
             }
@@ -3727,7 +3727,7 @@ void printCsvDataLine(const char * augmented_header){
     temperature_degc = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
     float reported_temperature = temperature_degc - reported_temperature_offset_degC;
     if(temperature_units == 'F'){
-      reported_temperature = toFahrenheit(temperature_degc);
+      reported_temperature = toFahrenheit(reported_temperature);
     }    
     Serial.print(reported_temperature, 2);
   }
