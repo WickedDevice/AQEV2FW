@@ -278,7 +278,7 @@ const long sensor_sampling_interval = 2000;
 unsigned long previous_touch_sampling_millis = 0;
 const long touch_sampling_interval = 200;
 
-// progress dots timer intervals
+// progress dots timer intervals  
 unsigned long previous_progress_dots_millis = 0;
 const long progress_dots_interval = 1000;
 
@@ -466,6 +466,9 @@ void setup() {
   mode = target_mode;
   
   if(mode_requires_wifi(mode)){
+    // Scan Networks to show RSSI
+    displayRSSI(); // not sure this will work if Smart Config is used
+    
     // Try and Connect to the Configured Network
     if(!restartWifi()){
       // technically this code should be unreachable
@@ -617,8 +620,33 @@ void initializeHardware(void) {
           B00000
   };
   
+  byte emptybar[8] = {
+          B11111,
+          B10001,
+          B10001,
+          B10001,
+          B10001,
+          B10001,
+          B10001,
+          B11111
+  };
+  
+  byte fullbar[8] = {
+          B11111,
+          B11111,
+          B11111,
+          B11111,
+          B11111,
+          B11111,
+          B11111,
+          B11111
+  };     
+  
   lcd.createChar(0, smiley);
   lcd.createChar(1, frownie);  
+  lcd.createChar(2, emptybar);
+  lcd.createChar(3, fullbar);
+  
   lcd.begin(16, 2);
   setLCD_P(PSTR("AIR QUALITY EGG "));
   char tmp[17] = {0};
@@ -644,7 +672,6 @@ void initializeHardware(void) {
   watchdogInitialize();
   Serial.println(F("OK."));
   
-  /*
   // Initialize SPI Flash
   Serial.print(F("Info: SPI Flash Initialization..."));
   if (flash.initialize()) {
@@ -654,8 +681,7 @@ void initializeHardware(void) {
   else {
     Serial.println(F("Fail."));
     init_spi_flash_ok = false;
-  }
-  */
+  }  
 
   // Initialize SHT25
   Serial.print(F("Info: SHT25 Initization..."));
@@ -2418,6 +2444,20 @@ void lcdSmiley(uint8_t pos_x, uint8_t pos_y){
   }
 }
 
+void lcdBars(uint8_t numBars){  
+  for(uint8_t ii = 0; ii < numBars && ii < 5; ii++){
+    lcd.setCursor(5+ii, 1);
+    lcd.write(3); // full bar
+  }
+  
+  if(numBars < 5){
+    for(uint8_t ii = 0; ii <  5 - numBars; ii++){
+      lcd.setCursor(5 + numBars + ii, 1); 
+      lcd.write((byte) 2); // empty bar
+    }
+  }
+}
+
 void setLCD_P(const char str[] PROGMEM){  
   char tmp[33] = {0};
   strncpy_P(tmp, str, 32);
@@ -2731,6 +2771,79 @@ void updateLcdProgressDots(void){
 }
 
 /****** WIFI SUPPORT FUNCTIONS ******/
+void displayRSSI(void){
+  char ssid[32] = {0};
+  uint32_t index;
+  uint8_t valid, rssi, sec;
+  uint8_t max_rssi = 0;
+  boolean found_ssid = false;
+  char ssidname[33]; 
+  eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
+
+  setLCD_P(PSTR(" SCANNING WI-FI "
+                "                "));
+  delay(LCD_SUCCESS_MESSAGE_DELAY);
+  
+  if (!cc3000.startSSIDscan(&index)) {
+    return;
+  }
+
+  while (index) {
+    index--;
+
+    valid = cc3000.getNextSSID(&rssi, &sec, ssidname);    
+    if(strncmp(ssidname, ssid, 16) == 0){      
+      Serial.print(F("Info: Found Access Point \""));
+      Serial.print(ssid);
+      Serial.print(F("\", "));
+      Serial.print(F("RSSI = "));
+      Serial.println(rssi);
+      found_ssid = true;
+      if(rssi > max_rssi){
+        max_rssi = rssi; 
+      }
+    }
+  }
+  
+  cc3000.stopSSIDscan();
+  
+  if(found_ssid){
+    int8_t rssi_dbm = max_rssi - 128;
+    lcdBars(rssi_to_bars(rssi_dbm));
+    lcdSmiley(15, 1); // lower right corner
+    delay(LCD_ERROR_MESSAGE_DELAY); // ERROR is intentional here, to get a longer delay
+  }
+  else{
+    updateLCD("NOT FOUND", 1);
+    lcdFrownie(15, 1); // lower right corner
+    delay(LCD_ERROR_MESSAGE_DELAY);
+  }
+}
+
+uint8_t rssi_to_bars(int8_t rssi_dbm){
+  uint8_t num_bars = 0;
+  if (rssi_dbm < -87){
+    num_bars = 0;
+  }
+  else if (rssi_dbm < -82){
+    num_bars = 1;
+  }
+  else if (rssi_dbm < -77){
+    num_bars = 2;
+  }
+  else if (rssi_dbm < -72){
+    num_bars = 3;
+  }
+  else if (rssi_dbm < -67){
+    num_bars = 4;
+  }
+  else{
+    num_bars = 5;
+  }  
+  
+  return num_bars;
+}
+
 boolean restartWifi(){
   boolean first_time = true;
   
