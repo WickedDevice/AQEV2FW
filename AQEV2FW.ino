@@ -460,7 +460,7 @@ void setup() {
 
   Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
   setLCD_P(PSTR("OPERATIONAL MODE"));
-  delay(LCD_SUCCESS_MESSAGE_DELAY);
+  SUCCESS_MESSAGE_DELAY();
   
   // ... but *which* operational mode are we in?
   mode = target_mode;
@@ -489,7 +489,7 @@ void setup() {
       setLCD_P(PSTR("  MQTT CONNECT  "
                     "     FAILED     "));
       lcdFrownie(15, 1);
-      delay(LCD_ERROR_MESSAGE_DELAY);
+      ERROR_MESSAGE_DELAY();      
       Serial.println(F("Error: Unable to connect to MQTT server"));
       Serial.flush();
       watchdogForceReset();    
@@ -507,12 +507,12 @@ void setup() {
   if(mode == SUBMODE_NORMAL){
     setLCD_P(PSTR("TEMP ---  RH ---"
                   "NO2  ---  CO ---"));           
-    delay(LCD_SUCCESS_MESSAGE_DELAY);                          
+    SUCCESS_MESSAGE_DELAY();                      
   }
   else{
     setLCD_P(PSTR("ZERO-ING SENSORS"
                   "NO2  ---  CO ---"));           
-    delay(LCD_SUCCESS_MESSAGE_DELAY);                              
+    SUCCESS_MESSAGE_DELAY();                            
   }
 }
 
@@ -552,7 +552,7 @@ void loop() {
         // reset because Zero-ing is complete
         updateLCD("COMPLETE", 1);
         lcdSmiley(15, 1);
-        delay(LCD_SUCCESS_MESSAGE_DELAY);                
+        SUCCESS_MESSAGE_DELAY();                
         watchdogForceReset();
       }
       break;
@@ -569,6 +569,14 @@ void loop() {
 }
 
 /****** INITIALIZATION SUPPORT FUNCTIONS ******/
+void ERROR_MESSAGE_DELAY(void){
+  delay(LCD_ERROR_MESSAGE_DELAY);
+}
+
+void SUCCESS_MESSAGE_DELAY(void){
+  delay(LCD_SUCCESS_MESSAGE_DELAY);
+}
+
 void init_firmware_version(void){
   snprintf(firmware_version, 15, "%d.%d.%d", 
     AQEV2FW_MAJOR_VERSION, 
@@ -588,6 +596,7 @@ void initializeHardware(void) {
 
   Serial.println(F(" +------------------------------------+"));
   Serial.println(F(" |   Welcome to Air Quality Egg 2.0   |"));
+  Serial.println(F(" |       NO2 / CO Sensor Suite        |"));  
   Serial.print(F(" |       Firmware Version "));
   Serial.print(firmware_version);
   Serial.println(F("       |"));
@@ -2672,7 +2681,7 @@ void updateLCD(float value, uint8_t pos_x, uint8_t pos_y, uint8_t field_width){
   if(!truncate_float_string(tmp, field_width)){
     updateLCD(asterisks_field, pos_x, pos_y, field_width);
     return;
-  }   
+  }
   
   //Serial.print(F("truncate: "));
   //Serial.println(tmp);
@@ -2782,7 +2791,7 @@ void displayRSSI(void){
 
   setLCD_P(PSTR(" SCANNING WI-FI "
                 "                "));
-  delay(LCD_SUCCESS_MESSAGE_DELAY);
+  SUCCESS_MESSAGE_DELAY();
   
   if (!cc3000.startSSIDscan(&index)) {
     return;
@@ -2811,12 +2820,12 @@ void displayRSSI(void){
     int8_t rssi_dbm = max_rssi - 128;
     lcdBars(rssi_to_bars(rssi_dbm));
     lcdSmiley(15, 1); // lower right corner
-    delay(LCD_ERROR_MESSAGE_DELAY); // ERROR is intentional here, to get a longer delay
+    ERROR_MESSAGE_DELAY(); // ERROR is intentional here, to get a longer delay
   }
   else{
     updateLCD("NOT FOUND", 1);
     lcdFrownie(15, 1); // lower right corner
-    delay(LCD_ERROR_MESSAGE_DELAY);
+    ERROR_MESSAGE_DELAY();
   }
 }
 
@@ -2892,7 +2901,7 @@ bool displayConnectionDetails(void){
     
     updateLCD(ipAddress, 1);
     lcdSmiley(15, 1); // lower right corner
-    delay(LCD_SUCCESS_MESSAGE_DELAY);  
+    SUCCESS_MESSAGE_DELAY();  
   
     return true;
   }
@@ -2921,13 +2930,13 @@ void reconnectToAccessPoint(void){
         Serial.flush();
         updateLCD("FAILED", 1);
         lcdFrownie(15, 1);
-        delay(LCD_ERROR_MESSAGE_DELAY);
+        ERROR_MESSAGE_DELAY();
         watchdogForceReset();
       }
       Serial.println(F("OK."));
       updateLCD("CONNECTED", 1);
       lcdSmiley(15, 1);
-      delay(LCD_SUCCESS_MESSAGE_DELAY);
+      SUCCESS_MESSAGE_DELAY();
       break;
     case CONNECT_METHOD_SMARTCONFIG:
     case CONNECT_METHOD_PFOD:
@@ -2975,7 +2984,7 @@ void acquireIpAddress(void){
         Serial.flush();
         updateLCD("FAILED", 1);
         lcdFrownie(15, 1);
-        delay(LCD_ERROR_MESSAGE_DELAY);        
+        ERROR_MESSAGE_DELAY();    
         watchdogForceReset();
       }
 
@@ -3042,7 +3051,7 @@ boolean mqttResolve(void){
     eeprom_read_block(mqtt_server_name, (const void *) EEPROM_MQTT_SERVER_NAME, 31);
     setLCD_P(PSTR("   RESOLVING"));
     updateLCD(mqtt_server_name, 1);
-    delay(LCD_SUCCESS_MESSAGE_DELAY);
+    SUCCESS_MESSAGE_DELAY();
     
     if  (!cc3000.getHostByName(mqtt_server_name, &ip) || (ip == 0))  {
       Serial.print(F("Error: Couldn't resolve '"));
@@ -3051,7 +3060,7 @@ boolean mqttResolve(void){
       
       updateLCD("FAILED", 1);
       lcdFrownie(15, 1);
-      delay(LCD_ERROR_MESSAGE_DELAY);
+      ERROR_MESSAGE_DELAY();
       return false;
     }  
     else{
@@ -3064,7 +3073,7 @@ boolean mqttResolve(void){
       
       updateLCD(ip, 1);      
       lcdSmiley(15, 1);
-      delay(LCD_SUCCESS_MESSAGE_DELAY);          
+      SUCCESS_MESSAGE_DELAY();          
       Serial.println();    
     }
   }
@@ -3148,9 +3157,15 @@ boolean mqqtPublish(char * topic, char *str){
 
 boolean publishHeartbeat(){
   static uint32_t post_counter = 0;
-  char tmp[128] = { 0 };  
+  char tmp[512] = { 0 };  
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
-  snprintf(tmp, 127, "{\"converted-value\" : %d, \"firmware-version\": \"%s\", \"counter\" : %lu}", sample, firmware_version, post_counter++);  
+  snprintf(tmp, 127, 
+  "{"
+  "\"converted-value\":%d,"
+  "\"firmware-version\":\"%s\","
+  "\"publishes\":[\"no2\",\"co\",\"temperature\",\"humidity\"],"
+  "\"counter\":%lu"
+  "}", sample, firmware_version, post_counter++);  
   if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
      heartbeat_waveform_index = 0;
   }
@@ -3163,26 +3178,45 @@ float toFahrenheit(float degC){
 }
 
 boolean publishTemperature(){
-  char tmp[128] = { 0 };  
+  char tmp[512] = { 0 };  
   char value_string[64] = {0};
+  char raw_string[64] = {0};
   float temperature_moving_average = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
   temperature_degc = temperature_moving_average;
+  float raw_temperature = temperature_degc;
   float reported_temperature = temperature_degc - reported_temperature_offset_degC;
   if(temperature_units == 'F'){
     reported_temperature = toFahrenheit(reported_temperature);
+    raw_temperature = toFahrenheit(raw_temperature);
   }
   dtostrf(reported_temperature, -6, 2, value_string);  
-  snprintf(tmp, 127, "{\"converted-value\" : %s, \"converted-units\": \"deg%c\"}", value_string, temperature_units);    
+  dtostrf(raw_temperature, -6, 2, raw_string); 
+  trim_string(value_string);
+  trim_string(raw_string);
+  snprintf(tmp, 127, 
+    "{" 
+    "\"converted-value\":%s,"
+    "\"converted-units\":\"deg%c\","
+    "\"raw-value\":%s,"
+    "\"raw-units\":\"deg%c\","
+    "\"sensor-part-number\":\"SHT25\""
+    "}", value_string, temperature_units, raw_string, temperature_units);    
   return mqqtPublish(MQTT_TOPIC_PREFIX "temperature", tmp);   
 }
 
 boolean publishHumidity(){
-  char tmp[128] = { 0 };  
+  char tmp[512] = { 0 };  
   char value_string[64] = {0};  
   float humidity_moving_average = calculateAverage(humidity_sample_buffer, HUMIDITY_SAMPLE_BUFFER_DEPTH);
   relative_humidity_percent = humidity_moving_average;
   dtostrf(humidity_moving_average, -6, 2, value_string);
-  snprintf(tmp, 127, "{\"converted-value\" : %s, \"converted-units\": \"percent\"}", value_string);  
+  trim_string(value_string);
+  snprintf(tmp, 127, 
+  "{"
+  "\"converted-value\":%s,"
+  "\"converted-units\":\"percent\","
+  "\"sensor-part-number\":\"SHT25\""
+  "}", value_string);  
   return mqqtPublish(MQTT_TOPIC_PREFIX "humidity", tmp); 
 }
 
@@ -3354,12 +3388,19 @@ boolean publishNO2(){
   no2_ppb = compensated_value;  
   dtostrf(no2_moving_average, -8, 5, raw_value_string);
   dtostrf(converted_value, -4, 2, converted_value_string);
-  dtostrf(compensated_value, -4, 2, compensated_value_string);    
-  snprintf(tmp, 511, "{\"raw-value\" : %s, "
-    "\"raw-units\": \"volt\", "
-    "\"converted-value\" : %s, "
-    "\"converted-units\": \"ppb\", "
-    "\"compensated-value\": %s}", 
+  dtostrf(compensated_value, -4, 2, compensated_value_string); 
+  trim_string(raw_value_string);
+  trim_string(converted_value_string);
+  trim_string(compensated_value_string);  
+  snprintf(tmp, 511, 
+    "{"
+    "\"raw-value\":%s,"
+    "\"raw-units\":\"volt\","
+    "\"converted-value\":%s,"
+    "\"converted-units\":\"ppb\","
+    "\"compensated-value\":%s,"
+    "\"sensor-part-number\":\"3SP-NO2-20-PCB\""
+    "}",
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
@@ -3416,11 +3457,18 @@ boolean publishCO(){
   dtostrf(co_moving_average, -8, 5, raw_value_string);
   dtostrf(converted_value, -4, 2, converted_value_string);
   dtostrf(compensated_value, -4, 2, compensated_value_string);    
-  snprintf(tmp, 511, "{\"raw-value\" : %s, "
-    "\"raw-units\": \"volt\", "
-    "\"converted-value\" : %s, "
-    "\"converted-units\": \"ppm\", "
-    "\"compensated-value\": %s}", 
+  trim_string(raw_value_string);
+  trim_string(converted_value_string);
+  trim_string(compensated_value_string);    
+  snprintf(tmp, 511, 
+    "{"
+    "\"raw-value\":%s,"
+    "\"raw-units\":\"volt\","
+    "\"converted-value\":%s,"
+    "\"converted-units\":\"ppm\","
+    "\"compensated-value\":%s,"
+    "\"sensor-part-number\":\"3SP-CO-1000-PCB\""
+    "}",
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
@@ -3437,7 +3485,7 @@ void watchdogForceReset(void){
   setLCD_P(PSTR("AUTORESET FAILED"
                 " RESET REQUIRED "));                
   backlightOn();                
-  delay(LCD_ERROR_MESSAGE_DELAY);  
+  ERROR_MESSAGE_DELAY();
   for(;;){
     delay(1000);
   }
@@ -3561,7 +3609,7 @@ void loop_wifi_mqtt_mode(void){
           setLCD_P(PSTR("  MQTT SERVER   "
                         "    FAILURE     "));
           lcdFrownie(15, 1);
-          delay(LCD_ERROR_MESSAGE_DELAY);                  
+          ERROR_MESSAGE_DELAY();            
           watchdogForceReset();  
         }
       }
@@ -3582,7 +3630,7 @@ void loop_wifi_mqtt_mode(void){
         setLCD_P(PSTR(" WI-FI NETWORK  "
                       "    FAILURE     "));
         lcdFrownie(15, 1);
-        delay(LCD_ERROR_MESSAGE_DELAY);           
+        ERROR_MESSAGE_DELAY();         
         watchdogForceReset();  
       }
       
