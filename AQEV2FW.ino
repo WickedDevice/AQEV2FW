@@ -16,7 +16,7 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 1
+#define AQEV2FW_PATCH_VERSION 0
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 
@@ -4255,26 +4255,13 @@ void checkForFirmwareUpdates(){
       // compare the just-retrieved signature file contents 
       // to the signature already stored in flash
       if((flash_file_size != integrity_num_bytes_total) || 
-        (flash_signature != integrity_crc16_checksum)){        
-          
-        flash.chipErase();
-
+        (flash_signature != integrity_crc16_checksum)){                 
+        
         setLCD_P(PSTR("UPDATE AVAILABLE"
                       "  DOWNLOADING   "));       
         SUCCESS_MESSAGE_DELAY();   
         petWatchdog();
-        
-        // write these parameters to their rightful place in the SPI flash
-        // for consumption by the bootloader        
-        while(flash.busy()){;}   
-        
-        flash.writeByte(CRC16_CHECKSUM_ADDRESS + 0, (integrity_crc16_checksum >> 8) & 0xff);
-        flash.writeByte(CRC16_CHECKSUM_ADDRESS + 1, (integrity_crc16_checksum >> 0) & 0xff);
-        
-        flash.writeByte(FILESIZE_ADDRESS + 0, (integrity_num_bytes_total >> 24) & 0xff);
-        flash.writeByte(FILESIZE_ADDRESS + 1, (integrity_num_bytes_total >> 16) & 0xff);    
-        flash.writeByte(FILESIZE_ADDRESS + 2, (integrity_num_bytes_total >> 8)  & 0xff);
-        flash.writeByte(FILESIZE_ADDRESS + 3, (integrity_num_bytes_total >> 0)  & 0xff);            
+       
         
         memset(filename, 0, 64); // switch to the hex extension
         eeprom_read_block(filename, (const void *) EEPROM_UPDATE_FILENAME, 31);
@@ -4291,6 +4278,9 @@ void checkForFirmwareUpdates(){
         downloadFile(filename, processUpdateHexBody);    
         while(flash.busy()){;}           
         if(integrity_check_succeeded){ 
+          flash.chipErase();        
+          while(flash.busy()){;}               
+          
           flash.writeByte(CRC16_CHECKSUM_ADDRESS + 0, (integrity_crc16_checksum >> 8) & 0xff);
           flash.writeByte(CRC16_CHECKSUM_ADDRESS + 1, (integrity_crc16_checksum >> 0) & 0xff);
           
