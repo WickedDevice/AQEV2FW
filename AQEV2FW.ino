@@ -30,6 +30,12 @@ WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A0, A1);
 LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
 byte mqtt_server_ip[4] = { 0 };    
+byte update_server_ip[4] = { 0 };    
+uint32_t update_server_ip32 = 0;
+char update_server_name[32] = {0};
+unsigned long integrity_num_bytes_total = 0;
+unsigned long integrity_crc16_checksum = 0;
+boolean integrity_check_succeeded = false;
 PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
 WildFire_CC3000_Client wifiClient;
@@ -116,6 +122,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_UPDATE_SERVER_NAME (EEPROM_MQTT_PORT - 32)         // string, the DNS name of the Firmware Update server (default update.wickeddevice.com), up to 32 characters (one of which is a null terminator)
 #define EEPROM_OPERATIONAL_MODE   (EEPROM_UPDATE_SERVER_NAME - 1) // operational mode encoded as a single byte value (e.g. NORMAL, ZEROING, etc.)
 #define EEPROM_TEMPERATURE_UNITS  (EEPROM_OPERATIONAL_MODE - 1)   // temperature units 'F' for Fahrenheit and 'C' for Celsius
+#define EEPROM_UPDATE_FILENAME    (EEPROM_TEMPERATURE_UNITS - 32) // 32-bytes for the update server filename (excluding the implied extension)
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
@@ -181,6 +188,8 @@ void set_co_sensitivity(char * arg);
 void set_private_key(char * arg);
 void set_operational_mode(char * arg);
 void set_temperature_units(char * arg);
+void set_update_filename(char * arg);
+void force_command(char * arg);
 
 // Note to self:
 //   When implementing a new parameter, ask yourself:
@@ -201,33 +210,35 @@ void set_temperature_units(char * arg);
 // in order to ease printing as a table
 // string comparisons should use strncmp rather than strcmp
 char * commands[] = {
-  "get       ",
-  "init      ",
-  "restore   ",
-  "mac       ",
-  "method    ",
-  "ssid      ",
-  "pwd       ",
-  "security  ",
-  "staticip  ",
-  "use       ",
-  "mqttsrv   ",
-  "mqttport  ",
-  "mqttuser  ",
-  "mqttpwd   ",  
-  "mqttid    ",
-  "mqttauth  ",
-  "updatesrv ",
-  "backup    ",
-  "no2_cal   ",
-  "no2_slope ",
-  "no2_off   ",
-  "co_cal    ",
-  "co_slope  ",
-  "co_off    ",
-  "key       ",
-  "opmode    ",
-  "tempunit  ",
+  "get        ",
+  "init       ",
+  "restore    ",
+  "mac        ",
+  "method     ",
+  "ssid       ",
+  "pwd        ",
+  "security   ",
+  "staticip   ",
+  "use        ",
+  "mqttsrv    ",
+  "mqttport   ",
+  "mqttuser   ",
+  "mqttpwd    ",  
+  "mqttid     ",
+  "mqttauth   ",
+  "updatesrv  ",
+  "backup     ",
+  "no2_cal    ",
+  "no2_slope  ",
+  "no2_off    ",
+  "co_cal     ",
+  "co_slope   ",
+  "co_off     ",
+  "key        ",
+  "opmode     ",
+  "tempunit   ",
+  "updatefile ",
+  "force      ",
   0
 };
 
@@ -259,6 +270,8 @@ void (*command_functions[])(char * arg) = {
   set_private_key,
   set_operational_mode,
   set_temperature_units,
+  set_update_filename,
+  force_command,
   0
 };
 
@@ -421,6 +434,10 @@ void setup() {
         }
   
         // stuck in this loop until the command line receives an exit command
+        if(mode != MODE_CONFIG){
+          break; // if a command changes mode, we're done with config
+        }
+        
         if (Serial.available()) {
           idle_time_ms = 0;
           // if you get serial traffic, pass it along to the configModeStateMachine for consumption
@@ -468,6 +485,7 @@ void setup() {
   if(mode_requires_wifi(mode)){
     // Scan Networks to show RSSI
     displayRSSI(); // not sure this will work if Smart Config is used
+    petWatchdog();
     
     // Try and Connect to the Configured Network
     if(!restartWifi()){
@@ -483,7 +501,8 @@ void setup() {
     petWatchdog();
   
     // Check for Firmware Updates 
-  
+    checkForFirmwareUpdates();
+    
     // Connect to MQTT server
     if(!mqttReconnect()){
       setLCD_P(PSTR("  MQTT CONNECT  "
@@ -948,7 +967,8 @@ void prompt(void) {
 void configInject(char * str) {
   boolean reset_buffers = true;
   while (*str != '\0') {
-    configModeStateMachine(*str++, reset_buffers);
+    boolean got_exit = false;
+    got_exit = configModeStateMachine(*str++, reset_buffers);
     if (reset_buffers) {
       reset_buffers = false;
     }
@@ -1029,6 +1049,7 @@ void help_menu(char * arg) {
       Serial.println(F("      mqttid - MQTT client ID"));      
       Serial.println(F("      mqttauth - MQTT authentication enabled?"));      
       Serial.println(F("      updatesrv - Update server name"));      
+      Serial.println(F("      updatefile - Update filename (no extension)"));          
       Serial.println(F("      no2_cal - NO2 sensitivity [nA/ppm]"));
       Serial.println(F("      no2_slope - NO2 sensors slope [ppb/V]"));
       Serial.println(F("      no2_off - NO2 sensors offset [V]"));
@@ -1050,32 +1071,34 @@ void help_menu(char * arg) {
     else if (strncmp("restore", arg, 7) == 0) {
       Serial.println(F("restore <param>"));
       Serial.println(F("   <param> is one of:"));
-      Serial.println(F("      defaults - performs 'method direct'"));
-      Serial.println(F("                 performs 'security wpa2'"));
-      Serial.println(F("                 performs 'use dhcp'"));
-      Serial.println(F("                 performs 'opmode normal'"));
-      Serial.println(F("                 performs 'tempunit C'"));      
-      Serial.println(F("                 performs 'mqttsrv opensensors.io'"));
-      Serial.println(F("                 performs 'mqttport 1883'"));           
-      Serial.println(F("                 performs 'mqttauth enable'"));        
-      Serial.println(F("                 performs 'mqttuser airqualityegg'"));  
-      Serial.println(F("                 performs 'restore mac'"));
-      Serial.println(F("                 performs 'restore mqttpwd'"));
-      Serial.println(F("                 performs 'restore mqttid'"));      
-      Serial.println(F("                 performs 'restore updatesrv'"));      
-      Serial.println(F("                 performs 'restore key'"));
-      Serial.println(F("                 performs 'restore no2'"));
-      Serial.println(F("                 performs 'restore co'"));
-      Serial.println(F("                 clears the SSID from memory"));
-      Serial.println(F("                 clears the Network Password from memory"));
-      Serial.println(F("      mac      - retrieves the mac address from BACKUP"));
-      Serial.println(F("                 and assigns it to the CC3000, via a 'mac' command"));
-      Serial.println(F("      mqttpwd  - restores the MQTT password from BACKUP "));
-      Serial.println(F("      mqttid   - restores the MQTT client ID"));    
-      Serial.println(F("      updatesrv- restores the Update server name"));          
-      Serial.println(F("      key      - restores the Private Key from BACKUP "));
-      Serial.println(F("      no2      - restores the NO2 calibration parameters from BACKUP "));
-      Serial.println(F("      co       - restores the CO calibration parameters from BACKUP "));
+      Serial.println(F("      defaults -   performs 'method direct'"));
+      Serial.println(F("                   performs 'security wpa2'"));
+      Serial.println(F("                   performs 'use dhcp'"));
+      Serial.println(F("                   performs 'opmode normal'"));
+      Serial.println(F("                   performs 'tempunit C'"));      
+      Serial.println(F("                   performs 'mqttsrv opensensors.io'"));
+      Serial.println(F("                   performs 'mqttport 1883'"));           
+      Serial.println(F("                   performs 'mqttauth enable'"));        
+      Serial.println(F("                   performs 'mqttuser airqualityegg'"));  
+      Serial.println(F("                   performs 'restore mac'"));
+      Serial.println(F("                   performs 'restore mqttpwd'"));
+      Serial.println(F("                   performs 'restore mqttid'"));      
+      Serial.println(F("                   performs 'restore updatesrv'"));   
+      Serial.println(F("                   performs 'restore updatefile'"));         
+      Serial.println(F("                   performs 'restore key'"));
+      Serial.println(F("                   performs 'restore no2'"));
+      Serial.println(F("                   performs 'restore co'"));
+      Serial.println(F("                   clears the SSID from memory"));
+      Serial.println(F("                   clears the Network Password from memory"));
+      Serial.println(F("      mac        - retrieves the mac address from BACKUP"));
+      Serial.println(F("                   and assigns it to the CC3000, via a 'mac' command"));
+      Serial.println(F("      mqttpwd    - restores the MQTT password from BACKUP "));
+      Serial.println(F("      mqttid     - restores the MQTT client ID"));    
+      Serial.println(F("      updatesrv  - restores the Update server name"));          
+      Serial.println(F("      updatefile - restores the Update filename"));           
+      Serial.println(F("      key        - restores the Private Key from BACKUP "));
+      Serial.println(F("      no2        - restores the NO2 calibration parameters from BACKUP "));
+      Serial.println(F("      co         - restores the CO calibration parameters from BACKUP "));
     }
     else if (strncmp("mac", arg, 3) == 0) {
       Serial.println(F("mac <address>"));
@@ -1130,6 +1153,13 @@ void help_menu(char * arg) {
       Serial.println(F("      dhcp - wipes the Static IP address from the EEPROM"));
       warn_could_break_connect();      
     }
+    else if (strncmp("force", arg, 5) == 0) {
+      Serial.println(F("force <param>"));
+      Serial.println(F("   <param> is one of:"));
+      Serial.println(F("      update - invalidates the firmware signature, "));
+      Serial.println(F("               configures for normal mode, and exits config mode, "));
+      Serial.println(F("               and should initiate firmware update after connecting to wi-fi."));
+    }    
     else if (strncmp("mqttpwd", arg, 7) == 0) {
       Serial.println(F("mqttpwd <string>"));
       Serial.println(F("   <string> is the password the device will use to connect "));
@@ -1172,6 +1202,14 @@ void help_menu(char * arg) {
     else if (strncmp("updatesrv", arg, 9) == 0) {
       Serial.println(F("updatesrv <string>"));
       Serial.println(F("   <string> is the DNS name of the Update server."));
+      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
+      Serial.println(F("            probably not be using this command."));
+      Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
+      Serial.println(F("            from getting firmware updates over the internet."));
+    }   
+    else if (strncmp("updatefile", arg, 10) == 0) {
+      Serial.println(F("updatefile <string>"));
+      Serial.println(F("   <string> is the filename to load from the Update server, excluding the extension."));
       Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
       Serial.println(F("            probably not be using this command."));
       Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
@@ -1426,6 +1464,10 @@ void print_eeprom_update_server(){
   print_eeprom_string((const char *) EEPROM_UPDATE_SERVER_NAME);
 }
 
+void print_eeprom_update_filename(){
+  print_eeprom_string((const char *) EEPROM_UPDATE_FILENAME);
+}  
+
 void print_eeprom_mqtt_server(){
   print_eeprom_string((const char *) EEPROM_MQTT_SERVER_NAME);
 }
@@ -1545,6 +1587,12 @@ void print_eeprom_value(char * arg) {
   else if(strncmp(arg, "tempunit", 8) == 0) {
      print_eeprom_temperature_units();
   }
+  else if(strncmp(arg, "updatesrv", 9) == 0) {
+    print_eeprom_string((const char *) EEPROM_UPDATE_SERVER_NAME);    
+  }  
+  else if(strncmp(arg, "updatefile", 10) == 0) {
+    print_eeprom_string((const char *) EEPROM_UPDATE_FILENAME);    
+  }  
   else if (strncmp(arg, "settings", 8) == 0) {
     char allff[64] = {0};
     memset(allff, 0xff, 64);
@@ -1570,6 +1618,8 @@ void print_eeprom_value(char * arg) {
     print_eeprom_ipmode();
     Serial.print(F("    Update Server: "));
     print_eeprom_update_server();    
+    Serial.print(F("    Update Filename: "));
+    print_eeprom_update_filename();        
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | MQTT Settings:                                              |"));
     Serial.println(F(" +-------------------------------------------------------------+"));    
@@ -1665,6 +1715,7 @@ void restore(char * arg) {
     configInject("restore mqttpwd\r");
     configInject("restore mqttid\r");
     configInject("restore updatesrv\r");
+    configInject("restore updatefile\r");    
     configInject("restore key\r");
     configInject("restore no2\r");
     configInject("restore co\r");
@@ -1724,6 +1775,9 @@ void restore(char * arg) {
   }  
   else if (strncmp("updatesrv", arg, 9) == 0) {
     eeprom_write_block("update.wickeddevice.com", (void *) EEPROM_UPDATE_SERVER_NAME, 32);
+  }  
+  else if (strncmp("updatefile", arg, 10) == 0) {
+    eeprom_write_block("aqev2_no2_co", (void *) EEPROM_UPDATE_FILENAME, 32);
   }  
   else if (strncmp("key", arg, 3) == 0) {
     if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_PRIVATE_KEY_BIT)) {
@@ -2082,6 +2136,23 @@ void use_command(char * arg) {
   }
 }
 
+void force_command(char * arg){
+  if (strncmp("update", arg, 6) == 0) {
+    Serial.println(F("Info: Erasing last flash page"));
+    SUCCESS_MESSAGE_DELAY();                  
+    invalidateSignature();    
+    configInject("opmode normal\r");
+    mode = SUBMODE_NORMAL;
+    configInject("exit\r");
+  }
+  else {
+    Serial.print(F("Error: Invalid parameter provided to 'force' command - \""));
+    Serial.print(arg);
+    Serial.println("\"");
+    return;
+  }  
+}
+
 void set_mqtt_password(char * arg) {
   // we've reserved 32-bytes of EEPROM for a MQTT password
   // so the argument's length must be <= 31
@@ -2205,6 +2276,25 @@ void set_update_server_name(char * arg){
   else {
     Serial.println(F("Error: Update server name must be less than 32 characters in length"));
   }
+}
+
+void set_update_filename(char * arg){
+  // we've reserved 32-bytes of EEPROM for an update server name
+  // so the argument's length must be <= 31
+  char filename[32] = {0};
+  uint16_t len = strlen(arg);
+  if (len < 32) {
+    strncpy(filename, arg, len);
+    eeprom_write_block(filename, (void *) EEPROM_UPDATE_FILENAME, 32);
+    recomputeAndStoreConfigChecksum();
+  }
+  else {
+    Serial.println(F("Error: Update filename must be less than 32 characters in length"));
+  }  
+}
+
+void force_software_update(char * arg){
+  
 }
 
 void backup(char * arg) {
@@ -3010,6 +3100,15 @@ void cc3000IpToArray(uint32_t ip, uint8_t * ip_array){
   }
 }
 
+uint32_t arrayToCC3000Ip(uint8_t * ip_array){
+  uint32_t ip = 0;
+  for(int8_t ii = 3; ii > 0; ii++){
+    ip |= ip_array[ii];    
+    ip <<= 8;
+  }  
+  return ip;
+}
+
 /****** ADC SUPPORT FUNCTIONS ******/
 // returns the measured voltage in Volts
 // 62.5 microvolts resolution in 16-bit mode
@@ -3050,7 +3149,7 @@ boolean mqttResolve(void){
   if(!resolved){
     eeprom_read_block(mqtt_server_name, (const void *) EEPROM_MQTT_SERVER_NAME, 31);
     setLCD_P(PSTR("   RESOLVING"));
-    updateLCD(mqtt_server_name, 1);
+    updateLCD("MQTT SERVER", 1);
     SUCCESS_MESSAGE_DELAY();
     
     if  (!cc3000.getHostByName(mqtt_server_name, &ip) || (ip == 0))  {
@@ -3949,4 +4048,407 @@ boolean mode_requires_wifi(uint8_t opmode){
   } 
   
   return requires_wifi;
+}
+
+/****** INITIALIZATION SUPPORT FUNCTIONS ******/
+
+// the following defines are what goes in the SPI flash where to signal to the bootloader
+#define LAST_4K_PAGE_ADDRESS      0x7F000     // the start address of the last 4k page
+#define MAGIC_NUMBER              0x00ddba11  // this word at the end of SPI flash
+                                              // is a signal to the bootloader to 
+                                              // think about loading it
+#define MAGIC_NUMBER_ADDRESS      0x7FFFC     // the last 4 bytes are the magic number
+#define CRC16_CHECKSUM_ADDRESS    0x7FFFA     // the two bytes before the magic number
+                                              // are the expected checksum of the file
+#define FILESIZE_ADDRESS          0x7FFF6     // the four bytes before the checksum
+                                              // are the stored file size
+
+#define IDLE_TIMEOUT_MS  10000     // Amount of time to wait (in milliseconds) with no data 
+                                   // received before closing the connection.  If you know the server
+                                   // you're accessing is quick to respond, you can reduce this value.
+
+void invalidateSignature(void){
+  while(flash.busy()){;}   
+  flash.blockErase4K(LAST_4K_PAGE_ADDRESS);
+  while(flash.busy()){;}   
+}
+
+// returns the number of header bytes in the server response
+// if the file was downloaded in one chunk, this means that
+// mybuffer[ret] is the first byte of the response body
+uint16_t downloadFile(char * filename, void (*responseBodyProcessor)(uint8_t, boolean, unsigned long, uint16_t)){    
+  uint16_t ret = 0;
+
+  // re-initialize the globals
+  unsigned long total_bytes_read = 0;
+  unsigned long body_bytes_read = 0;
+  uint16_t crc16_checksum = 0;
+  uint8_t mybuffer[512] = {0};
+  
+  /* Try connecting to the website.
+     Note: HTTP/1.1 protocol is used to keep the server from closing the connection before all data is read.
+  */
+  WildFire_CC3000_Client www = cc3000.connectTCP(update_server_ip32, 80);
+  if (www.connected()) {
+    www.fastrprint(F("GET /"));
+    www.fastrprint(filename);
+    www.fastrprint(F(" HTTP/1.1\r\n"));
+    www.fastrprint(F("Host: ")); www.fastrprint(update_server_name); www.fastrprint(F("\r\n"));
+    www.fastrprint(F("\r\n"));
+    www.println();
+  } else {
+    Serial.println(F("Error: Update Server Connection failed"));    
+    return 0;
+  }
+
+  Serial.println(F("Info: -------------------------------------"));
+  
+  /* Read data until either the connection is closed, or the idle timeout is reached. */ 
+  unsigned long lastRead = millis();
+  unsigned long num_chunks = 0;
+  unsigned long num_bytes_read = 0;
+  unsigned long num_header_bytes = 0;
+  unsigned long start_time = millis();
+  
+  #define PARSING_WAITING_FOR_CR       0
+  #define PARSING_WAITING_FOR_CRNL     1
+  #define PARSING_WAITING_FOR_CRNLCR   2
+  #define PARSING_WAITING_FOR_CRNLCRNL 3  
+  #define PARSING_FOUND_CRNLCRNL       4
+  uint8_t parsing_state = PARSING_WAITING_FOR_CR;
+  // get past the response headers    
+  while (www.connected() && (millis() - lastRead < IDLE_TIMEOUT_MS)) {   
+    while (www.available()) {
+      //char c = www.read();
+      num_bytes_read = www.read(mybuffer, 255);
+      num_chunks++;
+      
+      if((num_chunks % 20) == 0){
+        petWatchdog();
+        updateCornerDot();
+      }
+      
+      for(uint8_t ii = 0 ; ii < num_bytes_read; ii++){
+         if(parsing_state != PARSING_FOUND_CRNLCRNL){
+           num_header_bytes++;
+         }
+         
+         switch(parsing_state){
+         case PARSING_WAITING_FOR_CR:
+           if(mybuffer[ii] == '\r'){
+             parsing_state = PARSING_WAITING_FOR_CRNL;
+           }
+           break;
+         case PARSING_WAITING_FOR_CRNL:
+           if(mybuffer[ii] == '\n'){
+             parsing_state = PARSING_WAITING_FOR_CRNLCR;
+           }         
+           else{
+             parsing_state = PARSING_WAITING_FOR_CR;
+           }
+           break;
+         case PARSING_WAITING_FOR_CRNLCR:
+           if(mybuffer[ii] == '\r'){
+             parsing_state = PARSING_WAITING_FOR_CRNLCRNL;
+           }         
+           else{
+             parsing_state = PARSING_WAITING_FOR_CR;
+           }         
+           break;
+         case PARSING_WAITING_FOR_CRNLCRNL:
+           if(mybuffer[ii] == '\n'){
+             parsing_state = PARSING_FOUND_CRNLCRNL;
+           }         
+           else{
+             parsing_state = PARSING_WAITING_FOR_CR;
+           }         
+           break;             
+         default:           
+           crc16_checksum = _crc16_update(crc16_checksum, mybuffer[ii]);
+           if(responseBodyProcessor != 0){
+             responseBodyProcessor(mybuffer[ii], false, body_bytes_read, crc16_checksum);
+             body_bytes_read++;
+           }
+           break;
+         }               
+      }
+      //Serial.println(num_bytes_read);
+      total_bytes_read += num_bytes_read;
+      uint16_t address = 0;
+      uint8_t data_byte = 0;       
+      lastRead = millis();
+    }
+  }
+  
+  www.close();
+  
+  if(responseBodyProcessor != 0){
+    responseBodyProcessor(0, true, body_bytes_read, crc16_checksum); // signal end of stream
+  }  
+  
+  unsigned long end_time = millis();
+  Serial.println(F("Info: -------------------------------------"));
+  Serial.print("Info: # Bytes Read: ");
+  Serial.println(total_bytes_read);
+  Serial.print("Info: # Chunks Read: ");
+  Serial.println(num_chunks);
+  Serial.print("Info: File Size: ");
+  Serial.println(total_bytes_read - num_header_bytes);
+  Serial.print("Info: CRC16 Checksum: ");
+  Serial.println(crc16_checksum);
+  Serial.print("Info: Download Time: ");
+  Serial.println(end_time - start_time); 
+  
+  return num_header_bytes;
+}
+
+void checkForFirmwareUpdates(){
+  uint32_t flash_file_size = 0;
+  uint16_t flash_signature = 0;  
+  
+  // retrieve the current signature parameters  
+  flash_file_size = flash.readByte(FILESIZE_ADDRESS);
+  flash_file_size <<= 8;
+  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+1);
+  flash_file_size <<= 8;
+  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+2);  
+  flash_file_size <<= 8;
+  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+3);  
+
+  flash_signature = flash.readByte(CRC16_CHECKSUM_ADDRESS);
+  flash_signature <<= 8;
+  flash_signature |= flash.readByte(CRC16_CHECKSUM_ADDRESS+1);
+
+  Serial.print(F("Info: Current firmware signature: "));
+  Serial.print(flash_file_size);
+  Serial.print(F(" "));
+  Serial.print(flash_signature);
+  Serial.println();  
+  
+  char filename[64] = {0};
+  if(updateServerResolve()){
+    // try and download the integrity check file up to three times    
+    setLCD_P(PSTR("  CHECKING FOR  "
+                  "    UPDATES     "));
+    eeprom_read_block(filename, (const void *) EEPROM_UPDATE_FILENAME, 31);
+    strncat_P(filename, PSTR(".chk"), 4);    
+    uint16_t num_hdr_bytes = 0;
+    for(uint8_t ii = 0; ii < 3; ii++){
+      Serial.print(F("Info: Attempt #"));
+      Serial.print(ii+1);
+      Serial.print(F(" downloading \""));
+      Serial.print(filename);
+      Serial.print(F("\""));
+      Serial.println();
+      
+      num_hdr_bytes = downloadFile(filename, processIntegrityCheckBody);   
+      if(num_hdr_bytes > 0){
+        lcdSmiley(15, 1);
+        SUCCESS_MESSAGE_DELAY();         
+        petWatchdog();        
+        break; 
+      }
+    }
+
+    if(num_hdr_bytes > 0){
+      // compare the just-retrieved signature file contents 
+      // to the signature already stored in flash
+      if((flash_file_size != integrity_num_bytes_total) || 
+        (flash_signature != integrity_crc16_checksum)){
+        
+        flash.chipErase();
+
+        setLCD_P(PSTR("UPDATE AVAILABLE"
+                      "  DOWNLOADING   "));       
+        SUCCESS_MESSAGE_DELAY();   
+        petWatchdog();
+        
+        // write these parameters to their rightful place in the SPI flash
+        // for consumption by the bootloader        
+        while(flash.busy()){;}   
+        
+        flash.writeByte(CRC16_CHECKSUM_ADDRESS + 0, (integrity_crc16_checksum >> 8) & 0xff);
+        flash.writeByte(CRC16_CHECKSUM_ADDRESS + 1, (integrity_crc16_checksum >> 0) & 0xff);
+        
+        flash.writeByte(FILESIZE_ADDRESS + 0, (integrity_num_bytes_total >> 24) & 0xff);
+        flash.writeByte(FILESIZE_ADDRESS + 1, (integrity_num_bytes_total >> 16) & 0xff);    
+        flash.writeByte(FILESIZE_ADDRESS + 2, (integrity_num_bytes_total >> 8)  & 0xff);
+        flash.writeByte(FILESIZE_ADDRESS + 3, (integrity_num_bytes_total >> 0)  & 0xff);            
+        
+        memset(filename, 0, 64); // switch to the hex extension
+        eeprom_read_block(filename, (const void *) EEPROM_UPDATE_FILENAME, 31);
+        strncat_P(filename, PSTR(".hex"), 4); 
+        
+        setLCD_P(PSTR("     PLEASE     "
+                      "      WAIT      "));  
+                      
+        Serial.print(F("Info: Downloading \""));
+        Serial.print(filename);
+        Serial.print(F("\""));
+        Serial.println();
+        
+        downloadFile(filename, processUpdateHexBody);    
+        while(flash.busy()){;}           
+        if(integrity_check_succeeded){
+          Serial.println(F("Info: Firmware Update Complete. Reseting to apply changes."));
+          setLCD_P(PSTR("UPDATE COMPLETE "
+                        "  RESTARTING    "));          
+          lcdSmiley(15, 1);
+          SUCCESS_MESSAGE_DELAY();
+          watchdogForceReset();        
+        }
+        else{
+          Serial.println(F("Error: Firmware Update Failed. Try again later by resetting."));
+          setLCD_P(PSTR(" UPDATE FAILED  "
+                        "  RETRY LATER   "));
+          lcdFrownie(15, 1);
+          ERROR_MESSAGE_DELAY();         
+        }
+      }
+      else{
+        Serial.println("Info: Signature matches, skipping HEX download.");
+        setLCD_P(PSTR("SOFTWARE ALREADY"
+                      "   UP TO DATE   "));       
+        SUCCESS_MESSAGE_DELAY();   
+        petWatchdog();        
+      }
+    }
+    else{
+      Serial.println("Error: Failed to download integrity check file, skipping Hex file download");
+    }    
+  }  
+}
+
+boolean updateServerResolve(void){
+  static boolean resolved = false;
+  
+  if(connectedToNetwork()){ 
+    if(!resolved){
+      eeprom_read_block(update_server_name, (const void *) EEPROM_UPDATE_SERVER_NAME, 31);
+      setLCD_P(PSTR("   RESOLVING"));
+      updateLCD("UPDATE SERVER", 1);
+      SUCCESS_MESSAGE_DELAY();
+      
+      if  (!cc3000.getHostByName(update_server_name, &update_server_ip32) || (update_server_ip32 == 0)){
+        Serial.print(F("Error: Couldn't resolve '"));
+        Serial.print(update_server_name);
+        Serial.println(F("'"));
+        
+        updateLCD("FAILED", 1);
+        lcdFrownie(15, 1);
+        ERROR_MESSAGE_DELAY();
+        return false;
+      }
+      else{
+        resolved = true;
+        cc3000IpToArray(update_server_ip32, update_server_ip);      
+        Serial.print(F("Info: Resolved \""));
+        Serial.print(update_server_name);
+        Serial.print(F("\" to IP address "));
+        cc3000.printIPdotsRev(update_server_ip32);
+        
+        updateLCD(update_server_ip32, 1);      
+        lcdSmiley(15, 1);
+        SUCCESS_MESSAGE_DELAY();          
+        Serial.println();    
+      }
+    }
+     
+    // connected to network and resolution succeeded 
+    return true;
+  }
+  
+  // not connected to network
+  return false;
+}
+
+void processIntegrityCheckBody(uint8_t dataByte, boolean end_of_stream, unsigned long body_bytes_read, uint16_t crc16_checksum){
+  char * endPtr;
+  static char buff[64] = {0};
+  static uint8_t buff_idx = 0;
+  
+  if(end_of_stream){
+    integrity_num_bytes_total = strtoul(buff, &endPtr, 10);
+    if(endPtr != 0){
+      integrity_crc16_checksum = strtoul(endPtr, 0, 10);
+    }
+    Serial.println("Info: Integrity Checks: ");
+    Serial.print(  "Info:    File Size: ");
+    Serial.println(integrity_num_bytes_total);
+    Serial.print(  "Info:    CRC16 Checksum: ");
+    Serial.println(integrity_crc16_checksum);   
+    
+    // also write these parameters to their rightful place in the SPI flash
+    // for consumption by the bootloader
+    invalidateSignature();
+    
+    flash.writeByte(CRC16_CHECKSUM_ADDRESS + 0, (integrity_crc16_checksum >> 8) & 0xff);
+    flash.writeByte(CRC16_CHECKSUM_ADDRESS + 1, (integrity_crc16_checksum >> 0) & 0xff);
+    
+    flash.writeByte(FILESIZE_ADDRESS + 0, (integrity_num_bytes_total >> 24) & 0xff);
+    flash.writeByte(FILESIZE_ADDRESS + 1, (integrity_num_bytes_total >> 16) & 0xff);    
+    flash.writeByte(FILESIZE_ADDRESS + 2, (integrity_num_bytes_total >> 8)  & 0xff);
+    flash.writeByte(FILESIZE_ADDRESS + 3, (integrity_num_bytes_total >> 0)  & 0xff);            
+  }
+  else{
+    if(buff_idx < 63){
+      buff[buff_idx++] = dataByte;
+    }
+  }
+}
+
+void processUpdateHexBody(uint8_t dataByte, boolean end_of_stream, unsigned long body_bytes_read, uint16_t crc16_checksum){
+  static uint8_t page[256] = {0};
+  static uint16_t page_idx = 0;
+  static uint32_t page_address = 0;
+  
+  page[page_idx++] = dataByte;
+  if(page_idx >= 256){
+     page_idx = 0;
+  }
+  
+  if(end_of_stream || (page_idx == 0)){
+    if((page_address % 4096) == 0){
+      while(flash.busy()){;}    
+      flash.blockErase4K(page_address); 
+      while(flash.busy()){;}   
+    }    
+    
+    uint16_t top_bound = 256;
+    if(page_idx != 0){
+      top_bound = page_idx;
+    }
+    flash.writeBytes(page_address, page, top_bound);
+    
+    
+    // clear the page
+    memset(page, 0, 256);
+    
+    // advance the page address
+    page_address += 256;
+    
+  }
+  
+  if(end_of_stream){
+    if((body_bytes_read == integrity_num_bytes_total) && (crc16_checksum == integrity_crc16_checksum)){
+      flash.writeByte(MAGIC_NUMBER_ADDRESS + 0, MAGIC_NUMBER >> 24); 
+      flash.writeByte(MAGIC_NUMBER_ADDRESS + 1, MAGIC_NUMBER >> 16); 
+      flash.writeByte(MAGIC_NUMBER_ADDRESS + 2, MAGIC_NUMBER >> 8); 
+      flash.writeByte(MAGIC_NUMBER_ADDRESS + 3, MAGIC_NUMBER >> 0); 
+      Serial.println(F("Info: Integrity Check Succeeded!"));
+      Serial.println(F("Info: Wrote Magic Number"));
+      integrity_check_succeeded = true;
+    }
+    else{
+      Serial.println(F("Error: Integrity Check Failed!"));
+      Serial.print(F("Error: Expected Checksum: "));
+      Serial.print(integrity_crc16_checksum);
+      Serial.print(F(", Actual Checksum: "));
+      Serial.println(crc16_checksum);
+      Serial.print(F("Error: Expected Filesize: "));
+      Serial.print(integrity_num_bytes_total);
+      Serial.print(F(", Actual Filesize: "));
+      Serial.println(body_bytes_read);
+    }
+  }
 }
