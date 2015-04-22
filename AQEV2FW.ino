@@ -4289,7 +4289,7 @@ void checkForFirmwareUpdates(){
         
         downloadFile(filename, processUpdateHexBody);    
         while(flash.busy()){;}           
-        if(integrity_check_succeeded){
+        if(integrity_check_succeeded){ 
           flash.writeByte(CRC16_CHECKSUM_ADDRESS + 0, (integrity_crc16_checksum >> 8) & 0xff);
           flash.writeByte(CRC16_CHECKSUM_ADDRESS + 1, (integrity_crc16_checksum >> 0) & 0xff);
           
@@ -4299,8 +4299,8 @@ void checkForFirmwareUpdates(){
           flash.writeByte(FILESIZE_ADDRESS + 3, (integrity_num_bytes_total >> 0)  & 0xff);                
           
           Serial.println(F("Info: Firmware Update Complete. Reseting to apply changes."));
-          setLCD_P(PSTR("UPDATE COMPLETE "
-                        "  RESTARTING    "));          
+          setLCD_P(PSTR("APPLYING UPDATES"
+                        "WAIT ONE MINUTE "));          
           lcdSmiley(15, 1);
           SUCCESS_MESSAGE_DELAY();
           watchdogForceReset();        
