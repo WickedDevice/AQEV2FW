@@ -4290,6 +4290,14 @@ void checkForFirmwareUpdates(){
         downloadFile(filename, processUpdateHexBody);    
         while(flash.busy()){;}           
         if(integrity_check_succeeded){
+          flash.writeByte(CRC16_CHECKSUM_ADDRESS + 0, (integrity_crc16_checksum >> 8) & 0xff);
+          flash.writeByte(CRC16_CHECKSUM_ADDRESS + 1, (integrity_crc16_checksum >> 0) & 0xff);
+          
+          flash.writeByte(FILESIZE_ADDRESS + 0, (integrity_num_bytes_total >> 24) & 0xff);
+          flash.writeByte(FILESIZE_ADDRESS + 1, (integrity_num_bytes_total >> 16) & 0xff);    
+          flash.writeByte(FILESIZE_ADDRESS + 2, (integrity_num_bytes_total >> 8)  & 0xff);
+          flash.writeByte(FILESIZE_ADDRESS + 3, (integrity_num_bytes_total >> 0)  & 0xff);                
+          
           Serial.println(F("Info: Firmware Update Complete. Reseting to apply changes."));
           setLCD_P(PSTR("UPDATE COMPLETE "
                         "  RESTARTING    "));          
@@ -4380,15 +4388,7 @@ void processIntegrityCheckBody(uint8_t dataByte, boolean end_of_stream, unsigned
     
     // also write these parameters to their rightful place in the SPI flash
     // for consumption by the bootloader
-    invalidateSignature();
-    
-    flash.writeByte(CRC16_CHECKSUM_ADDRESS + 0, (integrity_crc16_checksum >> 8) & 0xff);
-    flash.writeByte(CRC16_CHECKSUM_ADDRESS + 1, (integrity_crc16_checksum >> 0) & 0xff);
-    
-    flash.writeByte(FILESIZE_ADDRESS + 0, (integrity_num_bytes_total >> 24) & 0xff);
-    flash.writeByte(FILESIZE_ADDRESS + 1, (integrity_num_bytes_total >> 16) & 0xff);    
-    flash.writeByte(FILESIZE_ADDRESS + 2, (integrity_num_bytes_total >> 8)  & 0xff);
-    flash.writeByte(FILESIZE_ADDRESS + 3, (integrity_num_bytes_total >> 0)  & 0xff);            
+    invalidateSignature();         
   }
   else{
     if(buff_idx < 63){
