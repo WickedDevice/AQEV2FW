@@ -16,7 +16,7 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 0
+#define AQEV2FW_PATCH_VERSION 1
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 
@@ -35,6 +35,7 @@ uint32_t update_server_ip32 = 0;
 char update_server_name[32] = {0};
 unsigned long integrity_num_bytes_total = 0;
 unsigned long integrity_crc16_checksum = 0;
+boolean downloaded_integrity_file = false;
 boolean integrity_check_succeeded = false;
 PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
@@ -4242,7 +4243,7 @@ void checkForFirmwareUpdates(){
       Serial.println();
       
       num_hdr_bytes = downloadFile(filename, processIntegrityCheckBody);   
-      if(num_hdr_bytes > 0){
+      if(downloaded_integrity_file){
         lcdSmiley(15, 1);
         SUCCESS_MESSAGE_DELAY();         
         petWatchdog();        
@@ -4250,12 +4251,12 @@ void checkForFirmwareUpdates(){
       }
     }
 
-    if(num_hdr_bytes > 0){
+    if(downloaded_integrity_file){
       // compare the just-retrieved signature file contents 
       // to the signature already stored in flash
       if((flash_file_size != integrity_num_bytes_total) || 
-        (flash_signature != integrity_crc16_checksum)){
-        
+        (flash_signature != integrity_crc16_checksum)){        
+          
         flash.chipErase();
 
         setLCD_P(PSTR("UPDATE AVAILABLE"
@@ -4379,6 +4380,7 @@ void processIntegrityCheckBody(uint8_t dataByte, boolean end_of_stream, unsigned
     integrity_num_bytes_total = strtoul(buff, &endPtr, 10);
     if(endPtr != 0){
       integrity_crc16_checksum = strtoul(endPtr, 0, 10);
+      downloaded_integrity_file = true;
     }
     Serial.println("Info: Integrity Checks: ");
     Serial.print(  "Info:    File Size: ");
