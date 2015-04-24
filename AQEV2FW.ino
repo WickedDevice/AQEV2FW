@@ -30,16 +30,18 @@ WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A0, A1);
 LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
 byte mqtt_server_ip[4] = { 0 };    
-byte update_server_ip[4] = { 0 };    
+PubSubClient mqtt_client;
+char mqtt_client_id[32] = {0};
+WildFire_CC3000_Client wifiClient;
+
 uint32_t update_server_ip32 = 0;
 char update_server_name[32] = {0};
 unsigned long integrity_num_bytes_total = 0;
 unsigned long integrity_crc16_checksum = 0;
+uint32_t flash_file_size = 0;
+uint16_t flash_signature = 0;
 boolean downloaded_integrity_file = false;
 boolean integrity_check_succeeded = false;
-PubSubClient mqtt_client;
-char mqtt_client_id[32] = {0};
-WildFire_CC3000_Client wifiClient;
 
 unsigned long current_millis = 0;
 char firmware_version[16] = {0};
@@ -365,9 +367,17 @@ void setup() {
         current_millis = millis();
         
         if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
+          static uint8_t num_touch_intervals = 0;
           previous_touch_sampling_millis = current_millis;    
           collectTouch();    
           processTouchQuietly();
+          
+          num_touch_intervals++;
+          if(num_touch_intervals == 5){
+            petWatchdog(); 
+            num_touch_intervals = 0;
+          }
+          
         }      
       
         if (Serial.available()) {
@@ -502,7 +512,7 @@ void setup() {
     petWatchdog();
   
     // Check for Firmware Updates 
-    //checkForFirmwareUpdates();
+    checkForFirmwareUpdates();
     integrity_check_passed = checkConfigIntegrity();
     if(!integrity_check_passed){
       Serial.println(F("Error: Config Integrity Check Failed after checkForFirmwareUpdates"));
@@ -634,6 +644,11 @@ void initializeHardware(void) {
   Serial.println(F(" +------------------------------------+"));
   Serial.println();
 
+  // Initialize Tiny Watchdog
+  Serial.print(F("Info: Tiny Watchdog Initialization..."));
+  watchdogInitialize();
+  Serial.println(F("OK."));
+
   pinMode(A6, OUTPUT);
   backlightOn();
 
@@ -705,12 +720,6 @@ void initializeHardware(void) {
   pinMode(10, OUTPUT);
   selectNoSlot();
   Serial.println(F("OK."));
-
-  // Initialize Tiny Watchdog
-  Serial.print(F("Info: Tiny Watchdog Initialization..."));
-  delay(500); // wait a bit to let things settle down before initializing the watchdog
-  watchdogInitialize();
-  Serial.println(F("OK."));
   
   // Initialize SPI Flash
   Serial.print(F("Info: SPI Flash Initialization..."));
@@ -722,6 +731,8 @@ void initializeHardware(void) {
     Serial.println(F("Fail."));
     init_spi_flash_ok = false;
   }  
+
+  getCurrentFirmwareSignature();
 
   // Initialize SHT25
   Serial.print(F("Info: SHT25 Initization..."));
@@ -3587,6 +3598,7 @@ boolean publishCO(){
 }
 
 void petWatchdog(void){
+  delay(120);
   tinywdt.pet(); 
 }
 
@@ -4140,7 +4152,7 @@ uint16_t downloadFile(char * filename, void (*responseBodyProcessor)(uint8_t, bo
         updateCornerDot();
       }
       
-      for(uint8_t ii = 0 ; ii < num_bytes_read; ii++){
+      for(uint32_t ii = 0 ; ii < num_bytes_read; ii++){
          if(parsing_state != PARSING_FOUND_CRNLCRNL){
            num_header_bytes++;
          }
@@ -4214,29 +4226,7 @@ uint16_t downloadFile(char * filename, void (*responseBodyProcessor)(uint8_t, bo
   return num_header_bytes;
 }
 
-void checkForFirmwareUpdates(){
-  uint32_t flash_file_size = 0;
-  uint16_t flash_signature = 0;  
-  
-  // retrieve the current signature parameters  
-  flash_file_size = flash.readByte(FILESIZE_ADDRESS);
-  flash_file_size <<= 8;
-  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+1);
-  flash_file_size <<= 8;
-  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+2);  
-  flash_file_size <<= 8;
-  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+3);  
-
-  flash_signature = flash.readByte(CRC16_CHECKSUM_ADDRESS);
-  flash_signature <<= 8;
-  flash_signature |= flash.readByte(CRC16_CHECKSUM_ADDRESS+1);
-
-  Serial.print(F("Info: Current firmware signature: "));
-  Serial.print(flash_file_size);
-  Serial.print(F(" "));
-  Serial.print(flash_signature);
-  Serial.println();  
-  
+void checkForFirmwareUpdates(){ 
   char filename[64] = {0};
   if(updateServerResolve()){
     // try and download the integrity check file up to three times    
@@ -4289,8 +4279,9 @@ void checkForFirmwareUpdates(){
         downloadFile(filename, processUpdateHexBody);    
         while(flash.busy()){;}           
         if(integrity_check_succeeded){ 
-          flash.chipErase();        
-          while(flash.busy()){;}               
+          // also write these parameters to their rightful place in the SPI flash
+          // for consumption by the bootloader
+          invalidateSignature();                                 
           
           flash.writeByte(CRC16_CHECKSUM_ADDRESS + 0, (integrity_crc16_checksum >> 8) & 0xff);
           flash.writeByte(CRC16_CHECKSUM_ADDRESS + 1, (integrity_crc16_checksum >> 0) & 0xff);
@@ -4299,6 +4290,12 @@ void checkForFirmwareUpdates(){
           flash.writeByte(FILESIZE_ADDRESS + 1, (integrity_num_bytes_total >> 16) & 0xff);    
           flash.writeByte(FILESIZE_ADDRESS + 2, (integrity_num_bytes_total >> 8)  & 0xff);
           flash.writeByte(FILESIZE_ADDRESS + 3, (integrity_num_bytes_total >> 0)  & 0xff);                
+          
+          flash.writeByte(MAGIC_NUMBER_ADDRESS + 0, MAGIC_NUMBER >> 24); 
+          flash.writeByte(MAGIC_NUMBER_ADDRESS + 1, MAGIC_NUMBER >> 16); 
+          flash.writeByte(MAGIC_NUMBER_ADDRESS + 2, MAGIC_NUMBER >> 8); 
+          flash.writeByte(MAGIC_NUMBER_ADDRESS + 3, MAGIC_NUMBER >> 0); 
+          Serial.println(F("Info: Wrote Magic Number"));          
           
           Serial.println(F("Info: Firmware Update Complete. Reseting to apply changes."));
           setLCD_P(PSTR("APPLYING UPDATES"
@@ -4350,8 +4347,7 @@ boolean updateServerResolve(void){
         return false;
       }
       else{
-        resolved = true;
-        cc3000IpToArray(update_server_ip32, update_server_ip);      
+        resolved = true;    
         Serial.print(F("Info: Resolved \""));
         Serial.print(update_server_name);
         Serial.print(F("\" to IP address "));
@@ -4387,11 +4383,7 @@ void processIntegrityCheckBody(uint8_t dataByte, boolean end_of_stream, unsigned
     Serial.print(  "Info:    File Size: ");
     Serial.println(integrity_num_bytes_total);
     Serial.print(  "Info:    CRC16 Checksum: ");
-    Serial.println(integrity_crc16_checksum);   
-    
-    // also write these parameters to their rightful place in the SPI flash
-    // for consumption by the bootloader
-    invalidateSignature();         
+    Serial.println(integrity_crc16_checksum);                
   }
   else{
     if(buff_idx < 63){
@@ -4405,9 +4397,11 @@ void processUpdateHexBody(uint8_t dataByte, boolean end_of_stream, unsigned long
   static uint16_t page_idx = 0;
   static uint32_t page_address = 0;
   
-  page[page_idx++] = dataByte;
-  if(page_idx >= 256){
-     page_idx = 0;
+  if(page_idx < 256){
+    page[page_idx++] = dataByte;  
+    if(page_idx >= 256){
+       page_idx = 0;
+    }
   }
   
   if(end_of_stream || (page_idx == 0)){
@@ -4434,13 +4428,8 @@ void processUpdateHexBody(uint8_t dataByte, boolean end_of_stream, unsigned long
   
   if(end_of_stream){
     if((body_bytes_read == integrity_num_bytes_total) && (crc16_checksum == integrity_crc16_checksum)){
-      flash.writeByte(MAGIC_NUMBER_ADDRESS + 0, MAGIC_NUMBER >> 24); 
-      flash.writeByte(MAGIC_NUMBER_ADDRESS + 1, MAGIC_NUMBER >> 16); 
-      flash.writeByte(MAGIC_NUMBER_ADDRESS + 2, MAGIC_NUMBER >> 8); 
-      flash.writeByte(MAGIC_NUMBER_ADDRESS + 3, MAGIC_NUMBER >> 0); 
-      Serial.println(F("Info: Integrity Check Succeeded!"));
-      Serial.println(F("Info: Wrote Magic Number"));
       integrity_check_succeeded = true;
+      Serial.println(F("Info: Integrity Check Succeeded!"));
     }
     else{
       Serial.println(F("Error: Integrity Check Failed!"));
@@ -4454,4 +4443,25 @@ void processUpdateHexBody(uint8_t dataByte, boolean end_of_stream, unsigned long
       Serial.println(body_bytes_read);
     }
   }
+}
+
+void getCurrentFirmwareSignature(void){  
+  // retrieve the current signature parameters  
+  flash_file_size = flash.readByte(FILESIZE_ADDRESS);
+  flash_file_size <<= 8;
+  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+1);
+  flash_file_size <<= 8;
+  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+2);  
+  flash_file_size <<= 8;
+  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+3);  
+
+  flash_signature = flash.readByte(CRC16_CHECKSUM_ADDRESS);
+  flash_signature <<= 8;
+  flash_signature |= flash.readByte(CRC16_CHECKSUM_ADDRESS+1);
+
+  Serial.print(F("Info: Current firmware signature: "));
+  Serial.print(flash_file_size);
+  Serial.print(F(" "));
+  Serial.print(flash_signature);
+  Serial.println();   
 }
