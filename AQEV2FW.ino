@@ -408,7 +408,8 @@ void setup() {
       }
     }
     Serial.println();
-  
+    delayForWatchdog();
+    
     if (mode == MODE_CONFIG) {
       const uint32_t idle_timeout_period_ms = 1000UL * 60UL * 5UL; // 5 minutes
       uint32_t idle_time_ms = 0;
@@ -496,6 +497,7 @@ void setup() {
   if(mode_requires_wifi(mode)){
     // Scan Networks to show RSSI
     displayRSSI(); // not sure this will work if Smart Config is used
+    delayForWatchdog();
     petWatchdog();
     
     // Try and Connect to the Configured Network
@@ -508,7 +510,7 @@ void setup() {
       Serial.flush();
       watchdogForceReset();
     }
-  
+    delayForWatchdog();
     petWatchdog();
   
     // Check for Firmware Updates 
@@ -535,7 +537,7 @@ void setup() {
       Serial.flush();
       watchdogForceReset();    
     }
-    
+    delayForWatchdog();
     petWatchdog();
   }
   
@@ -605,6 +607,7 @@ void loop() {
   if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
     previous_tinywdt_millis = current_millis;
     Serial.println(F("Info: Watchdog Pet."));
+    delayForWatchdog();
     petWatchdog();
   }
 }
@@ -2160,9 +2163,9 @@ void use_command(char * arg) {
 }
 
 void force_command(char * arg){
-  if (strncmp("update", arg, 6) == 0) {
+  if (strncmp("update", arg, 6) == 0) {    
     Serial.println(F("Info: Erasing last flash page"));
-    SUCCESS_MESSAGE_DELAY();                  
+    SUCCESS_MESSAGE_DELAY();                      
     invalidateSignature();    
     configInject("opmode normal\r");
     mode = SUBMODE_NORMAL;
@@ -2979,11 +2982,13 @@ boolean restartWifi(){
       cc3000.reboot();
       Serial.println(F("OK."));
     }
-    
+    delayForWatchdog();
     petWatchdog();
     reconnectToAccessPoint();
+    delayForWatchdog();
     petWatchdog();    
-    acquireIpAddress();    
+    acquireIpAddress(); 
+    delayForWatchdog();
     petWatchdog();    
     displayConnectionDetails();
 
@@ -3085,6 +3090,10 @@ void acquireIpAddress(void){
         previous_touch_sampling_millis = current_millis;    
         collectTouch();    
         processTouchQuietly();  
+        ii++;
+        if((ii % 5) == 0){    
+          petWatchdog();
+        }        
       }      
 
       if(current_millis - previous_progress_dots_millis >= progress_dots_interval){
@@ -3099,14 +3108,7 @@ void acquireIpAddress(void){
         lcdFrownie(15, 1);
         ERROR_MESSAGE_DELAY();    
         watchdogForceReset();
-      }
-
-     delay(100); 
-     ii++;
-     if((ii % 10) == 0){
-       petWatchdog();
-     }
-      
+      }      
     }   
     Serial.println(F("OK.")); 
   }
@@ -3598,8 +3600,11 @@ boolean publishCO(){
 }
 
 void petWatchdog(void){
-  delay(120);
   tinywdt.pet(); 
+}
+
+void delayForWatchdog(void){
+  delay(120); 
 }
 
 void watchdogForceReset(void){
@@ -4092,6 +4097,8 @@ boolean mode_requires_wifi(uint8_t opmode){
                                    // you're accessing is quick to respond, you can reduce this value.
 
 void invalidateSignature(void){
+  flash_file_size = 0;
+  flash_signature = 0;  
   while(flash.busy()){;}   
   flash.blockErase4K(LAST_4K_PAGE_ADDRESS);
   while(flash.busy()){;}   
@@ -4246,7 +4253,8 @@ void checkForFirmwareUpdates(){
       num_hdr_bytes = downloadFile(filename, processIntegrityCheckBody);   
       if(downloaded_integrity_file){
         lcdSmiley(15, 1);
-        SUCCESS_MESSAGE_DELAY();         
+        SUCCESS_MESSAGE_DELAY();
+        delayForWatchdog();        
         petWatchdog();        
         break; 
       }
@@ -4260,7 +4268,8 @@ void checkForFirmwareUpdates(){
         
         setLCD_P(PSTR("UPDATE AVAILABLE"
                       "  DOWNLOADING   "));       
-        SUCCESS_MESSAGE_DELAY();   
+        SUCCESS_MESSAGE_DELAY(); 
+        delayForWatchdog();        
         petWatchdog();
        
         
@@ -4317,6 +4326,7 @@ void checkForFirmwareUpdates(){
         setLCD_P(PSTR("SOFTWARE ALREADY"
                       "   UP TO DATE   "));       
         SUCCESS_MESSAGE_DELAY();   
+        delayForWatchdog();        
         petWatchdog();        
       }
     }
