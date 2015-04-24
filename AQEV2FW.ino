@@ -16,7 +16,7 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 0
+#define AQEV2FW_PATCH_VERSION 1
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 
@@ -447,7 +447,7 @@ void setup() {
           }
         }
   
-        // pet the watchdog once a ssecond      
+        // pet the watchdog once a second      
         if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
           idle_time_ms += tinywdt_interval;
           petWatchdog();
@@ -502,7 +502,18 @@ void setup() {
     petWatchdog();
   
     // Check for Firmware Updates 
-    checkForFirmwareUpdates();
+    //checkForFirmwareUpdates();
+    integrity_check_passed = checkConfigIntegrity();
+    if(!integrity_check_passed){
+      Serial.println(F("Error: Config Integrity Check Failed after checkForFirmwareUpdates"));
+      setLCD_P(PSTR("CONFIG INTEGRITY"
+                    "  CHECK FAILED  "));
+      for(;;){
+        // prevent automatic reset
+        delay(1000);
+        petWatchdog();
+      }      
+    }
     
     // Connect to MQTT server
     if(!mqttReconnect()){
