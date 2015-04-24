@@ -16,7 +16,7 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 1
+#define AQEV2FW_PATCH_VERSION 0
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 
