@@ -19,6 +19,8 @@
 #define AQEV2FW_PATCH_VERSION 0
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
+#define DEVICE_NAME "CC3000"
+#define WLAN_SEC_AUTO (10) // made up to support auto-config of security
 
 WildFire wf;
 WildFire_CC3000 cc3000;
@@ -495,8 +497,12 @@ void setup() {
   mode = target_mode;
   
   if(mode_requires_wifi(mode)){
-    // Scan Networks to show RSSI
-    displayRSSI(); // not sure this will work if Smart Config is used
+    // Scan Networks to show RSSI    
+    uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);    
+    if(connect_method != CONNECT_METHOD_SMARTCONFIG){
+      displayRSSI(); // not sure this will work if Smart Config is used
+    }
+    
     delayForWatchdog();
     petWatchdog();
     
@@ -714,6 +720,9 @@ void initializeHardware(void) {
     AQEV2FW_PATCH_VERSION);
     
   updateLCD(tmp, 1);
+  // using Error Message delay on purpose here
+  // because it's longer than success message delay
+  ERROR_MESSAGE_DELAY();  
   
   Wire.begin();
 
@@ -801,14 +810,32 @@ void initializeHardware(void) {
 
   selectNoSlot();
 
+  uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
   Serial.print(F("Info: CC3000 Initialization..."));
-  if (cc3000.begin()) {
-    Serial.println(F("OK."));
-    init_cc3000_ok = true;
+  delayForWatchdog();
+  petWatchdog();
+  if(connect_method == CONNECT_METHOD_SMARTCONFIG){
+    setLCD_P(PSTR("  SMART CONFIG  "
+                  "  RECONNECTING  "));
+    if (cc3000.begin(false, true, DEVICE_NAME)){
+      lcdSmiley(15, 1);
+      Serial.println("OK.");
+    }
+    else{
+      Serial.println("Failed.");
+      updateLCD("FAILED", 1);
+      lcdFrownie(15, 1);      
+    }
   }
-  else {
-    Serial.println(F("Failed."));
-    init_cc3000_ok = false;
+  else{
+    if (cc3000.begin()) {
+      Serial.println(F("OK."));
+      init_cc3000_ok = true;
+    }
+    else {
+      Serial.println(F("Failed."));
+      init_cc3000_ok = false;
+    }
   }
 }
 
@@ -1091,8 +1118,9 @@ void help_menu(char * arg) {
     else if (strncmp("init", arg, 4) == 0) {
       Serial.println(F("init <param>"));
       Serial.println(F("   <param> is one of:"));
-      Serial.println(F("      mac - retrieves the mac address from"));
-      Serial.println(F("            the CC3000 and stores it in EEPROM"));
+      Serial.println(F("      mac         - retrieves the mac address from"));
+      Serial.println(F("                    the CC3000 and stores it in EEPROM"));
+      Serial.println(F("      smartconfig - initiate the SmartConfig profile creation process"));
     }
     else if (strncmp("restore", arg, 7) == 0) {
       Serial.println(F("restore <param>"));
@@ -1138,7 +1166,7 @@ void help_menu(char * arg) {
       Serial.println(F("method <type>"));
       Serial.println(F("   <type> is one of:"));
       Serial.println(F("      direct - use parameters entered in CONFIG mode"));
-      Serial.println(F("      smartconfig - use smart config process [not yet supported]"));
+      Serial.println(F("      smartconfig - use smart config process"));
       Serial.println(F("      pfod - use pfodWifiConnect config process  [not yet supported]"));
       warn_could_break_connect();      
     }
@@ -1160,6 +1188,7 @@ void help_menu(char * arg) {
       Serial.println(F("      wep  - the network WEP security"));
       Serial.println(F("      wpa  - the network WPA Personal security"));
       Serial.println(F("      wpa2 - the network WPA2 Personal security"));
+      Serial.println(F("      auto - determine during first network successful scan"));      
       warn_could_break_connect();      
     }
     else if (strncmp("staticip", arg, 8) == 0) {
@@ -1330,7 +1359,7 @@ void print_eeprom_connect_method(void) {
       Serial.println(F("Direct Connect"));
       break;
     case CONNECT_METHOD_SMARTCONFIG:
-      Serial.println(F("Smart Config Connect [not currently supported]"));
+      Serial.println(F("Smart Config Connect"));
       break;
     case CONNECT_METHOD_PFOD:
       Serial.println(F("Pfod Wi-Fi Connect [not currently supported]"));
@@ -1394,6 +1423,9 @@ void print_eeprom_security_type(void) {
       break;
     case WLAN_SEC_WPA2:
       Serial.println(F("WPA2"));
+      break;
+    case WLAN_SEC_AUTO:
+      Serial.println(F("Automatic - Not Yet Determined"));
       break;
     default:
       Serial.print(F("Error: Unknown security mode code [0x"));
@@ -1636,10 +1668,15 @@ void print_eeprom_value(char * arg) {
     Serial.println(F(" +-------------------------------------------------------------+"));
     print_label_with_star_if_not_backed_up("MAC Address: ", BACKUP_STATUS_MAC_ADDRESS_BIT);
     print_eeprom_mac();
-    Serial.print(F("    SSID: "));
-    print_eeprom_ssid();
-    Serial.print(F("    Security Mode: "));
-    print_eeprom_security_type();
+    uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
+    Serial.print(F("    Method: "));    
+    print_eeprom_connect_method();
+    if(connect_method != CONNECT_METHOD_SMARTCONFIG){    
+      Serial.print(F("    SSID: "));
+      print_eeprom_ssid();
+      Serial.print(F("    Security Mode: "));
+      print_eeprom_security_type();
+    }
     Serial.print(F("    IP Mode: "));
     print_eeprom_ipmode();
     Serial.print(F("    Update Server: "));
@@ -1706,6 +1743,31 @@ void initialize_eeprom_value(char * arg) {
       recomputeAndStoreConfigChecksum();
     }
   }
+  else if(strncmp(arg, "smartconfig", 11) == 0){
+    Serial.println(F("Info: Waiting for a SmartConfig connection..."));
+    setLCD_P(PSTR("    STARTING    "    
+                  "  SMART CONFIG  "));
+    delayForWatchdog();
+    petWatchdog();
+    if (!cc3000.startSmartConfig(DEVICE_NAME)){
+      delayForWatchdog();
+      petWatchdog();        
+      Serial.println(F("Error: SmartConfig Create Failed."));
+      lcdFrownie(15, 1);
+      ERROR_MESSAGE_DELAY();
+    }    
+    else{
+      delayForWatchdog();
+      petWatchdog();              
+      Serial.println(F("Info: Saved connection details and connected to AP!"));    
+      configInject("method smartconfig\r");
+      lcdSmiley(15, 1);
+      ERROR_MESSAGE_DELAY();
+    }
+    
+    lcd.clear();    
+    setLCD_P(PSTR("  CONFIG MODE"));    
+  }
   else {
     Serial.print(F("Error: Unexpected Variable Name \""));
     Serial.print(arg);
@@ -1730,7 +1792,7 @@ void restore(char * arg) {
   if (strncmp(arg, "defaults", 8) == 0) {
     prompt();
     configInject("method direct\r");
-    configInject("security wpa2\r");
+    configInject("security auto\r");
     configInject("use dhcp\r");
     configInject("opmode normal\r");
     configInject("tempunit C\r");    
@@ -1906,6 +1968,13 @@ void set_connection_method(char * arg) {
   boolean valid = true;
   if (strncmp(arg, "direct", 6) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_CONNECT_METHOD, CONNECT_METHOD_DIRECT);
+    Serial.print(F("Info: Deleteing stored profiles..."));
+    if(cc3000.deleteProfiles()){
+      Serial.println(F("OK.")); 
+    }
+    else{
+      Serial.println(F("Failed.")); 
+    }
   }
   else if (strncmp(arg, "smartconfig", 11) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_CONNECT_METHOD, CONNECT_METHOD_SMARTCONFIG);
@@ -1969,6 +2038,9 @@ void set_network_security_mode(char * arg) {
   }
   else if (strncmp("wpa", arg, 3) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_SECURITY_MODE, WLAN_SEC_WPA);
+  }
+  else if(strncmp("auto", arg, 4) == 0) {
+    eeprom_write_byte((uint8_t *) EEPROM_SECURITY_MODE, WLAN_SEC_AUTO);
   }
   else {
     Serial.print(F("Error: Invalid security mode entered - \""));
@@ -2902,21 +2974,28 @@ void displayRSSI(void){
   uint8_t valid, rssi, sec;
   uint8_t max_rssi = 0;
   boolean found_ssid = false;
+  uint8_t target_network_secMode = 0;
   char ssidname[33]; 
+  uint8_t network_security_mode = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);   
   eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
-
+  
   setLCD_P(PSTR(" SCANNING WI-FI "
                 "                "));
+  Serial.println(F("Info: Beginning Network Scan..."));                
   SUCCESS_MESSAGE_DELAY();
-  
   if (!cc3000.startSSIDscan(&index)) {
+    Serial.println(F("Error: Network Scan Failed"));
     return;
   }
-
+  
+  Serial.print(F("Info: Network Scan found "));
+  Serial.print(index);
+  Serial.println(F(" networks"));
+  
   while (index) {
     index--;
 
-    valid = cc3000.getNextSSID(&rssi, &sec, ssidname);    
+    valid = cc3000.getNextSSID(&rssi, &sec, ssidname);
     if(strncmp(ssidname, ssid, 16) == 0){      
       Serial.print(F("Info: Found Access Point \""));
       Serial.print(ssid);
@@ -2926,6 +3005,7 @@ void displayRSSI(void){
       found_ssid = true;
       if(rssi > max_rssi){
         max_rssi = rssi; 
+        target_network_secMode = sec;
       }
     }
   }
@@ -2936,6 +3016,22 @@ void displayRSSI(void){
     int8_t rssi_dbm = max_rssi - 128;
     lcdBars(rssi_to_bars(rssi_dbm));
     lcdSmiley(15, 1); // lower right corner
+    
+    if(network_security_mode == WLAN_SEC_AUTO){
+      if(target_network_secMode == WLAN_SEC_UNSEC){
+        set_network_security_mode("open");
+      }
+      else if(target_network_secMode == WLAN_SEC_WEP){
+        set_network_security_mode("wep");
+      }
+      else if(target_network_secMode == WLAN_SEC_WPA){
+        set_network_security_mode("wpa");
+      }
+      else if(target_network_secMode == WLAN_SEC_WPA2){
+        set_network_security_mode("wpa2");
+      }
+    }
+    
     ERROR_MESSAGE_DELAY(); // ERROR is intentional here, to get a longer delay
   }
   else{
@@ -3041,7 +3137,8 @@ void reconnectToAccessPoint(void){
       Serial.print(F("\"..."));
       setLCD_P(PSTR("CONNECTING TO AP"));
       updateLCD(ssid, 1);
-      
+      delayForWatchdog();
+      petWatchdog();
       if(!cc3000.connectToAP(ssid, network_password, network_security_mode)) {
         Serial.print(F("Error: Failed to connect to Access Point with SSID: "));
         Serial.println(ssid);
@@ -3057,6 +3154,12 @@ void reconnectToAccessPoint(void){
       SUCCESS_MESSAGE_DELAY();
       break;
     case CONNECT_METHOD_SMARTCONFIG:
+      Serial.print(F("Info: Waiting for SmartConfig to Reconnect..."));
+      while(!connectedToNetwork()){
+        ; //TODO: implement timeout, though the watchdog is an implied timeout...
+      }
+      Serial.println(F("OK."));
+      break;
     case CONNECT_METHOD_PFOD:
     default:
       Serial.println(F("Error: Connection method not currently supported"));
@@ -3620,7 +3723,7 @@ void watchdogForceReset(void){
 }
 
 void watchdogInitialize(void){
-  tinywdt.begin(100, 60000); 
+  tinywdt.begin(100, 65000); 
 }
 
 // modal operation loop functions
