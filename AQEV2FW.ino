@@ -19,7 +19,7 @@
 #define AQEV2FW_PATCH_VERSION 0
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
-#define DEVICE_NAME "CC3000"
+#define DEVICE_NAME "CC3000" // this is used for smart config
 #define WLAN_SEC_AUTO (10) // made up to support auto-config of security
 
 WildFire wf;
@@ -101,6 +101,8 @@ uint8_t mode = MODE_OPERATIONAL;
 #define CONFIG_MODE_GOT_INIT         (1)
 #define CONFIG_MODE_GOT_EXIT         (2)
 
+#define EEPROM_CONFIG_MEMORY_SIZE (1024)
+
 #define EEPROM_MAC_ADDRESS    (E2END + 1 - 6)    // MAC address, i.e. the last 6-bytes of EEPROM
 // more parameters follow, address relative to each other so they don't overlap
 #define EEPROM_CONNECT_METHOD     (EEPROM_MAC_ADDRESS - 1)        // connection method encoded as a single byte value 
@@ -143,7 +145,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_BACKUP_MQTT_PASSWORD (EEPROM_BACKUP_MAC_ADDRESS + 6)
 #define EEPROM_BACKUP_MAC_ADDRESS (EEPROM_BACKUP_CHECK + 2) // backup parameters are added here offset from the EEPROM_CRC_CHECKSUM
 #define EEPROM_BACKUP_CHECK   (EEPROM_CRC_CHECKSUM + 2) // 2-byte value with various bits set if backup has ever happened
-#define EEPROM_CRC_CHECKSUM   (E2END + 1 - 1024) // reserve the last 1kB for config
+#define EEPROM_CRC_CHECKSUM   (E2END + 1 - EEPROM_CONFIG_MEMORY_SIZE) // reserve the last 1kB for config
 // the only things that need "backup" are those which are unique to a device
 // other things can have "defaults" stored in flash (i.e. using the restore defaults command)
 
@@ -325,8 +327,36 @@ void setup() {
   // initialize hardware
   initializeHardware(); 
   backlightOff();
+      
+  //  uint8_t tmp[EEPROM_CONFIG_MEMORY_SIZE] = {0};
+  //  get_eeprom_config(tmp);
+  //  Serial.println(F("EEPROM Config:"));
+  //  dump_config(tmp);
+  //  Serial.println();
+  //  Serial.println(F("Mirrored Config:"));
+  //  get_mirrored_config(tmp);  
+  //  dump_config(tmp);
+  //  Serial.println();
   
   integrity_check_passed = checkConfigIntegrity();
+  // if the integrity check failed, try and undo the damage using the mirror config, if it's valid
+  if(!integrity_check_passed){
+    Serial.println(F("Info: Startup config integrity check failed, attempting to restore from mirrored configuration."));
+    if(mirrored_config_integrity_check()){
+      mirrored_config_restore();
+      integrity_check_passed = checkConfigIntegrity();
+      if(integrity_check_passed){
+        Serial.println(F("Info: Successfully restored to last valid configuration.")); 
+      }
+      else{
+        Serial.println(F("Info: Restored last valid configuration, but it's still not valid."));
+      }
+    }
+    else{
+      Serial.println(F("Error: Mirrored configuration is not valid, cannot restore to last valid configuration.")); 
+    }    
+  }
+  
   valid_ssid_passed = valid_ssid_config();  
   uint8_t target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
   boolean ok_to_exit_config_mode = true;  
@@ -334,7 +364,7 @@ void setup() {
   // config mode processing loop
   do{
     // check for initial integrity of configuration in eeprom
-    if(!integrity_check_passed) {
+    if(!integrity_check_passed) {      
       Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
       configInject("aqe\r");
       Serial.println();
@@ -518,6 +548,21 @@ void setup() {
     }
     delayForWatchdog();
     petWatchdog();
+  
+    // at this point we have connected to the network successfully
+    // it's an opportunity to mirror the eeprom configuration
+    // if it's different from what's already there
+    // importantly this check only happens at startup    
+    if(!mirrored_config_matches_eeprom_config()){      
+      mirrored_config_copy_from_eeprom(); // create a valid mirrored config from teh current settings             
+      if(!mirrored_config_integrity_check()){
+        Serial.println(F("Error: Mirrored configuration commit failed to validate.")); 
+        //TODO: should something be written to the LCD here?
+      }
+    }
+    else{
+      Serial.println(F("Info: Mirrored configuration already matches current configuration.")); 
+    }
   
     // Check for Firmware Updates 
     checkForFirmwareUpdates();
@@ -720,9 +765,6 @@ void initializeHardware(void) {
     AQEV2FW_PATCH_VERSION);
     
   updateLCD(tmp, 1);
-  // using Error Message delay on purpose here
-  // because it's longer than success message delay
-  ERROR_MESSAGE_DELAY();  
   
   Wire.begin();
 
@@ -811,8 +853,8 @@ void initializeHardware(void) {
   selectNoSlot();
 
   uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
-  Serial.print(F("Info: CC3000 Initialization..."));
-  delayForWatchdog();
+  Serial.print(F("Info: CC3000 Initialization..."));  
+  SUCCESS_MESSAGE_DELAY(); // don't race past the splash screen, and give watchdog some breathing room
   petWatchdog();
   if(connect_method == CONNECT_METHOD_SMARTCONFIG){
     setLCD_P(PSTR("  SMART CONFIG  "
@@ -836,7 +878,7 @@ void initializeHardware(void) {
       Serial.println(F("Failed."));
       init_cc3000_ok = false;
     }
-  }
+  } 
 }
 
 /****** CONFIGURATION SUPPORT FUNCTIONS ******/
@@ -1811,6 +1853,8 @@ void restore(char * arg) {
 
     eeprom_write_block(blank, (void *) EEPROM_SSID, 32); // clear the SSID
     eeprom_write_block(blank, (void *) EEPROM_NETWORK_PWD, 32); // clear the Network Password
+    mirrored_config_erase(); // erase the mirrored configuration, which will be restored next successful network connect                            
+    
     Serial.println();
   }
   else if (strncmp(arg, "mac", 3) == 0) {
@@ -2585,17 +2629,29 @@ void set_private_key(char * arg) {
   }
 }
 
+void get_eeprom_config(uint8_t * config_buffer){
+  eeprom_read_block(config_buffer, (const void *) EEPROM_CRC_CHECKSUM, EEPROM_CONFIG_MEMORY_SIZE);
+}
+
 void recomputeAndStoreConfigChecksum(void) {
   uint16_t crc = computeConfigChecksum();
   eeprom_write_word((uint16_t *) EEPROM_CRC_CHECKSUM, crc);
 }
 
-uint16_t computeConfigChecksum(void) {
+uint16_t computeConfigChecksum(void) {   
+  uint8_t eeprom_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
+  get_eeprom_config(eeprom_config);
+  // don't include the checksum in the checksum calculation
+  // in other words start the calculation 2 bytes past the array start
+  // and compute the checksum over 1022 bytes (1024 - 2)
+  uint16_t crc = computeChecksum(eeprom_config + 2, EEPROM_CONFIG_MEMORY_SIZE - 2);   
+  return crc;
+}
+
+uint16_t computeChecksum(uint8_t * ram_start_address, uint16_t num_bytes) {
   uint16_t crc = 0;
-  // the checksum is 2 bytes, so start computing the checksum at
-  // the second byte after it's location
-  for (uint16_t address = EEPROM_CRC_CHECKSUM + 2; address <= E2END; address++) {
-    crc = _crc16_update(crc, eeprom_read_byte((const uint8_t *) address));
+  for (uint16_t ii = 0; ii < num_bytes; ii++) {
+    crc = _crc16_update(crc, ram_start_address[ii]);
   }
   return crc;
 }
@@ -4578,3 +4634,93 @@ void getCurrentFirmwareSignature(void){
   Serial.print(flash_signature);
   Serial.println();   
 }
+
+/****** CONFIGURATION MIRRORING SUPPORT FUNCTIONS ******/
+boolean mirrored_config_matches_eeprom_config(void){
+  boolean ret = false;
+  uint8_t mirrored_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
+  uint8_t eeprom_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
+  
+  get_mirrored_config(mirrored_config);
+  get_eeprom_config(eeprom_config);  
+  
+  if(memcmp(mirrored_config, eeprom_config, EEPROM_CONFIG_MEMORY_SIZE) == 0){
+    ret = true;
+  }
+  
+  return ret;
+} 
+
+boolean mirrored_config_integrity_check(){
+  boolean ret = false;
+  uint8_t mirrored_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
+  
+  get_mirrored_config(mirrored_config); // read the mirrored config into RAM
+  
+  uint16_t computed_crc = computeChecksum(mirrored_config + 2, 1022); // calculate its checksum
+  
+  // interpret the CRC, little endian
+  uint16_t stored_crc = mirrored_config[1];
+  stored_crc <<= 8;
+  stored_crc |= mirrored_config[0];
+  
+  if(stored_crc == computed_crc){
+    ret = true; 
+  }
+  
+  return ret;  
+}
+
+
+void mirrored_config_restore(void){
+  uint8_t mirrored_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
+  get_mirrored_config(mirrored_config);
+  eeprom_write_block(mirrored_config, (void *) EEPROM_CRC_CHECKSUM, EEPROM_CONFIG_MEMORY_SIZE);
+}
+
+#define SECOND_TO_LAST_4K_PAGE_ADDRESS      0x7E000     // the start address of the second to last 4k page
+void mirrored_config_copy_from_eeprom(void){
+  uint8_t eeprom_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
+  get_eeprom_config(eeprom_config);  
+  mirrored_config_erase();
+  Serial.print(F("Info: Writing mirrored config..."));
+  uint16_t offset = 0;
+  while(offset < EEPROM_CONFIG_MEMORY_SIZE){
+    flash.writeBytes(SECOND_TO_LAST_4K_PAGE_ADDRESS + offset, eeprom_config + offset, 256);   
+    offset += 256; 
+  }
+  Serial.println(F("OK."));
+}
+
+void mirrored_config_erase(void){
+  Serial.print(F("Info: Erasing mirrored config..."));  
+  flash.blockErase4K(SECOND_TO_LAST_4K_PAGE_ADDRESS);
+  Serial.println(F("OK."));  
+}
+
+void get_mirrored_config(uint8_t * config_buffer){
+  flash.readBytes(SECOND_TO_LAST_4K_PAGE_ADDRESS, config_buffer, EEPROM_CONFIG_MEMORY_SIZE);
+}
+
+/*
+void dump_config(uint8_t * buf){    
+  uint16_t addr = 0;
+  uint8_t ii = 0;
+  while(addr < EEPROM_CONFIG_MEMORY_SIZE){
+    if(ii == 0){
+      Serial.print(addr, HEX);
+      Serial.print(F(": ")); 
+    }    
+    
+    Serial.print(buf[addr], HEX);
+    Serial.print(F("\t"));
+    
+    addr++;
+    ii++;
+    if(ii == 32){
+      Serial.println();
+      ii = 0; 
+    }
+  }
+}
+*/
