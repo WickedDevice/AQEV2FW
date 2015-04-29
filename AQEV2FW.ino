@@ -3442,7 +3442,7 @@ boolean publishHeartbeat(){
   static uint32_t post_counter = 0;
   char tmp[512] = { 0 };  
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
-  snprintf(tmp, 127, 
+  snprintf(tmp, 511, 
   "{"
   "\"converted-value\":%d,"
   "\"firmware-version\":\"%s\","
@@ -3476,7 +3476,7 @@ boolean publishTemperature(){
   dtostrf(raw_temperature, -6, 2, raw_string); 
   trim_string(value_string);
   trim_string(raw_string);
-  snprintf(tmp, 127, 
+  snprintf(tmp, 511, 
     "{" 
     "\"converted-value\":%s,"
     "\"converted-units\":\"deg%c\","
@@ -3494,7 +3494,7 @@ boolean publishHumidity(){
   relative_humidity_percent = humidity_moving_average;
   dtostrf(humidity_moving_average, -6, 2, value_string);
   trim_string(value_string);
-  snprintf(tmp, 127, 
+  snprintf(tmp, 511, 
   "{"
   "\"converted-value\":%s,"
   "\"converted-units\":\"percent\","
