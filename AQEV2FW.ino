@@ -696,8 +696,10 @@ void initializeHardware(void) {
   Serial.print(firmware_version);
   Serial.println(F("       |"));
   Serial.println(F(" +------------------------------------+"));
+  Serial.print(F(" Egg Serial Number: "));
+  print_eeprom_mqtt_client_id();
   Serial.println();
-
+  
   // Initialize Tiny Watchdog
   Serial.print(F("Info: Tiny Watchdog Initialization..."));
   watchdogInitialize();
@@ -3788,6 +3790,8 @@ void loop_wifi_mqtt_mode(void){
 
   if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){   
     previous_mqtt_publish_millis = current_millis;      
+    
+    printCsvDataLine(NULL);
     
     if(connectedToNetwork()){
       num_mqtt_intervals_without_wifi = 0;
