@@ -2930,7 +2930,6 @@ void updateLCD(float value, uint8_t pos_x, uint8_t pos_y, uint8_t field_width){
   //Serial.print(F("truncate: "));
   //Serial.println(tmp);
   
-
   leftpad_string(tmp, field_width); 
   //Serial.print(F("leftpad_string: "));
   //Serial.println(tmp);
@@ -2946,7 +2945,7 @@ void updateLCD(uint32_t ip, uint8_t line_number){
     (uint8_t)(ip >> 8),       
     (uint8_t)(ip >> 0));    
   
-  updateLCD(tmp, 1);
+  updateLCD(tmp, line_number);
 }
 
 void updateLCD(const char str[], uint8_t line_number){
@@ -3794,10 +3793,10 @@ void loop_wifi_mqtt_mode(void){
       num_mqtt_intervals_without_wifi = 0;
       
       if(mqttReconnect()){ 
-        updateLCD("TEMP", 0, 0, 4);
-        updateLCD("RH", 10, 0, 2);         
-        updateLCD("NO2", 0, 1, 3);
-        updateLCD("CO", 10, 1, 2);
+        updateLCD("TEMP ", 0, 0, 5);
+        updateLCD("RH ", 10, 0, 3);         
+        updateLCD("NO2 ", 0, 1, 4);
+        updateLCD("CO ", 10, 1, 3);
                       
         //connected to MQTT server and connected to Wi-Fi network        
         num_mqtt_connect_retries = 0;   
