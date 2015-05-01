@@ -3173,6 +3173,7 @@ void displayRSSI(void){
     lcdSmiley(15, 1); // lower right corner
     
     if(network_security_mode == WLAN_SEC_AUTO){
+      allowed_to_write_config_eeprom = true;
       if(target_network_secMode == WLAN_SEC_UNSEC){
         set_network_security_mode("open");
       }
@@ -3185,6 +3186,7 @@ void displayRSSI(void){
       else if(target_network_secMode == WLAN_SEC_WPA2){
         set_network_security_mode("wpa2");
       }
+      allowed_to_write_config_eeprom = false;      
     }
     
     ERROR_MESSAGE_DELAY(); // ERROR is intentional here, to get a longer delay
@@ -4755,7 +4757,8 @@ boolean mirrored_config_matches_eeprom_config(void){
 boolean configMemoryUnlocked(uint16_t call_id){
   if(!allowed_to_write_config_eeprom){
     Serial.print(F("Error: Config Memory is not unlocked, called from line number "));
-    Serial.println(call_id); 
+    Serial.println(call_id);
+    return false; 
   }
   
   return allowed_to_write_config_eeprom;
@@ -4783,7 +4786,7 @@ boolean mirrored_config_integrity_check(){
 
 
 void mirrored_config_restore(void){
-  if(!configMemoryUnlocked(__LINE__)){
+  if(!allowed_to_write_config_eeprom){
     return;
   }
   
