@@ -44,6 +44,7 @@ uint32_t flash_file_size = 0;
 uint16_t flash_signature = 0;
 boolean downloaded_integrity_file = false;
 boolean integrity_check_succeeded = false;
+boolean allowed_to_write_config_eeprom = false;
 
 unsigned long current_millis = 0;
 char firmware_version[16] = {0};
@@ -342,20 +343,12 @@ void setup() {
   // if the integrity check failed, try and undo the damage using the mirror config, if it's valid
   if(!integrity_check_passed){
     Serial.println(F("Info: Startup config integrity check failed, attempting to restore from mirrored configuration."));
-    if(mirrored_config_integrity_check()){
-      mirrored_config_restore();
-      integrity_check_passed = checkConfigIntegrity();
-      if(integrity_check_passed){
-        Serial.println(F("Info: Successfully restored to last valid configuration.")); 
-      }
-      else{
-        Serial.println(F("Info: Restored last valid configuration, but it's still not valid."));
-      }
-    }
-    else{
-      Serial.println(F("Error: Mirrored configuration is not valid, cannot restore to last valid configuration.")); 
-    }    
+    integrity_check_passed = mirrored_config_restore_and_validate(); 
   }
+  else if(!mirrored_config_matches_eeprom_config()){
+    Serial.println(F("Info: Startup config integrity check passed, but mirrored config differs, attempting to restore from mirrored configuration."));
+    integrity_check_passed = mirrored_config_restore_and_validate();
+  }    
   
   valid_ssid_passed = valid_ssid_config();  
   uint8_t target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
@@ -371,6 +364,7 @@ void setup() {
       setLCD_P(PSTR("CONFIG INTEGRITY"
                     "  CHECK FAILED  "));
       mode = MODE_CONFIG;
+      allowed_to_write_config_eeprom = true;   
     }
     else if(mode_requires_wifi(target_mode) && !valid_ssid_passed){
       Serial.println(F("Info: No valid SSID configured, automatically falling back to CONFIG mode."));
@@ -379,6 +373,7 @@ void setup() {
       setLCD_P(PSTR("   VALID SSID   "
                     "    REQUIRED    "));      
       mode = MODE_CONFIG;
+      allowed_to_write_config_eeprom = true;
     }
     else {
       // if the appropriate escape sequence is received within 8 seconds
@@ -421,6 +416,7 @@ void setup() {
           start = millis(); // reset the timeout
           if (CONFIG_MODE_GOT_INIT == configModeStateMachine(Serial.read(), false)) {
             mode = MODE_CONFIG;
+            allowed_to_write_config_eeprom = true;
             break;
           }
         }
@@ -519,6 +515,8 @@ void setup() {
     
   } while(!ok_to_exit_config_mode);
 
+  allowed_to_write_config_eeprom = false;
+  
   Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
   setLCD_P(PSTR("OPERATIONAL MODE"));
   SUCCESS_MESSAGE_DELAY();
@@ -636,20 +634,25 @@ void loop() {
       loop_wifi_mqtt_mode();
       break;
     case SUBMODE_ZEROING: 
-      if(loop_zeroing_mode()){
-        mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
-        if(mode != SUBMODE_NORMAL){
-          eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);
-          recomputeAndStoreConfigChecksum();        
-        }
-        
-        // reset because Zero-ing is complete
-        updateLCD("COMPLETE", 1);
-        lcdSmiley(15, 1);
-        SUCCESS_MESSAGE_DELAY();                
-        watchdogForceReset();
-      }
+      loop_zeroing_mode();
       break;
+      // TODO: commenting the following code out because we aren't currently implementing
+      // an automatic termination from zero-ing mode
+      // 
+      //      if(loop_zeroing_mode()){
+      //        mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
+      //        if(mode != SUBMODE_NORMAL){
+      //          eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);
+      //          recomputeAndStoreConfigChecksum();        
+      //        }
+      //        
+      //        // reset because Zero-ing is complete
+      //        updateLCD("COMPLETE", 1);
+      //        lcdSmiley(15, 1);
+      //        SUCCESS_MESSAGE_DELAY();                
+      //        watchdogForceReset();
+      //      }
+      //      break;
     default: // unkown operating mode, nothing to be done 
       break;
   }
@@ -696,6 +699,8 @@ void initializeHardware(void) {
   Serial.print(firmware_version);
   Serial.println(F("       |"));
   Serial.println(F(" +------------------------------------+"));
+  Serial.print(F(" Compiled on: "));
+  Serial.println(__DATE__ " " __TIME__);
   Serial.print(F(" Egg Serial Number: "));
   print_eeprom_mqtt_client_id();
   Serial.println();
@@ -1777,6 +1782,10 @@ void print_eeprom_value(char * arg) {
 // goes into the CC3000 and stores the
 // MAC address from it in the EEPROM
 void initialize_eeprom_value(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+
   if (strncmp(arg, "mac", 3) == 0) {
     uint8_t _mac_address[6];
     if (!cc3000.getMacAddress(_mac_address)) {
@@ -1820,6 +1829,10 @@ void initialize_eeprom_value(char * arg) {
 }
 
 void restore(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   char blank[32] = {0};
   uint8_t tmp[32] = {0};
   boolean valid = true;
@@ -1965,8 +1978,13 @@ void restore(char * arg) {
 }
 
 void set_mac_address(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }  
+  
   uint8_t _mac_address[6] = {0};
   char tmp[32] = {0};
+  
   strncpy(tmp, arg, 31); // copy the string so you don't mutilate the argument
   char * token = strtok(tmp, ":");
   uint8_t num_tokens = 0;
@@ -2010,6 +2028,10 @@ void set_mac_address(char * arg) {
 }
 
 void set_connection_method(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }  
+  
   lowercase(arg);
   boolean valid = true;
   if (strncmp(arg, "direct", 6) == 0) {
@@ -2042,6 +2064,10 @@ void set_connection_method(char * arg) {
 }
 
 void set_ssid(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   // we've reserved 32-bytes of EEPROM for an SSID
   // so the argument's length must be <= 31
   char ssid[32] = {0};
@@ -2057,6 +2083,10 @@ void set_ssid(char * arg) {
 }
 
 void set_network_password(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   // we've reserved 32-bytes of EEPROM for a network password
   // so the argument's length must be <= 31
   char password[32] = {0};
@@ -2072,6 +2102,10 @@ void set_network_password(char * arg) {
 }
 
 void set_network_security_mode(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   boolean valid = true;
   if (strncmp("open", arg, 4) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_SECURITY_MODE, WLAN_SEC_UNSEC);
@@ -2102,6 +2136,10 @@ void set_network_security_mode(char * arg) {
 }
 
 void set_operational_mode(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   boolean valid = true;
   if (strncmp("normal", arg, 6) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);
@@ -2123,6 +2161,10 @@ void set_operational_mode(char * arg) {
 }
 
 void set_temperature_units(char * arg){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }  
+  
   if((strlen(arg) != 1) || ((arg[0] != 'C') && (arg[0] != 'F'))){
     Serial.print(F("Error: temperature unit must be 'C' or 'F', but received '"));
     Serial.print(arg);
@@ -2135,6 +2177,10 @@ void set_temperature_units(char * arg){
 }
 
 void set_static_ip_address(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }  
+  
   uint8_t _ip_address[4] = {0};
   uint8_t _gateway_ip[4] = {0};
   uint8_t _dns_ip[4] = {0}; 
@@ -2259,6 +2305,10 @@ void set_static_ip_address(char * arg) {
 }
 
 void use_command(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   const uint8_t noip[4] = {0};
   if (strncmp("dhcp", arg, 3) == 0) {
     //  To switch back to using DHCP, call the setDHCP() function 
@@ -2281,6 +2331,10 @@ void use_command(char * arg) {
 }
 
 void force_command(char * arg){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   if (strncmp("update", arg, 6) == 0) {    
     Serial.println(F("Info: Erasing last flash page"));
     SUCCESS_MESSAGE_DELAY();                      
@@ -2298,6 +2352,10 @@ void force_command(char * arg){
 }
 
 void set_mqtt_password(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   // we've reserved 32-bytes of EEPROM for a MQTT password
   // so the argument's length must be <= 31
   char password[32] = {0};
@@ -2313,6 +2371,10 @@ void set_mqtt_password(char * arg) {
 }
 
 void set_mqtt_server(char * arg){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   // we've reserved 32-bytes of EEPROM for an MQTT server name
   // so the argument's length must be <= 31
   char server[32] = {0};
@@ -2328,6 +2390,10 @@ void set_mqtt_server(char * arg){
 }
 
 void set_mqtt_username(char * arg){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   // we've reserved 32-bytes of EEPROM for an MQTT username
   // so the argument's length must be <= 31
   char username[32] = {0};
@@ -2342,6 +2408,10 @@ void set_mqtt_username(char * arg){
   }    
 }
 void set_mqtt_client_id(char * arg){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   // we've reserved 32-bytes of EEPROM for an MQTT client ID
   // but in fact an MQTT client ID must be between 1 and 23 characters
   // and must start with an letter
@@ -2363,7 +2433,11 @@ void set_mqtt_client_id(char * arg){
   }
 }
 
-void set_mqtt_authentication(char * arg) {    
+void set_mqtt_authentication(char * arg) {   
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   if (strncmp("enable", arg, 6) == 0) { 
     eeprom_write_byte((uint8_t *) EEPROM_MQTT_AUTH, 1);
     recomputeAndStoreConfigChecksum();
@@ -2380,7 +2454,11 @@ void set_mqtt_authentication(char * arg) {
   }
 }
 
-void set_mqtt_port(char * arg) {      
+void set_mqtt_port(char * arg) {  
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   uint16_t len = strlen(arg);
   boolean valid = true;
   
@@ -2408,6 +2486,10 @@ void set_mqtt_port(char * arg) {
 }
 
 void set_update_server_name(char * arg){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   // we've reserved 32-bytes of EEPROM for an update server name
   // so the argument's length must be <= 31
   char server[32] = {0};
@@ -2423,6 +2505,10 @@ void set_update_server_name(char * arg){
 }
 
 void set_update_filename(char * arg){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   // we've reserved 32-bytes of EEPROM for an update server name
   // so the argument's length must be <= 31
   char filename[32] = {0};
@@ -2437,11 +2523,11 @@ void set_update_filename(char * arg){
   }  
 }
 
-void force_software_update(char * arg){
-  
-}
-
 void backup(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   boolean valid = true;
   char tmp[32] = {0};
   uint16_t backup_check = eeprom_read_word((const uint16_t *) EEPROM_BACKUP_CHECK);
@@ -2532,6 +2618,10 @@ boolean convertStringToFloat(char * str_to_convert, float * target) {
 }
 
 void set_float_param(char * arg, float * eeprom_address, float (*conversion)(float)) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   float value = 0.0;
   if (convertStringToFloat(arg, &value)) {
     if (conversion) {
@@ -2599,6 +2689,10 @@ void set_co_offset(char * arg) {
 }
 
 void set_private_key(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   // we've reserved 32-bytes of EEPROM for a private key
   // only exact 64-character hex representation is accepted
   uint8_t key[32] = {0};
@@ -2636,6 +2730,10 @@ void get_eeprom_config(uint8_t * config_buffer){
 }
 
 void recomputeAndStoreConfigChecksum(void) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   uint16_t crc = computeConfigChecksum();
   eeprom_write_word((uint16_t *) EEPROM_CRC_CHECKSUM, crc);
 }
@@ -4654,6 +4752,15 @@ boolean mirrored_config_matches_eeprom_config(void){
   return ret;
 } 
 
+boolean configMemoryUnlocked(uint16_t call_id){
+  if(!allowed_to_write_config_eeprom){
+    Serial.print(F("Error: Config Memory is not unlocked, called from line number "));
+    Serial.println(call_id); 
+  }
+  
+  return allowed_to_write_config_eeprom;
+}
+
 boolean mirrored_config_integrity_check(){
   boolean ret = false;
   uint8_t mirrored_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
@@ -4676,9 +4783,33 @@ boolean mirrored_config_integrity_check(){
 
 
 void mirrored_config_restore(void){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
   uint8_t mirrored_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
   get_mirrored_config(mirrored_config);
   eeprom_write_block(mirrored_config, (void *) EEPROM_CRC_CHECKSUM, EEPROM_CONFIG_MEMORY_SIZE);
+}
+
+boolean mirrored_config_restore_and_validate(void){
+  boolean integrity_check_passed = false;
+  
+  if(mirrored_config_integrity_check()){
+    mirrored_config_restore();
+    integrity_check_passed = checkConfigIntegrity();
+    if(integrity_check_passed){
+      Serial.println(F("Info: Successfully restored to last valid configuration.")); 
+    }
+    else{
+      Serial.println(F("Info: Restored last valid configuration, but it's still not valid."));
+    }  
+  }
+  else{
+    Serial.println(F("Error: Mirrored configuration is not valid, cannot restore to last valid configuration.")); 
+  }
+  
+  return integrity_check_passed;
 }
 
 #define SECOND_TO_LAST_4K_PAGE_ADDRESS      0x7E000     // the start address of the second to last 4k page
