@@ -31,6 +31,7 @@ SHT25 sht25;
 WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A0, A1);
 LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
+char g_lcd_buffer[2][17] = {0}; // 2 rows of 16 characters each, with space for NULL terminator
 byte mqtt_server_ip[4] = { 0 };    
 PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
@@ -2817,34 +2818,44 @@ void setLCD_P(const char str[] PROGMEM){
   setLCD(tmp);
 }
 
-void setLCD(const char str[]){
-  char tmp[17] = {0};  
-  uint16_t original_length = strlen(str);
-  strncpy(tmp, str, 16);
-  uint16_t len = strlen(tmp);
+void repaintLCD(void){
   lcd.clear();
-  lcd.setCursor(0,0);
-  lcd.print(tmp);
+  
+  g_lcd_buffer[0][16] = '\0'; // ensure null termination
+  g_lcd_buffer[1][16] = '\0'; // ensure null termination 
+  
+  if(strlen((char *) &(g_lcd_buffer[0])) <= 16){
+    lcd.setCursor(0,0);    
+    lcd.print((char *) &(g_lcd_buffer[0]));
+  }
+  
+  if(strlen((char *) &(g_lcd_buffer[1])) <= 16){
+    lcd.setCursor(0,1);    
+    lcd.print((char *) &(g_lcd_buffer[1]));
+  }    
+}
 
+void setLCD(const char str[]){
+  uint16_t original_length = strlen(str);  
+  strncpy((char *) &(g_lcd_buffer[0]), str, 16);  
   if(original_length > 16){   
-    memset(tmp, 0, 16);
-    strncpy(tmp, str + 16, 16);
-    lcd.setCursor(0,1);  
-    lcd.print(tmp);     
+    strncpy((char *) &(g_lcd_buffer[1]), str + 16, 16);    
   }   
+  repaintLCD();
 }
 
 void updateLCD(const char str[], uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
-  char tmp[17] = {0};
-  strncpy(tmp, str, 16);
-  if(num_chars < 16){
-    tmp[num_chars] = '\0'; 
-  }    
-  
-  if((pos_x < 16) && (pos_y < 2)){
-    lcd.setCursor(pos_x, pos_y);
-    lcd.print(tmp);    
+  uint16_t len = strlen(str);
+  char * ptr = 0;
+  if((pos_y == 0) || (pos_y == 1)){
+    ptr = (char *) &(g_lcd_buffer[pos_y]);    
   }
+  
+  for(uint8_t x = pos_x, ii = 0; x <= 16 && ii < len && ii < num_chars; x++, ii++){
+    ptr[x] = str[ii];
+  }
+  
+  repaintLCD();
 }
 
 boolean index_of(char ch, char * str, uint16_t * index){
