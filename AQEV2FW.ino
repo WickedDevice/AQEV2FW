@@ -2775,6 +2775,58 @@ void selectSlot2(void) {
 }
 
 /****** LCD SUPPORT FUNCTIONS ******/
+void safe_dtostrf(float value, signed char width, unsigned char precision, char * target_buffer, uint16_t target_buffer_length){
+  char tmp[32] = {0}; // working buffer, don't modify real buffer until we know it fits in width
+  char * p_tmp = &(tmp[0]);
+  uint32_t whole_number_part = 0;
+  float fractional_part = 0.0f;
+  int8_t sign = value < 0.0f ? -1 : 1;
+  value = sign * value; // absolute value
+  uint32_t fractional_part_as_integer = 0;
+  uint8_t ii = 0;
+  
+  // ignore the allowed negativity of dtostrf
+  if(width < 0){
+    width = - width;  
+  }
+  
+  if(target_buffer_length < 2){ // need at least space for a character and the null terminator
+    return; 
+  }
+  
+  if((sign < 0) && (target_buffer_length < 3)){ // need at least space for the sign, a character, and the null terminator
+    return;
+  }
+
+  whole_number_part = (uint32_t) value; // aboslute value
+  fractional_part = value - whole_number_part;   // remainder
+  
+  // move the decimal place over the precision number of times
+  for(ii = 0; ii < precision; ii++){
+    fractional_part *= 10.0f;
+  }
+  
+  // round to the nearest
+  fractional_part += 0.5f;  
+  fractional_part_as_integer = (uint32_t) fractional_part; // truncate the value
+  
+  // handle negative numbers, we *know* that there is room to do the following operation
+  // based on guard above "if((sign < 0) && (target_buffer_length < 3)) return;"
+  if(sign < 0){
+    tmp[0] = '-';      // the first character is a negative sign
+    p_tmp = &(tmp[1]); // the beginning of the target buffer is now the next character
+    snprintf(p_tmp, 31, "%d.%d", whole_number_part, fractional_part_as_integer);    
+  }
+  else{
+    p_tmp = &(tmp[0]);
+    snprintf(p_tmp, 32, "%d.%d", whole_number_part, fractional_part_as_integer); // the full buffer is available
+  }
+  
+  if(strlen(tmp) < target_buffer_length){
+    strncpy(target_buffer, tmp, target_buffer_length);
+  }
+  
+}
 
 void backlightOn(void) {
   digitalWrite(A6, HIGH);
@@ -3028,7 +3080,7 @@ void updateLCD(float value, uint8_t pos_x, uint8_t pos_y, uint8_t field_width){
   //Serial.print(F("value: "));
   //Serial.println(value,8);  
   
-  dtostrf(value, -16, 6, tmp);
+  safe_dtostrf(value, -16, 6, tmp, 16);
   
   //Serial.print(F("dtostrf: "));
   //Serial.println(tmp);
@@ -3584,8 +3636,8 @@ boolean publishTemperature(){
     reported_temperature = toFahrenheit(reported_temperature);
     raw_temperature = toFahrenheit(raw_temperature);
   }
-  dtostrf(reported_temperature, -6, 2, value_string);  
-  dtostrf(raw_temperature, -6, 2, raw_string); 
+  safe_dtostrf(reported_temperature, -6, 2, value_string, 16);  
+  safe_dtostrf(raw_temperature, -6, 2, raw_string, 16); 
   trim_string(value_string);
   trim_string(raw_string);
   snprintf(tmp, 511, 
@@ -3604,7 +3656,7 @@ boolean publishHumidity(){
   char value_string[64] = {0};  
   float humidity_moving_average = calculateAverage(humidity_sample_buffer, HUMIDITY_SAMPLE_BUFFER_DEPTH);
   relative_humidity_percent = humidity_moving_average;
-  dtostrf(humidity_moving_average, -6, 2, value_string);
+  safe_dtostrf(humidity_moving_average, -6, 2, value_string, 16);
   trim_string(value_string);
   snprintf(tmp, 511, 
   "{"
@@ -3781,9 +3833,9 @@ boolean publishNO2(){
   float no2_moving_average = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
   no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
   no2_ppb = compensated_value;  
-  dtostrf(no2_moving_average, -8, 5, raw_value_string);
-  dtostrf(converted_value, -4, 2, converted_value_string);
-  dtostrf(compensated_value, -4, 2, compensated_value_string); 
+  safe_dtostrf(no2_moving_average, -8, 5, raw_value_string, 16);
+  safe_dtostrf(converted_value, -4, 2, converted_value_string, 16);
+  safe_dtostrf(compensated_value, -4, 2, compensated_value_string, 16); 
   trim_string(raw_value_string);
   trim_string(converted_value_string);
   trim_string(compensated_value_string);  
@@ -3841,7 +3893,7 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
 }
 
 boolean publishCO(){
-  char tmp[512] = { 0 };  
+  char tmp[512] = {0};  
   char raw_value_string[64] = {0};  
   char converted_value_string[64] = {0};
   char compensated_value_string[64] = {0};
@@ -3849,9 +3901,9 @@ boolean publishCO(){
   float co_moving_average = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
   co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
   co_ppm = compensated_value;  
-  dtostrf(co_moving_average, -8, 5, raw_value_string);
-  dtostrf(converted_value, -4, 2, converted_value_string);
-  dtostrf(compensated_value, -4, 2, compensated_value_string);    
+  safe_dtostrf(co_moving_average, -8, 5, raw_value_string, 16);
+  safe_dtostrf(converted_value, -4, 2, converted_value_string, 16);
+  safe_dtostrf(compensated_value, -4, 2, compensated_value_string, 16);    
   trim_string(raw_value_string);
   trim_string(converted_value_string);
   trim_string(compensated_value_string);    
