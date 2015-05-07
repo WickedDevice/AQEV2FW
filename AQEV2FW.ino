@@ -2888,6 +2888,7 @@ void repaintLCD(void){
 }
 
 void setLCD(const char str[]){
+  clearLCD();
   uint16_t original_length = strlen(str);  
   strncpy((char *) &(g_lcd_buffer[0]), str, 16);  
   if(original_length > 16){   
@@ -2908,6 +2909,11 @@ void updateLCD(const char str[], uint8_t pos_x, uint8_t pos_y, uint8_t num_chars
   }
   
   repaintLCD();
+}
+
+void clearLCD(){
+  memset((uint8_t *) &(g_lcd_buffer[0]), 0, 17);
+  memset((uint8_t *) &(g_lcd_buffer[1]), 0, 17);
 }
 
 boolean index_of(char ch, char * str, uint16_t * index){
@@ -3608,11 +3614,12 @@ boolean publishHeartbeat(){
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
   snprintf(tmp, 511, 
   "{"
+  "\"serial-number\":\"%s\""
   "\"converted-value\":%d,"
   "\"firmware-version\":\"%s\","
   "\"publishes\":[\"no2\",\"co\",\"temperature\",\"humidity\"],"
   "\"counter\":%lu"
-  "}", sample, firmware_version, post_counter++);  
+  "}", mqtt_client_id, sample, firmware_version, post_counter++);  
   if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
      heartbeat_waveform_index = 0;
   }
@@ -3642,12 +3649,13 @@ boolean publishTemperature(){
   trim_string(raw_string);
   snprintf(tmp, 511, 
     "{" 
+    "\"serial-number\":\"%s\""    
     "\"converted-value\":%s,"
     "\"converted-units\":\"deg%c\","
     "\"raw-value\":%s,"
     "\"raw-units\":\"deg%c\","
     "\"sensor-part-number\":\"SHT25\""
-    "}", value_string, temperature_units, raw_string, temperature_units);    
+    "}", mqtt_client_id, value_string, temperature_units, raw_string, temperature_units);    
   return mqqtPublish(MQTT_TOPIC_PREFIX "temperature", tmp);   
 }
 
@@ -3660,10 +3668,11 @@ boolean publishHumidity(){
   trim_string(value_string);
   snprintf(tmp, 511, 
   "{"
+  "\"serial-number\":\"%s\""    
   "\"converted-value\":%s,"
   "\"converted-units\":\"percent\","
   "\"sensor-part-number\":\"SHT25\""
-  "}", value_string);  
+  "}", mqtt_client_id, value_string);  
   return mqqtPublish(MQTT_TOPIC_PREFIX "humidity", tmp); 
 }
 
@@ -3841,6 +3850,7 @@ boolean publishNO2(){
   trim_string(compensated_value_string);  
   snprintf(tmp, 511, 
     "{"
+    "\"serial-number\":\"%s\""       
     "\"raw-value\":%s,"
     "\"raw-units\":\"volt\","
     "\"converted-value\":%s,"
@@ -3848,6 +3858,7 @@ boolean publishNO2(){
     "\"compensated-value\":%s,"
     "\"sensor-part-number\":\"3SP-NO2-20-PCB\""
     "}",
+    mqtt_client_id,
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
@@ -3909,6 +3920,7 @@ boolean publishCO(){
   trim_string(compensated_value_string);    
   snprintf(tmp, 511, 
     "{"
+    "\"serial-number\":\"%s\""      
     "\"raw-value\":%s,"
     "\"raw-units\":\"volt\","
     "\"converted-value\":%s,"
@@ -3916,6 +3928,7 @@ boolean publishCO(){
     "\"compensated-value\":%s,"
     "\"sensor-part-number\":\"3SP-CO-1000-PCB\""
     "}",
+    mqtt_client_id,
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
@@ -3960,6 +3973,8 @@ void loop_wifi_mqtt_mode(void){
       num_mqtt_intervals_without_wifi = 0;
       
       if(mqttReconnect()){ 
+        clearLCD();
+        
         updateLCD("TEMP ", 0, 0, 5);
         updateLCD("RH ", 10, 0, 3);         
         updateLCD("NO2 ", 0, 1, 4);
