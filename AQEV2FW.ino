@@ -797,7 +797,7 @@ void initializeHardware(void) {
   getCurrentFirmwareSignature();
 
   // Initialize SHT25
-  Serial.print(F("Info: SHT25 Initization..."));
+  Serial.print(F("Info: SHT25 Initialization..."));
   if (sht25.begin()) {
     Serial.println(F("OK."));
     init_sht25_ok = true;
@@ -808,7 +808,7 @@ void initializeHardware(void) {
   }
 
   // Initialize NO2 Sensor
-  Serial.print(F("Info: NO2 Sensor AFE Initization..."));
+  Serial.print(F("Info: NO2 Sensor AFE Initialization..."));
   selectSlot2();
   if (lmp91000.configure(
         LMP91000_TIA_GAIN_350K | LMP91000_RLOAD_10OHM,
@@ -823,7 +823,7 @@ void initializeHardware(void) {
     init_no2_afe_ok = false;
   }
 
-  Serial.print(F("Info: NO2 Sensor ADC Initization..."));
+  Serial.print(F("Info: NO2 Sensor ADC Initialization..."));
   if(MCP342x::errorNone == adc.convert(MCP342x::channel1, MCP342x::oneShot, MCP342x::resolution16, MCP342x::gain1)){
     Serial.println(F("OK."));
     init_no2_adc_ok = true;    
@@ -833,7 +833,7 @@ void initializeHardware(void) {
     init_no2_adc_ok = false;    
   }
 
-  Serial.print(F("Info: CO Sensor AFE Initization..."));
+  Serial.print(F("Info: CO Sensor AFE Initialization..."));
   selectSlot1();
   if (lmp91000.configure(
         LMP91000_TIA_GAIN_350K | LMP91000_RLOAD_10OHM,
@@ -848,7 +848,7 @@ void initializeHardware(void) {
     init_co_afe_ok = false;
   }
   
-  Serial.print(F("Info: CO Sensor ADC Initization..."));
+  Serial.print(F("Info: CO Sensor ADC Initialization..."));
   if(MCP342x::errorNone == adc.convert(MCP342x::channel1, MCP342x::oneShot, MCP342x::resolution16, MCP342x::gain1)){
     Serial.println(F("OK."));
     init_co_adc_ok = true;    
