@@ -3614,7 +3614,7 @@ boolean publishHeartbeat(){
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
   snprintf(tmp, 511, 
   "{"
-  "\"serial-number\":\"%s\""
+  "\"serial-number\":\"%s\","
   "\"converted-value\":%d,"
   "\"firmware-version\":\"%s\","
   "\"publishes\":[\"no2\",\"co\",\"temperature\",\"humidity\"],"
@@ -3649,7 +3649,7 @@ boolean publishTemperature(){
   trim_string(raw_string);
   snprintf(tmp, 511, 
     "{" 
-    "\"serial-number\":\"%s\""    
+    "\"serial-number\":\"%s\","    
     "\"converted-value\":%s,"
     "\"converted-units\":\"deg%c\","
     "\"raw-value\":%s,"
@@ -3668,7 +3668,7 @@ boolean publishHumidity(){
   trim_string(value_string);
   snprintf(tmp, 511, 
   "{"
-  "\"serial-number\":\"%s\""    
+  "\"serial-number\":\"%s\","    
   "\"converted-value\":%s,"
   "\"converted-units\":\"percent\","
   "\"sensor-part-number\":\"SHT25\""
@@ -3850,7 +3850,7 @@ boolean publishNO2(){
   trim_string(compensated_value_string);  
   snprintf(tmp, 511, 
     "{"
-    "\"serial-number\":\"%s\""       
+    "\"serial-number\":\"%s\","       
     "\"raw-value\":%s,"
     "\"raw-units\":\"volt\","
     "\"converted-value\":%s,"
@@ -3920,7 +3920,7 @@ boolean publishCO(){
   trim_string(compensated_value_string);    
   snprintf(tmp, 511, 
     "{"
-    "\"serial-number\":\"%s\""      
+    "\"serial-number\":\"%s\","      
     "\"raw-value\":%s,"
     "\"raw-units\":\"volt\","
     "\"converted-value\":%s,"
