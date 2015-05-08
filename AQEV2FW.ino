@@ -1919,6 +1919,9 @@ void restore(char * arg) {
       serial_number[5],
       serial_number[6],
       serial_number[7]);
+
+    lowercase((char *) tmp); // for consistency with aqe v1 and airqualityegg.com assumptions
+    
     eeprom_write_block(tmp, (void *) EEPROM_MQTT_CLIENT_ID, 32);
   }  
   else if (strncmp("updatesrv", arg, 9) == 0) {
