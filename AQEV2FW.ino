@@ -2787,7 +2787,7 @@ void safe_dtostrf(float value, signed char width, unsigned char precision, char 
   
   // ignore the allowed negativity of dtostrf
   if(width < 0){
-    width = - width;  
+    width = -width;  
   }
   
   if(target_buffer_length < 2){ // need at least space for a character and the null terminator
@@ -2802,9 +2802,11 @@ void safe_dtostrf(float value, signed char width, unsigned char precision, char 
   fractional_part = value - whole_number_part;   // remainder
   
   // move the decimal place over the precision number of times
+  uint32_t multiplier = 1L;
   for(ii = 0; ii < precision; ii++){
-    fractional_part *= 10.0f;
+    multiplier *= 10L;
   }
+  fractional_part *= 1.0f * multiplier;
   
   // round to the nearest
   fractional_part += 0.5f;  
@@ -2815,17 +2817,17 @@ void safe_dtostrf(float value, signed char width, unsigned char precision, char 
   if(sign < 0){
     tmp[0] = '-';      // the first character is a negative sign
     p_tmp = &(tmp[1]); // the beginning of the target buffer is now the next character
-    snprintf(p_tmp, 31, "%d.%d", whole_number_part, fractional_part_as_integer);    
+    snprintf(p_tmp, 31, "%lu.%lu", whole_number_part, fractional_part_as_integer);    
   }
   else{
     p_tmp = &(tmp[0]);
-    snprintf(p_tmp, 32, "%d.%d", whole_number_part, fractional_part_as_integer); // the full buffer is available
+    snprintf(p_tmp, 32, "%lu.%lu", whole_number_part, fractional_part_as_integer); // the full buffer is available
   }
   
   if(strlen(tmp) < target_buffer_length){
     strncpy(target_buffer, tmp, target_buffer_length);
-  }
-  
+  }  
+
 }
 
 void backlightOn(void) {
@@ -3632,7 +3634,7 @@ float toFahrenheit(float degC){
 }
 
 boolean publishTemperature(){
-  char tmp[512] = { 0 };  
+  char tmp[512] = { 0 };
   char value_string[64] = {0};
   char raw_string[64] = {0};
   float temperature_moving_average = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
@@ -3643,20 +3645,20 @@ boolean publishTemperature(){
     reported_temperature = toFahrenheit(reported_temperature);
     raw_temperature = toFahrenheit(raw_temperature);
   }
-  safe_dtostrf(reported_temperature, -6, 2, value_string, 16);  
-  safe_dtostrf(raw_temperature, -6, 2, raw_string, 16); 
+  safe_dtostrf(reported_temperature, -6, 2, value_string, 16);
+  safe_dtostrf(raw_temperature, -6, 2, raw_string, 16);
   trim_string(value_string);
   trim_string(raw_string);
-  snprintf(tmp, 511, 
-    "{" 
-    "\"serial-number\":\"%s\","    
+  snprintf(tmp, 511,
+    "{"
+    "\"serial-number\":\"%s\","
     "\"converted-value\":%s,"
     "\"converted-units\":\"deg%c\","
     "\"raw-value\":%s,"
     "\"raw-units\":\"deg%c\","
     "\"sensor-part-number\":\"SHT25\""
-    "}", mqtt_client_id, value_string, temperature_units, raw_string, temperature_units);    
-  return mqqtPublish(MQTT_TOPIC_PREFIX "temperature", tmp);   
+    "}", mqtt_client_id, value_string, temperature_units, raw_string, temperature_units);
+  return mqqtPublish(MQTT_TOPIC_PREFIX "temperature", tmp);
 }
 
 boolean publishHumidity(){
@@ -3673,7 +3675,7 @@ boolean publishHumidity(){
   "\"converted-units\":\"percent\","
   "\"sensor-part-number\":\"SHT25\""
   "}", mqtt_client_id, value_string);  
-  return mqqtPublish(MQTT_TOPIC_PREFIX "humidity", tmp); 
+  return mqqtPublish(MQTT_TOPIC_PREFIX "humidity", tmp);
 }
 
 void collectTemperature(void){
