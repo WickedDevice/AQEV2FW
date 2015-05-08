@@ -16,7 +16,7 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 0
+#define AQEV2FW_PATCH_VERSION 1
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 #define DEVICE_NAME "CC3000" // this is used for smart config
@@ -50,7 +50,8 @@ boolean allowed_to_write_config_eeprom = false;
 unsigned long current_millis = 0;
 char firmware_version[16] = {0};
 uint8_t temperature_units = 'C';
-const float reported_temperature_offset_degC = 3.5f;
+float reported_temperature_offset_degC = 3.5f;
+float reported_humidity_offset_percent = 0.0f;
 
 float temperature_degc = 0.0f;
 float relative_humidity_percent = 0.0f;
@@ -121,7 +122,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_NO2_CAL_OFFSET     (EEPROM_NO2_CAL_SLOPE - 4)      // float value, 4-btyes, the offset applied to the sensor
 #define EEPROM_CO_SENSITIVITY     (EEPROM_NO2_CAL_OFFSET - 4)     // float value, 4-bytes, the sensitivity from the sticker
 #define EEPROM_CO_CAL_SLOPE       (EEPROM_CO_SENSITIVITY - 4)     // float value, 4-bytes, the slope applied to the sensor
-#define EEPROM_CO_CAL_OFFSET      (EEPROM_CO_CAL_SLOPE - 4)       // float value, 4-btyes, the offset applied to the sensor
+#define EEPROM_CO_CAL_OFFSET      (EEPROM_CO_CAL_SLOPE - 4)       // float value, 4-bytes, the offset applied to the sensor
 #define EEPROM_PRIVATE_KEY        (EEPROM_CO_CAL_OFFSET - 32)     // 32-bytes of Random Data (256-bits)
 #define EEPROM_MQTT_SERVER_NAME   (EEPROM_PRIVATE_KEY - 32)       // string, the DNS name of the MQTT server (default opensensors.io), up to 32 characters (one of which is a null terminator)
 #define EEPROM_MQTT_USERNAME      (EEPROM_MQTT_SERVER_NAME - 32)  // string, the user name for the MQTT server (default airqualityegg), up to 32 characters (one of which is a null terminator)
@@ -132,22 +133,26 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_OPERATIONAL_MODE   (EEPROM_UPDATE_SERVER_NAME - 1) // operational mode encoded as a single byte value (e.g. NORMAL, ZEROING, etc.)
 #define EEPROM_TEMPERATURE_UNITS  (EEPROM_OPERATIONAL_MODE - 1)   // temperature units 'F' for Fahrenheit and 'C' for Celsius
 #define EEPROM_UPDATE_FILENAME    (EEPROM_TEMPERATURE_UNITS - 32) // 32-bytes for the update server filename (excluding the implied extension)
+#define EEPROM_TEMPERATURE_OFFSET (EEPROM_UPDATE_FILENAME - 4)    // float value, 4-bytes, the offset applied to the sensor for reporting
+#define EEPROM_HUMIDITY_OFFSET    (EEPROM_TEMPERATURE_OFFSET - 4) // float value, 4-bytes, the offset applied to the sensor for reporting
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
 //   T Add values down here by adding offsets to previously added values
 //  \/
-#define EEPROM_BACKUP_PRIVATE_KEY (EEPROM_BACKUP_CO_CAL_OFFSET + 4)
-#define EEPROM_BACKUP_CO_CAL_OFFSET (EEPROM_BACKUP_CO_CAL_SLOPE + 4)
-#define EEPROM_BACKUP_CO_CAL_SLOPE (EEPROM_BACKUP_CO_SENSITIVITY + 4)
-#define EEPROM_BACKUP_CO_SENSITIVITY (EEPROM_BACKUP_NO2_CAL_OFFSET + 4)
-#define EEPROM_BACKUP_NO2_CAL_OFFSET (EEPROM_BACKUP_NO2_CAL_SLOPE + 4)
-#define EEPROM_BACKUP_NO2_CAL_SLOPE (EEPROM_BACKUP_NO2_SENSITIVITY + 4)
-#define EEPROM_BACKUP_NO2_SENSITIVITY (EEPROM_BACKUP_MQTT_PASSWORD + 32)
-#define EEPROM_BACKUP_MQTT_PASSWORD (EEPROM_BACKUP_MAC_ADDRESS + 6)
-#define EEPROM_BACKUP_MAC_ADDRESS (EEPROM_BACKUP_CHECK + 2) // backup parameters are added here offset from the EEPROM_CRC_CHECKSUM
-#define EEPROM_BACKUP_CHECK   (EEPROM_CRC_CHECKSUM + 2) // 2-byte value with various bits set if backup has ever happened
-#define EEPROM_CRC_CHECKSUM   (E2END + 1 - EEPROM_CONFIG_MEMORY_SIZE) // reserve the last 1kB for config
+#define EEPROM_BACKUP_HUMIDITY_OFFSET    (EEPROM_BACKUP_TEMPERATURE_OFFSET + 4)
+#define EEPROM_BACKUP_TEMPERATURE_OFFSET (EEPROM_BACKUP_PRIVATE_KEY + 32)
+#define EEPROM_BACKUP_PRIVATE_KEY        (EEPROM_BACKUP_CO_CAL_OFFSET + 4)
+#define EEPROM_BACKUP_CO_CAL_OFFSET      (EEPROM_BACKUP_CO_CAL_SLOPE + 4)
+#define EEPROM_BACKUP_CO_CAL_SLOPE       (EEPROM_BACKUP_CO_SENSITIVITY + 4)
+#define EEPROM_BACKUP_CO_SENSITIVITY     (EEPROM_BACKUP_NO2_CAL_OFFSET + 4)
+#define EEPROM_BACKUP_NO2_CAL_OFFSET     (EEPROM_BACKUP_NO2_CAL_SLOPE + 4)
+#define EEPROM_BACKUP_NO2_CAL_SLOPE      (EEPROM_BACKUP_NO2_SENSITIVITY + 4)
+#define EEPROM_BACKUP_NO2_SENSITIVITY    (EEPROM_BACKUP_MQTT_PASSWORD + 32)
+#define EEPROM_BACKUP_MQTT_PASSWORD      (EEPROM_BACKUP_MAC_ADDRESS + 6)
+#define EEPROM_BACKUP_MAC_ADDRESS        (EEPROM_BACKUP_CHECK + 2) // backup parameters are added here offset from the EEPROM_CRC_CHECKSUM
+#define EEPROM_BACKUP_CHECK              (EEPROM_CRC_CHECKSUM + 2) // 2-byte value with various bits set if backup has ever happened
+#define EEPROM_CRC_CHECKSUM              (E2END + 1 - EEPROM_CONFIG_MEMORY_SIZE) // reserve the last 1kB for config
 // the only things that need "backup" are those which are unique to a device
 // other things can have "defaults" stored in flash (i.e. using the restore defaults command)
 
@@ -158,11 +163,13 @@ uint8_t mode = MODE_OPERATIONAL;
 #define CONNECT_METHOD_PFOD          (2)
 
 // backup status bits
-#define BACKUP_STATUS_MAC_ADDRESS_BIT       (7)
-#define BACKUP_STATUS_MQTT_PASSSWORD_BIT    (6)
-#define BACKUP_STATUS_NO2_CALIBRATION_BIT   (5)
-#define BACKUP_STATUS_CO_CALIBRATION_BIT    (4)
-#define BACKUP_STATUS_PRIVATE_KEY_BIT       (3)
+#define BACKUP_STATUS_MAC_ADDRESS_BIT             (7)
+#define BACKUP_STATUS_MQTT_PASSSWORD_BIT          (6)
+#define BACKUP_STATUS_NO2_CALIBRATION_BIT         (5)
+#define BACKUP_STATUS_CO_CALIBRATION_BIT          (4)
+#define BACKUP_STATUS_PRIVATE_KEY_BIT             (3)
+#define BACKUP_STATUS_TEMPERATURE_CALIBRATION_BIT (2)
+#define BACKUP_STATUS_HUMIDITY_CALIBRATION_BIT    (1)
 
 #define BIT_IS_CLEARED(val, b) (!(val & (1UL << b)))
 #define CLEAR_BIT(val, b) \
@@ -194,6 +201,8 @@ void set_no2_sensitivity(char * arg);
 void set_co_slope(char * arg);
 void set_co_offset(char * arg);
 void set_co_sensitivity(char * arg);
+void set_reported_temperature_offset(char * arg);
+void set_reported_humidity_offset(char * arg);
 void set_private_key(char * arg);
 void set_operational_mode(char * arg);
 void set_temperature_units(char * arg);
@@ -243,6 +252,8 @@ char * commands[] = {
   "co_cal     ",
   "co_slope   ",
   "co_off     ",
+  "temp_off   ",
+  "hum_off    ",
   "key        ",
   "opmode     ",
   "tempunit   ",
@@ -276,6 +287,8 @@ void (*command_functions[])(char * arg) = {
   set_co_sensitivity,
   set_co_slope,
   set_co_offset,
+  set_reported_temperature_offset,
+  set_reported_humidity_offset,
   set_private_key,
   set_operational_mode,
   set_temperature_units,
@@ -525,6 +538,10 @@ void setup() {
   // ... but *which* operational mode are we in?
   mode = target_mode;
   
+  // ... and what is the temperature and humdidity offset we should use
+  reported_temperature_offset_degC = eeprom_read_float((float *) EEPROM_TEMPERATURE_OFFSET);
+  reported_humidity_offset_percent = eeprom_read_float((float *) EEPROM_HUMIDITY_OFFSET);
+  
   if(mode_requires_wifi(mode)){
     // Scan Networks to show RSSI    
     uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);    
@@ -553,7 +570,7 @@ void setup() {
     // if it's different from what's already there
     // importantly this check only happens at startup    
     if(!mirrored_config_matches_eeprom_config()){      
-      mirrored_config_copy_from_eeprom(); // create a valid mirrored config from teh current settings             
+      mirrored_config_copy_from_eeprom(); // create a valid mirrored config from the current settings             
       if(!mirrored_config_integrity_check()){
         Serial.println(F("Error: Mirrored configuration commit failed to validate.")); 
         //TODO: should something be written to the LCD here?
@@ -1159,6 +1176,8 @@ void help_menu(char * arg) {
       Serial.println(F("      co_cal - CO sensitivity [nA/ppm]"));
       Serial.println(F("      co_slope - CO sensors slope [ppm/V]"));
       Serial.println(F("      co_off - CO sensors offset [V]"));
+      Serial.println(F("      temp_off - Temperature sensor reporting offset [degC] (subtracted)"));
+      Serial.println(F("      hum_off - Humidity sensor reporting offset [%] (subtracted)"));      
       Serial.println(F("      key - lol, sorry, that's also not happening!"));
       Serial.println(F("      opmode - the Operational Mode the Egg is configured for"));
       Serial.println(F("      tempunit - the unit of measure Temperature is reported in (F or C)"));      
@@ -1184,6 +1203,8 @@ void help_menu(char * arg) {
       Serial.println(F("                   performs 'mqttport 1883'"));           
       Serial.println(F("                   performs 'mqttauth enable'"));        
       Serial.println(F("                   performs 'mqttuser airqualityegg'"));  
+      Serial.println(F("                   performs 'temp_off 3.5'"));      
+      Serial.println(F("                   performs 'hum_off 0.0'"));        
       Serial.println(F("                   performs 'restore mac'"));
       Serial.println(F("                   performs 'restore mqttpwd'"));
       Serial.println(F("                   performs 'restore mqttid'"));      
@@ -1191,7 +1212,7 @@ void help_menu(char * arg) {
       Serial.println(F("                   performs 'restore updatefile'"));         
       Serial.println(F("                   performs 'restore key'"));
       Serial.println(F("                   performs 'restore no2'"));
-      Serial.println(F("                   performs 'restore co'"));
+      Serial.println(F("                   performs 'restore co'"));          
       Serial.println(F("                   clears the SSID from memory"));
       Serial.println(F("                   clears the Network Password from memory"));
       Serial.println(F("      mac        - retrieves the mac address from BACKUP"));
@@ -1203,6 +1224,8 @@ void help_menu(char * arg) {
       Serial.println(F("      key        - restores the Private Key from BACKUP "));
       Serial.println(F("      no2        - restores the NO2 calibration parameters from BACKUP "));
       Serial.println(F("      co         - restores the CO calibration parameters from BACKUP "));
+      Serial.println(F("      temp_off   - restores the Temperature reporting offset from BACKUP "));
+      Serial.println(F("      hum_off    - restores the Humidity reporting offset from BACKUP "));      
     }
     else if (strncmp("mac", arg, 3) == 0) {
       Serial.println(F("mac <address>"));
@@ -1356,6 +1379,14 @@ void help_menu(char * arg) {
       Serial.println(F("co_off <number>"));
       Serial.println(F("   <number> is the decimal value of CO sensor offset [V]"));
     }
+    else if (strncmp("temp_off", arg, 8) == 0) {
+      Serial.println(F("temp_off <number>"));
+      Serial.println(F("   <number> is the decimal value of Temperature sensor reporting offset [degC] (subtracted)"));
+    }
+    else if (strncmp("hum_off", arg, 7) == 0) {
+      Serial.println(F("hum_off <number>"));
+      Serial.println(F("   <number> is the decimal value of Humidity sensor reporting offset [%] (subtracted)"));
+    }    
     else if (strncmp("key", arg, 3) == 0) {
       Serial.println(F("key <string>"));
       Serial.println(F("   <string> is a 64-character string representing "));
@@ -1372,7 +1403,7 @@ void help_menu(char * arg) {
       Serial.println(F("tempunit <unit>"));
       Serial.println(F("   <unit> is one of:"));      
       Serial.println(F("      C - report temperature in Celsius"));
-      Serial.println(F("      F - report temperature in Fahrenheit"));      
+      Serial.println(F("      F - report temperature in Fahrenheit"));
     }
     else {
       Serial.print(F("Error: There is no help available for command \""));
@@ -1674,6 +1705,12 @@ void print_eeprom_value(char * arg) {
   else if (strncmp(arg, "co_off", 6) == 0) {
     print_eeprom_float((const float *) EEPROM_CO_CAL_OFFSET);
   }
+  else if (strncmp(arg, "temp_off", 8) == 0) {
+    print_eeprom_float((const float *) EEPROM_TEMPERATURE_OFFSET);
+  }
+  else if (strncmp(arg, "hum_off", 7) == 0) {
+    print_eeprom_float((const float *) EEPROM_HUMIDITY_OFFSET);
+  }  
   else if(strncmp(arg, "mqttsrv", 7) == 0) {
     print_eeprom_string((const char *) EEPROM_MQTT_SERVER_NAME);    
   }
@@ -1767,7 +1804,22 @@ void print_eeprom_value(char * arg) {
     print_eeprom_float((const float *) EEPROM_CO_CAL_SLOPE);
     print_label_with_star_if_not_backed_up("CO Offset [V]: ", BACKUP_STATUS_CO_CALIBRATION_BIT);
     print_eeprom_float((const float *) EEPROM_CO_CAL_OFFSET);
-
+    
+    char temp_reporting_offset_label[64] = {0};
+    char temperature_units = (char) eeprom_read_byte((uint8_t *) EEPROM_TEMPERATURE_UNITS);
+    snprintf(temp_reporting_offset_label, 63, "Temperature Reporting Offset [deg%c]: ", temperature_units); 
+    float temp_reporting_offset_degc = eeprom_read_float((float *) EEPROM_TEMPERATURE_OFFSET);
+    float temperature_offset_display = temp_reporting_offset_degc;
+    if(temperature_units == 'F'){
+      temperature_offset_display = toFahrenheit(temp_reporting_offset_degc) - 32.0f;
+    }
+    print_label_with_star_if_not_backed_up((char * )temp_reporting_offset_label, BACKUP_STATUS_TEMPERATURE_CALIBRATION_BIT);
+    Serial.println(temperature_offset_display, 2);
+    
+    print_label_with_star_if_not_backed_up("Humidity Reporting Offset [%]: ", BACKUP_STATUS_HUMIDITY_CALIBRATION_BIT);
+    Serial.println(eeprom_read_float((float *) EEPROM_HUMIDITY_OFFSET), 2);  
+    
+    
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | note: '*' next to label means the setting is not backed up. |"));
     Serial.println(F(" |     run 'backup all' when you are satisfied                 |"));
@@ -1858,6 +1910,8 @@ void restore(char * arg) {
     configInject("mqttport 1883\r");        
     configInject("mqttauth enable\r");    
     configInject("mqttuser airqualityegg\r");
+    configInject("temp_off 3.5\r");
+    configInject("hum_off 0.0\r");        
     configInject("restore mqttpwd\r");
     configInject("restore mqttid\r");
     configInject("restore updatesrv\r");
@@ -1967,6 +2021,26 @@ void restore(char * arg) {
     eeprom_write_block(tmp, (void *) EEPROM_CO_CAL_SLOPE, 4);
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_CO_CAL_OFFSET, 4);
     eeprom_write_block(tmp, (void *) EEPROM_CO_CAL_OFFSET, 4);
+  }
+  else if (strncmp("temp_off", arg, 8) == 0) {
+    if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_TEMPERATURE_CALIBRATION_BIT)) {
+      Serial.println(F("Error: Temperature reporting offset must be backed up  "));
+      Serial.println(F("       prior to executing a 'restore'."));
+      return;
+    }
+
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_TEMPERATURE_OFFSET, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_TEMPERATURE_OFFSET, 4);
+  }
+  else if (strncmp("hum_off", arg, 7) == 0) {
+    if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_HUMIDITY_CALIBRATION_BIT)) {
+      Serial.println(F("Error: Humidity reporting offset must be backed up  "));
+      Serial.println(F("       prior to executing a 'restore'."));
+      return;
+    }
+
+    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_HUMIDITY_OFFSET, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_HUMIDITY_OFFSET, 4);
   }
   else {
     valid = false;
@@ -2665,6 +2739,14 @@ void set_no2_slope(char * arg) {
 
 void set_no2_offset(char * arg) {
   set_float_param(arg, (float *) EEPROM_NO2_CAL_OFFSET, 0);
+}
+
+void set_reported_temperature_offset(char * arg) {
+  set_float_param(arg, (float *) EEPROM_TEMPERATURE_OFFSET, 0);
+}
+
+void set_reported_humidity_offset(char * arg) {
+  set_float_param(arg, (float *) EEPROM_HUMIDITY_OFFSET, 0);
 }
 
 // convert from nA/ppm to ppb/V
@@ -3633,7 +3715,7 @@ boolean publishHeartbeat(){
 }
 
 float toFahrenheit(float degC){
-  return  (degC * 9.0f / 5.0f) + 32.0;
+  return  (degC * 9.0f / 5.0f) + 32.0f;
 }
 
 boolean publishTemperature(){
@@ -3667,17 +3749,25 @@ boolean publishTemperature(){
 boolean publishHumidity(){
   char tmp[512] = { 0 };  
   char value_string[64] = {0};  
+  char raw_string[64] = {0};
   float humidity_moving_average = calculateAverage(humidity_sample_buffer, HUMIDITY_SAMPLE_BUFFER_DEPTH);
   relative_humidity_percent = humidity_moving_average;
-  safe_dtostrf(humidity_moving_average, -6, 2, value_string, 16);
+  float raw_humidity = relative_humidity_percent;
+  float reported_humidity = relative_humidity_percent - reported_humidity_offset_percent;  
+  
+  safe_dtostrf(reported_humidity, -6, 2, value_string, 16);
+  safe_dtostrf(raw_humidity, -6, 2, raw_string, 16);
   trim_string(value_string);
+  trim_string(raw_string);
   snprintf(tmp, 511, 
-  "{"
-  "\"serial-number\":\"%s\","    
-  "\"converted-value\":%s,"
-  "\"converted-units\":\"percent\","
-  "\"sensor-part-number\":\"SHT25\""
-  "}", mqtt_client_id, value_string);  
+    "{"
+    "\"serial-number\":\"%s\","    
+    "\"converted-value\":%s,"
+    "\"converted-units\":\"percent\","
+    "\"raw-value\":%s,"
+    "\"raw-units\":\"percent\","  
+    "\"sensor-part-number\":\"SHT25\""
+    "}", mqtt_client_id, value_string, raw_string);  
   return mqqtPublish(MQTT_TOPIC_PREFIX "humidity", tmp);
 }
 
