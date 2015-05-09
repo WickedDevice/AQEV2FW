@@ -125,7 +125,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_CO_CAL_OFFSET      (EEPROM_CO_CAL_SLOPE - 4)       // float value, 4-bytes, the offset applied to the sensor
 #define EEPROM_PRIVATE_KEY        (EEPROM_CO_CAL_OFFSET - 32)     // 32-bytes of Random Data (256-bits)
 #define EEPROM_MQTT_SERVER_NAME   (EEPROM_PRIVATE_KEY - 32)       // string, the DNS name of the MQTT server (default opensensors.io), up to 32 characters (one of which is a null terminator)
-#define EEPROM_MQTT_USERNAME      (EEPROM_MQTT_SERVER_NAME - 32)  // string, the user name for the MQTT server (default airqualityegg), up to 32 characters (one of which is a null terminator)
+#define EEPROM_MQTT_USERNAME      (EEPROM_MQTT_SERVER_NAME - 32)  // string, the user name for the MQTT server (default wickeddevice), up to 32 characters (one of which is a null terminator)
 #define EEPROM_MQTT_CLIENT_ID     (EEPROM_MQTT_USERNAME - 32)     // string, the client identifier for the MQTT server (default SHT25 identifier), between 1 and 23 characters long
 #define EEPROM_MQTT_AUTH          (EEPROM_MQTT_CLIENT_ID - 1)     // MQTT authentication enabled, single byte value 0 = disabled or 1 = enabled
 #define EEPROM_MQTT_PORT          (EEPROM_MQTT_AUTH - 4)          // MQTT authentication enabled, reserve four bytes, even though you only need two for a port
@@ -1202,7 +1202,7 @@ void help_menu(char * arg) {
       Serial.println(F("                   performs 'mqttsrv opensensors.io'"));
       Serial.println(F("                   performs 'mqttport 1883'"));           
       Serial.println(F("                   performs 'mqttauth enable'"));        
-      Serial.println(F("                   performs 'mqttuser airqualityegg'"));  
+      Serial.println(F("                   performs 'mqttuser wickeddevice'"));  
       Serial.println(F("                   performs 'temp_off 3.5'"));      
       Serial.println(F("                   performs 'hum_off 0.0'"));        
       Serial.println(F("                   performs 'restore mac'"));
@@ -1909,7 +1909,7 @@ void restore(char * arg) {
     configInject("mqttsrv opensensors.io\r");
     configInject("mqttport 1883\r");        
     configInject("mqttauth enable\r");    
-    configInject("mqttuser airqualityegg\r");
+    configInject("mqttuser wickeddevice\r");
     configInject("temp_off 3.5\r");
     configInject("hum_off 0.0\r");        
     configInject("restore mqttpwd\r");
