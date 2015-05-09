@@ -2951,17 +2951,40 @@ void lcdBars(uint8_t numBars){
   }
 }
 
-void setLCD_P(const char str[] PROGMEM){  
+void setLCD_P(const char * str PROGMEM){  
   char tmp[33] = {0};
   strncpy_P(tmp, str, 32);
   setLCD(tmp);
 }
 
+//void dumpDisplayBuffer(void){
+//  Serial.print(F("Debug: Line 1: "));
+//  for(uint8_t ii = 0; ii < 17; ii++){
+//    Serial.print(F("0x"));
+//    Serial.print((uint8_t) g_lcd_buffer[0][ii],HEX);
+//    if(ii != 16){
+//      Serial.print(F(","));
+//    }
+//  } 
+//  Serial.println();
+//  Serial.print(F("Debug: Line 2: "));
+//  for(uint8_t ii = 0; ii < 17; ii++){
+//    Serial.print(F("0x"));
+//    Serial.print((uint8_t) g_lcd_buffer[1][ii],HEX);
+//    if(ii != 16){
+//      Serial.print(F(","));
+//    }
+//  }
+//  Serial.println();  
+//}
+
 void repaintLCD(void){
   lcd.clear();
   
+  //dumpDisplayBuffer();
+  
   g_lcd_buffer[0][16] = '\0'; // ensure null termination
-  g_lcd_buffer[1][16] = '\0'; // ensure null termination 
+  g_lcd_buffer[1][16] = '\0'; // ensure null termination      
   
   if(strlen((char *) &(g_lcd_buffer[0])) <= 16){
     lcd.setCursor(0,0);    
@@ -2970,11 +2993,11 @@ void repaintLCD(void){
   
   if(strlen((char *) &(g_lcd_buffer[1])) <= 16){
     lcd.setCursor(0,1);    
-    lcd.print((char *) &(g_lcd_buffer[1]));
+    lcd.print((char *) &(g_lcd_buffer[1])); 
   }    
 }
 
-void setLCD(const char str[]){
+void setLCD(const char * str){
   clearLCD();
   uint16_t original_length = strlen(str);  
   strncpy((char *) &(g_lcd_buffer[0]), str, 16);  
@@ -2984,23 +3007,33 @@ void setLCD(const char str[]){
   repaintLCD();
 }
 
-void updateLCD(const char str[], uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
+void updateLCD(const char * str, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
   uint16_t len = strlen(str);
   char * ptr = 0;
   if((pos_y == 0) || (pos_y == 1)){
-    ptr = (char *) &(g_lcd_buffer[pos_y]);    
+    ptr = (char *) &(g_lcd_buffer[pos_y]);   
   }
   
-  for(uint8_t x = pos_x, ii = 0; x <= 16 && ii < len && ii < num_chars; x++, ii++){
-    ptr[x] = str[ii];
+  uint8_t x = 0;  // display buffer index
+  uint8_t ii = 0; // input string index
+  for(x = pos_x, ii = 0;  (x < 16) && (ii < len) && (ii < num_chars); x++, ii++){
+    // don't allow the injection of non-printable characters into the display buffer
+    if(isprint(str[ii])){    
+      ptr[x] = str[ii];
+    }
+    else{
+      ptr[x] = ' ';
+    }
   }
   
   repaintLCD();
 }
 
 void clearLCD(){
-  memset((uint8_t *) &(g_lcd_buffer[0]), 0, 17);
-  memset((uint8_t *) &(g_lcd_buffer[1]), 0, 17);
+  memset((uint8_t *) &(g_lcd_buffer[0]), ' ', 16);
+  memset((uint8_t *) &(g_lcd_buffer[1]), ' ', 16);
+  g_lcd_buffer[0][16] = '\0';
+  g_lcd_buffer[1][16] = '\0';  
 }
 
 boolean index_of(char ch, char * str, uint16_t * index){
@@ -3204,7 +3237,7 @@ void updateLCD(uint32_t ip, uint8_t line_number){
   updateLCD(tmp, line_number);
 }
 
-void updateLCD(const char str[], uint8_t line_number){
+void updateLCD(const char * str, uint8_t line_number){
   // center the string on the line
   char tmp[17] = {0};  
   uint16_t original_len = strlen(str);
