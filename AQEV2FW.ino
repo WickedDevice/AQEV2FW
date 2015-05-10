@@ -1351,6 +1351,8 @@ void help_menu(char * arg) {
       Serial.println(F("      key      - backs up the 256-bit private key"));
       Serial.println(F("      no2      - backs up the NO2 calibration parameters"));
       Serial.println(F("      co       - backs up the CO calibration parameters"));
+      Serial.println(F("      temp     - backs up the Temperature calibration parameters"));
+      Serial.println(F("      hum      - backs up the Humidity calibration parameters"));      
       Serial.println(F("      all      - does all of the above"));
     }
     else if (strncmp("no2_cal", arg, 7) == 0) {
@@ -2665,12 +2667,32 @@ void backup(char * arg) {
       eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);
     }
   }
+  else if (strncmp("temp", arg, 4) == 0) {
+    eeprom_read_block(tmp, (const void *) EEPROM_TEMPERATURE_OFFSET, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_TEMPERATURE_OFFSET, 4);
+
+    if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_TEMPERATURE_CALIBRATION_BIT)) {
+      CLEAR_BIT(backup_check, BACKUP_STATUS_TEMPERATURE_CALIBRATION_BIT);
+      eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);
+    }
+  }  
+  else if (strncmp("hum", arg, 3) == 0) {
+    eeprom_read_block(tmp, (const void *) EEPROM_HUMIDITY_OFFSET, 4);
+    eeprom_write_block(tmp, (void *) EEPROM_BACKUP_HUMIDITY_OFFSET, 4);
+
+    if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_HUMIDITY_CALIBRATION_BIT)) {
+      CLEAR_BIT(backup_check, BACKUP_STATUS_HUMIDITY_CALIBRATION_BIT);
+      eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);
+    }
+  }  
   else if (strncmp("all", arg, 3) == 0) {
     valid = false;
     configInject("backup mqttpwd\r");
     configInject("backup key\r");
     configInject("backup no2\r");
     configInject("backup co\r");
+    configInject("backup temp\r");
+    configInject("backup hum\r");    
     configInject("backup mac\r");
     Serial.println();
   }
