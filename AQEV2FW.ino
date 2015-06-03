@@ -1262,7 +1262,7 @@ void help_menu(char * arg) {
     }
     else if (strncmp("staticip", arg, 8) == 0) {
       Serial.println(F("staticip <config>"));
-      Serial.println(F("   <config> is four ip address separated by spaces"));
+      Serial.println(F("   <config> is four ip addresses separated by spaces"));
       Serial.println(F("      <param1> static ip address, e.g. 192.168.1.17"));
       Serial.println(F("      <param2> netmask, e.g. 255.255.255.0"));      
       Serial.println(F("      <param3> default gateway ip address, e.g. 192.168.1.1"));      
