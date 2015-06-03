@@ -366,12 +366,21 @@ void setup() {
   
   valid_ssid_passed = valid_ssid_config();  
   uint8_t target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
-  boolean ok_to_exit_config_mode = true;  
+  boolean ok_to_exit_config_mode = true;
   
   // config mode processing loop
   do{
     // check for initial integrity of configuration in eeprom
-    if(!integrity_check_passed) {      
+    if(mode_requires_wifi(target_mode) && !valid_ssid_passed){
+      Serial.println(F("Info: No valid SSID configured, automatically falling back to CONFIG mode."));
+      configInject("aqe\r");
+      Serial.println();
+      setLCD_P(PSTR("   VALID SSID   "
+                    "    REQUIRED    "));
+      mode = MODE_CONFIG;
+      allowed_to_write_config_eeprom = true;
+    }
+    else if(!integrity_check_passed) {      
       Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
       configInject("aqe\r");
       Serial.println();
@@ -379,16 +388,7 @@ void setup() {
                     "  CHECK FAILED  "));
       mode = MODE_CONFIG;
       allowed_to_write_config_eeprom = true;   
-    }
-    else if(mode_requires_wifi(target_mode) && !valid_ssid_passed){
-      Serial.println(F("Info: No valid SSID configured, automatically falling back to CONFIG mode."));
-      configInject("aqe\r");
-      Serial.println();
-      setLCD_P(PSTR("   VALID SSID   "
-                    "    REQUIRED    "));      
-      mode = MODE_CONFIG;
-      allowed_to_write_config_eeprom = true;
-    }
+    }    
     else {
       // if the appropriate escape sequence is received within 8 seconds
       // go into config mode
@@ -569,16 +569,7 @@ void setup() {
     // it's an opportunity to mirror the eeprom configuration
     // if it's different from what's already there
     // importantly this check only happens at startup    
-    if(!mirrored_config_matches_eeprom_config()){      
-      mirrored_config_copy_from_eeprom(); // create a valid mirrored config from the current settings             
-      if(!mirrored_config_integrity_check()){
-        Serial.println(F("Error: Mirrored configuration commit failed to validate.")); 
-        //TODO: should something be written to the LCD here?
-      }
-    }
-    else{
-      Serial.println(F("Info: Mirrored configuration already matches current configuration.")); 
-    }
+    commitConfigToMirroredConfig();
   
     // Check for Firmware Updates 
     checkForFirmwareUpdates();
@@ -606,6 +597,11 @@ void setup() {
     }
     delayForWatchdog();
     petWatchdog();
+  }
+  else{
+    // it's a mode that doesn't require Wi-Fi
+    // save settings as necessary
+    commitConfigToMirroredConfig();
   }
   
   // get the temperature units
@@ -1873,7 +1869,7 @@ void initialize_eeprom_value(char * arg) {
       ERROR_MESSAGE_DELAY();
     }
     
-    lcd.clear();    
+    clearLCD();   
     setLCD_P(PSTR("  CONFIG MODE"));    
   }
   else {
@@ -3001,22 +2997,36 @@ void setLCD_P(const char * str PROGMEM){
 //}
 
 void repaintLCD(void){
-  lcd.clear();
+  static char last_painted[2][17] = {
+    "                ",
+    "                "
+  };
   
-  //dumpDisplayBuffer();
+  //dumpDisplayBuffer();      
+  //  if(strlen((char *) &(g_lcd_buffer[0])) <= 16){
+  //    lcd.setCursor(0,0);    
+  //    lcd.print((char *) &(g_lcd_buffer[0]));
+  //  }
+  //  
+  //  if(strlen((char *) &(g_lcd_buffer[1])) <= 16){
+  //    lcd.setCursor(0,1);    
+  //    lcd.print((char *) &(g_lcd_buffer[1])); 
+  //  }    
+
+  char tmp[2] = " ";
+  for(uint8_t line = 0; line < 2; line++){
+    for(uint8_t column = 0; column < 16; column++){
+      if(last_painted[line][column] != g_lcd_buffer[line][column]){
+        tmp[0] = g_lcd_buffer[line][column];
+        lcd.setCursor(column, line);
+        lcd.print(tmp);
+      }
+      last_painted[line][column] = g_lcd_buffer[line][column];
+    } 
+  }  
   
   g_lcd_buffer[0][16] = '\0'; // ensure null termination
-  g_lcd_buffer[1][16] = '\0'; // ensure null termination      
-  
-  if(strlen((char *) &(g_lcd_buffer[0])) <= 16){
-    lcd.setCursor(0,0);    
-    lcd.print((char *) &(g_lcd_buffer[0]));
-  }
-  
-  if(strlen((char *) &(g_lcd_buffer[1])) <= 16){
-    lcd.setCursor(0,1);    
-    lcd.print((char *) &(g_lcd_buffer[1])); 
-  }    
+  g_lcd_buffer[1][16] = '\0'; // ensure null termination  
 }
 
 void setLCD(const char * str){
@@ -3056,6 +3066,8 @@ void clearLCD(){
   memset((uint8_t *) &(g_lcd_buffer[1]), ' ', 16);
   g_lcd_buffer[0][16] = '\0';
   g_lcd_buffer[1][16] = '\0';  
+  lcd.clear();
+  repaintLCD();
 }
 
 boolean index_of(char ch, char * str, uint16_t * index){
@@ -3460,6 +3472,8 @@ boolean restartWifi(){
     //   Serial.println(F("Error setting up MDNS responder!"));
     //   while(1);     
     // }    
+    
+    clearLCD();
   }
   
   return connectedToNetwork();
@@ -3700,8 +3714,7 @@ boolean mqttReconnect(void){
 
      mqtt_client.setBrokerIP(mqtt_server_ip);
      mqtt_client.setPort(mqtt_port);
-     mqtt_client.setClient(wifiClient);
-          
+     mqtt_client.setClient(wifiClient);          
    }
    else{
      loop_return_flag = mqtt_client.loop();
@@ -3720,7 +3733,8 @@ boolean mqttReconnect(void){
        Serial.print(F("Without Authentication..."));
        connect_status = mqtt_client.connect(mqtt_client_id);
      }
-     
+
+     clearLCD();         
      if (connect_status) {
        Serial.println(F("OK."));
        return true;
@@ -4122,9 +4136,7 @@ void loop_wifi_mqtt_mode(void){
     if(connectedToNetwork()){
       num_mqtt_intervals_without_wifi = 0;
       
-      if(mqttReconnect()){ 
-        clearLCD();
-        
+      if(mqttReconnect()){         
         updateLCD("TEMP ", 0, 0, 5);
         updateLCD("RH ", 10, 0, 3);         
         updateLCD("NO2 ", 0, 1, 4);
@@ -4967,6 +4979,19 @@ void getCurrentFirmwareSignature(void){
 }
 
 /****** CONFIGURATION MIRRORING SUPPORT FUNCTIONS ******/
+void commitConfigToMirroredConfig(void){
+  if(!mirrored_config_matches_eeprom_config()){      
+    mirrored_config_copy_from_eeprom(); // create a valid mirrored config from the current settings             
+    if(!mirrored_config_integrity_check()){
+      Serial.println(F("Error: Mirrored configuration commit failed to validate.")); 
+      //TODO: should something be written to the LCD here?
+    }
+  }
+  else{
+    Serial.println(F("Info: Mirrored configuration already matches current configuration.")); 
+  } 
+}
+
 boolean mirrored_config_matches_eeprom_config(void){
   boolean ret = false;
   uint8_t mirrored_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
