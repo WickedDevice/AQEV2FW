@@ -90,6 +90,11 @@ boolean init_no2_adc_ok = false;
 boolean init_spi_flash_ok = false;
 boolean init_cc3000_ok = false;
 
+#define BACKLIGHT_OFF_AT_STARTUP (0)
+#define BACKLIGHT_ON_AT_STARTUP  (1)
+#define BACKLIGHT_ALWAYS_ON      (2)
+#define BACKLIGHT_ALWAYS_OFF     (3)
+
 // the software's operating mode
 #define MODE_CONFIG      (1)
 #define MODE_OPERATIONAL (2)
@@ -135,6 +140,8 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_UPDATE_FILENAME    (EEPROM_TEMPERATURE_UNITS - 32) // 32-bytes for the update server filename (excluding the implied extension)
 #define EEPROM_TEMPERATURE_OFFSET (EEPROM_UPDATE_FILENAME - 4)    // float value, 4-bytes, the offset applied to the sensor for reporting
 #define EEPROM_HUMIDITY_OFFSET    (EEPROM_TEMPERATURE_OFFSET - 4) // float value, 4-bytes, the offset applied to the sensor for reporting
+#define EEPROM_BACKLIGHT_DURATION (EEPROM_HUMIDITY_OFFSET - 2)    // integer value, 2-bytes, how long, in seconds the backlight should stay on when it turns on
+#define EEPROM_BACKLIGHT_STARTUP  (EEPROM_BACKLIGHT_DURATION - 1) // boolean value, whether or not the backlight should turn on at startup
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
@@ -208,6 +215,7 @@ void set_operational_mode(char * arg);
 void set_temperature_units(char * arg);
 void set_update_filename(char * arg);
 void force_command(char * arg);
+void set_backlight_behavior(char * arg);
 
 // Note to self:
 //   When implementing a new parameter, ask yourself:
@@ -259,6 +267,7 @@ char * commands[] = {
   "tempunit   ",
   "updatefile ",
   "force      ",
+  "backlight  ",
   0
 };
 
@@ -294,6 +303,7 @@ void (*command_functions[])(char * arg) = {
   set_temperature_units,
   set_update_filename,
   force_command,
+  set_backlight_behavior,
   0
 };
 
@@ -725,7 +735,13 @@ void initializeHardware(void) {
   Serial.println(F("OK."));
 
   pinMode(A6, OUTPUT);
-  backlightOn();
+  uint8_t backlight_behavior = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
+  if((BACKLIGHT_ON_AT_STARTUP == backlight_behavior) || (backlight_behavior == BACKLIGHT_ALWAYS_ON)){
+    backlightOn();
+  }
+  else{
+    backlightOff();
+  }
 
   // smiley face
   byte smiley[8] = {
@@ -1177,6 +1193,7 @@ void help_menu(char * arg) {
       Serial.println(F("      key - lol, sorry, that's also not happening!"));
       Serial.println(F("      opmode - the Operational Mode the Egg is configured for"));
       Serial.println(F("      tempunit - the unit of measure Temperature is reported in (F or C)"));      
+      Serial.println(F("      backlight - the backlight behavior settings (duration, mode)"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));
     }
@@ -1195,6 +1212,8 @@ void help_menu(char * arg) {
       Serial.println(F("                   performs 'use dhcp'"));
       Serial.println(F("                   performs 'opmode normal'"));
       Serial.println(F("                   performs 'tempunit C'"));      
+      Serial.println(F("                   performs 'backlight 60'"));
+      Serial.println(F("                   performs 'backlight initon'"));      
       Serial.println(F("                   performs 'mqttsrv opensensors.io'"));
       Serial.println(F("                   performs 'mqttport 1883'"));           
       Serial.println(F("                   performs 'mqttauth enable'"));        
@@ -1402,6 +1421,15 @@ void help_menu(char * arg) {
       Serial.println(F("   <unit> is one of:"));      
       Serial.println(F("      C - report temperature in Celsius"));
       Serial.println(F("      F - report temperature in Fahrenheit"));
+    }
+    else if (strncmp("backlight", arg, 9) == 0){
+      Serial.println(F("backlight <config>"));
+      Serial.println(F("   <config> is one of:"));      
+      Serial.println(F("      <seconds> - the whole number interval, in seconds, to keep the backlight on for when engaged"));
+      Serial.println(F("      initoff - makes the backlight off at startup"));      
+      Serial.println(F("      initon - makes the backlight on at startup"));            
+      Serial.println(F("      alwayson - makes the backlight always on"));            
+      Serial.println(F("      alwaysoff - makes the backlight always off"));                  
     }
     else {
       Serial.print(F("Error: There is no help available for command \""));
@@ -1669,6 +1697,27 @@ void print_eeprom_temperature_units(){
   }  
 }
 
+void print_eeprom_backlight(){   
+  uint16_t backlight_duration = eeprom_read_word((uint16_t *) EEPROM_BACKLIGHT_DURATION);
+  uint8_t backlight_startup = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
+  Serial.print(backlight_duration);
+  Serial.print(F(" seconds, "));
+  switch(backlight_startup){
+    case BACKLIGHT_ON_AT_STARTUP:
+      Serial.println(F("ON at startup"));
+      break;
+    case BACKLIGHT_OFF_AT_STARTUP:
+      Serial.println(F("OFF at startup"));    
+      break;
+    case BACKLIGHT_ALWAYS_ON:
+      Serial.println(F("always ON"));    
+      break;
+    case BACKLIGHT_ALWAYS_OFF:
+      Serial.println(F("always OFF"));        
+      break;
+  }   
+}
+
 void print_eeprom_value(char * arg) {
   if (strncmp(arg, "mac", 3) == 0) {
     print_eeprom_mac();
@@ -1730,6 +1779,9 @@ void print_eeprom_value(char * arg) {
   else if(strncmp(arg, "tempunit", 8) == 0) {
      print_eeprom_temperature_units();
   }
+  else if(strncmp(arg, "backlight", 9) == 0) {
+    print_eeprom_backlight();
+  }
   else if(strncmp(arg, "updatesrv", 9) == 0) {
     print_eeprom_string((const char *) EEPROM_UPDATE_SERVER_NAME);    
   }  
@@ -1748,6 +1800,8 @@ void print_eeprom_value(char * arg) {
     print_eeprom_operational_mode(eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE));
     Serial.print(F("    Temperature Units: "));
     print_eeprom_temperature_units();
+    Serial.print(F("    Backlight Settings: "));
+    print_eeprom_backlight();
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | Network Settings:                                           |"));
     Serial.println(F(" +-------------------------------------------------------------+"));
@@ -1904,6 +1958,8 @@ void restore(char * arg) {
     configInject("use dhcp\r");
     configInject("opmode normal\r");
     configInject("tempunit C\r");    
+    configInject("backlight 60\r");
+    configInject("backlight initon\r");
     configInject("mqttsrv opensensors.io\r");
     configInject("mqttport 1883\r");        
     configInject("mqttauth enable\r");    
@@ -2051,6 +2107,57 @@ void restore(char * arg) {
     recomputeAndStoreConfigChecksum();
   }
 
+}
+
+void set_backlight_behavior(char * arg){
+  boolean valid = true;  
+  
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
+  lowercase(arg);
+  
+  if(strncmp(arg, "initon", 6) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP, BACKLIGHT_ON_AT_STARTUP);
+  }
+  else if(strncmp(arg, "initoff", 7) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP, BACKLIGHT_OFF_AT_STARTUP);
+  }
+  else if(strncmp(arg, "alwayson", 8) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP, BACKLIGHT_ALWAYS_ON);
+  }
+  else if(strncmp(arg, "alwaysoff", 9) == 0){
+    eeprom_write_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP, BACKLIGHT_ALWAYS_OFF);
+  }  
+  else{ 
+    boolean arg_contains_only_digits = true;
+    char * ptr = arg;
+    uint16_t arglen = strlen(arg);    
+    for(uint16_t ii = 0; ii < arglen; ii++){
+      if(!isdigit(arg[ii])){
+        arg_contains_only_digits = true;
+        break; 
+      }
+    }
+    
+    if(arg_contains_only_digits){
+      uint32_t duration = (uint32_t) strtoul(arg, NULL, 10);
+      if(duration < 0xFFFF){
+        eeprom_write_word((uint16_t *) EEPROM_BACKLIGHT_DURATION, (uint16_t) duration);
+      }
+    }
+    else{
+      valid = false;
+      Serial.print(F("Error: Unexpected paramater name \""));
+      Serial.print(arg);
+      Serial.println(F("\""));      
+    }
+  }
+  
+  if (valid) {
+    recomputeAndStoreConfigChecksum();
+  }  
 }
 
 void set_mac_address(char * arg) {
@@ -2934,11 +3041,17 @@ void safe_dtostrf(float value, signed char width, unsigned char precision, char 
 }
 
 void backlightOn(void) {
-  digitalWrite(A6, HIGH);
+  uint8_t backlight_behavior = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
+  if(backlight_behavior != BACKLIGHT_ALWAYS_OFF){
+    digitalWrite(A6, HIGH);
+  }
 }
 
 void backlightOff(void) {
-  digitalWrite(A6, LOW);
+  uint8_t backlight_behavior = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
+  if(backlight_behavior != BACKLIGHT_ALWAYS_ON){
+    digitalWrite(A6, LOW);
+  }
 }
 
 void lcdFrownie(uint8_t pos_x, uint8_t pos_y){
@@ -3884,9 +3997,15 @@ void collectTouch(void){
 
 void processTouchVerbose(boolean verbose_output){
   const uint32_t touch_event_threshold = 85UL;  
+  static boolean first_time = true;
   static unsigned long touch_start_millis = 0UL;
-  const long backlight_interval = 60000L; 
-  static boolean backlight_is_on = false;;
+  long backlight_interval = 60000L; 
+  static boolean backlight_is_on = false;
+ 
+  if(first_time){
+    first_time = false;
+    backlight_interval = ((long) eeprom_read_word((uint16_t *) EEPROM_BACKLIGHT_DURATION)) * 1000;    
+  }
   
   float touch_moving_average = calculateAverage(touch_sample_buffer, TOUCH_SAMPLE_BUFFER_DEPTH); 
   if(verbose_output){
