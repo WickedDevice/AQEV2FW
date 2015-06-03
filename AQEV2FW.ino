@@ -16,7 +16,7 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 1
+#define AQEV2FW_PATCH_VERSION 2
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 #define DEVICE_NAME "CC3000" // this is used for smart config
@@ -375,8 +375,8 @@ void setup() {
       Serial.println(F("Info: No valid SSID configured, automatically falling back to CONFIG mode."));
       configInject("aqe\r");
       Serial.println();
-      setLCD_P(PSTR("   VALID SSID   "
-                    "    REQUIRED    "));
+      setLCD_P(PSTR("PLEASE CONFIGURE"
+                    "NETWORK SETTINGS"));
       mode = MODE_CONFIG;
       allowed_to_write_config_eeprom = true;
     }
