@@ -2,6 +2,10 @@
 #include <SPI.h>
 #include <WildFire.h>
 #include <WildFire_CC3000.h>
+#include <SD.h>
+#include <RTClib.h>
+#include <RTC_DS3231.h>
+#include <Time.h>
 #include <TinyWatchdog.h>
 #include <SHT25.h>
 #include <MCP342x.h>
@@ -36,6 +40,7 @@ byte mqtt_server_ip[4] = { 0 };
 PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
 WildFire_CC3000_Client wifiClient;
+RTC_DS3231 rtc;
 
 uint32_t update_server_ip32 = 0;
 char update_server_name[32] = {0};
@@ -89,6 +94,8 @@ boolean init_co_adc_ok = false;
 boolean init_no2_adc_ok = false;
 boolean init_spi_flash_ok = false;
 boolean init_cc3000_ok = false;
+boolean init_sdcard_ok = false;
+boolean init_rtc_ok = false;
 
 #define BACKLIGHT_OFF_AT_STARTUP (0)
 #define BACKLIGHT_ON_AT_STARTUP  (1)
@@ -216,7 +223,7 @@ void set_temperature_units(char * arg);
 void set_update_filename(char * arg);
 void force_command(char * arg);
 void set_backlight_behavior(char * arg);
-
+void AQE_set_datetime(char * arg);
 // Note to self:
 //   When implementing a new parameter, ask yourself:
 //     should there be a command for the user to set its value directly
@@ -268,6 +275,7 @@ char * commands[] = {
   "updatefile ",
   "force      ",
   "backlight  ",
+  "datetime   ",
   0
 };
 
@@ -304,6 +312,7 @@ void (*command_functions[])(char * arg) = {
   set_update_filename,
   force_command,
   set_backlight_behavior,
+  AQE_set_datetime,
   0
 };
 
@@ -807,6 +816,7 @@ void initializeHardware(void) {
 
   // Initialize slot select pins
   Serial.print(F("Info: Slot Select Pins Initialization..."));
+  pinMode(7, OUTPUT);
   pinMode(9, OUTPUT);
   pinMode(10, OUTPUT);
   selectNoSlot();
@@ -822,6 +832,17 @@ void initializeHardware(void) {
     Serial.println(F("Fail."));
     init_spi_flash_ok = false;
   }  
+  
+  // Initialize SD card
+  Serial.print(F("Info: SD Card Initialization..."));        
+  if (SD.begin(16)) {
+    Serial.println(F("OK."));     
+    init_sdcard_ok = true;        
+  }
+  else{
+    Serial.println(F("Fail.")); 
+    init_sdcard_ok = false;  
+  }
 
   getCurrentFirmwareSignature();
 
@@ -885,6 +906,20 @@ void initializeHardware(void) {
   else{
     Serial.println(F("Failed."));
     init_co_adc_ok = false;    
+  }
+
+  // Initialize SD card
+  Serial.print(F("Info: RTC Initialization..."));   
+  selectSlot3();  
+  rtc.begin();
+  if (rtc.isrunning()) {
+    Serial.println(F("OK."));   
+    setSyncProvider(AQE_now);  
+    init_rtc_ok = true;       
+  }
+  else{
+    Serial.println(F("Fail.")); 
+    init_rtc_ok = false;  
   }
 
   selectNoSlot();
@@ -1194,6 +1229,7 @@ void help_menu(char * arg) {
       Serial.println(F("      opmode - the Operational Mode the Egg is configured for"));
       Serial.println(F("      tempunit - the unit of measure Temperature is reported in (F or C)"));      
       Serial.println(F("      backlight - the backlight behavior settings (duration, mode)"));
+      Serial.println(F("      timestamp - the current timestamp in the format m/d/y h:m:s"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));
     }
@@ -1358,7 +1394,7 @@ void help_menu(char * arg) {
       Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
       Serial.println(F("            from getting firmware updates over the internet."));
     }    
-    else if (strncmp("backup", arg, 3) == 0) {
+    else if (strncmp("backup", arg, 6) == 0) {
       Serial.println(F("backup <param>"));
       Serial.println(F("   <param> is one of:"));
       Serial.println(F("      mqttpwd  - backs up the MQTT password"));
@@ -1421,6 +1457,10 @@ void help_menu(char * arg) {
       Serial.println(F("   <unit> is one of:"));      
       Serial.println(F("      C - report temperature in Celsius"));
       Serial.println(F("      F - report temperature in Fahrenheit"));
+    }
+    else if (strncmp("datetime", arg, 8) == 0) {
+      Serial.println(F("datetime <csv-date-time>"));
+      Serial.println(F("   <csv-date-time> is a comma separated date in the order month, day, year, hours, minutes, seconds"));    
     }
     else if (strncmp("backlight", arg, 9) == 0){
       Serial.println(F("backlight <config>"));
@@ -1782,6 +1822,10 @@ void print_eeprom_value(char * arg) {
   else if(strncmp(arg, "backlight", 9) == 0) {
     print_eeprom_backlight();
   }
+  else if(strncmp(arg, "timestamp", 9) == 0) {
+    printCurrentTimestamp();
+    Serial.println();
+  } 
   else if(strncmp(arg, "updatesrv", 9) == 0) {
     print_eeprom_string((const char *) EEPROM_UPDATE_SERVER_NAME);    
   }  
@@ -2158,6 +2202,122 @@ void set_backlight_behavior(char * arg){
   if (valid) {
     recomputeAndStoreConfigChecksum();
   }  
+}
+
+void AQE_set_datetime(char * arg){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  } 
+  
+  uint16_t len = strlen(arg);
+  uint8_t num_commas = 0;  
+  
+  for(uint16_t ii = 0; ii < len; ii++){
+    // if any character is not a space, comma, or digit it's unparseable
+    if((!isdigit(arg[ii])) && (arg[ii] != ' ') && (arg[ii] != ',')){
+      Serial.print(F("Error: Found invalid character '"));
+      Serial.print((char) arg[ii]);
+      Serial.print(F("'"));
+      Serial.println();
+      return;
+    }
+    
+    if(arg[ii] == ','){
+      num_commas++;
+    }
+  }
+ 
+  if(num_commas != 5){
+    Serial.print(F("Error: datetime expects exactly 6 values separated by commas, but received "));
+    Serial.print(num_commas - 1);
+    Serial.println();
+    return; 
+  }
+  
+  // ok we have six numeric arguments separated by commas, parse them
+  char tmp[32] = {0};  
+  strncpy(tmp, arg, 31); // copy the string so you don't mutilate the argument
+  char * token = strtok(tmp, ",");
+  uint8_t token_number = 0;  
+  uint8_t mo = 0, dy = 0, hr = 0, mn = 0, sc = 0;
+  uint16_t yr = 0;
+  
+  while (token != NULL) {
+    switch(token_number++){
+      case 0:
+        yr = (uint16_t) strtoul(token, NULL, 10);
+        if(yr < 2015){
+          Serial.print(F("Error: Year must be no earlier than 2015 [was ")); 
+          Serial.print(yr);
+          Serial.print(F("]"));
+          Serial.println();
+          return;
+        }
+        break;      
+      case 1:
+        mo = (uint8_t) strtoul(token, NULL, 10);
+        if(mo < 1 || mo > 12){
+          Serial.print(F("Error: Month must be between 1 and 12 [was ")); 
+          Serial.print(mo);
+          Serial.print(F("]"));
+          Serial.println();
+          return;
+        }
+        break;
+      case 2:
+        dy = (uint8_t) strtoul(token, NULL, 10);
+        if(dy < 1 || dy > 31){
+          Serial.print(F("Error: Day must be between 1 and 31 [was ")); 
+          Serial.print(dy);
+          Serial.print(F("]"));
+          Serial.println();
+          return;
+        }        
+        break;
+      case 3:
+        hr = (uint8_t) strtoul(token, NULL, 10);    
+        if(hr > 23){
+          Serial.print(F("Error: Hour must be between 0 and 23 [was ")); 
+          Serial.print(hr);
+          Serial.print(F("]"));
+          Serial.println();
+          return;
+        }        
+        break;
+      case 4:
+        mn = (uint8_t) strtoul(token, NULL, 10);  
+        if(mn > 59){
+          Serial.print(F("Error: Minute must be between 0 and 59 [was ")); 
+          Serial.print(mn);
+          Serial.print(F("]"));
+          Serial.println();
+          return;
+        }        
+        break;
+      case 5:
+        sc = (uint8_t) strtoul(token, NULL, 10);      
+        if(mn > 59){
+          Serial.print(F("Error: Second must be between 0 and 59 [was ")); 
+          Serial.print(sc);
+          Serial.print(F("]"));
+          Serial.println();
+          return;
+        }          
+        break;        
+    }
+    token = strtok(NULL, ",");
+  }
+  
+  // if we have an RTC set the time in the RTC
+  DateTime datatime(yr,mo,dy,hr,mn,sc);
+  if(init_rtc_ok){
+    selectSlot3();
+    rtc.adjust(datatime);
+  }
+  
+  // at any rate sync the time to this
+  setTime(datatime.unixtime());
+  
 }
 
 void set_mac_address(char * arg) {
@@ -2970,6 +3130,7 @@ uint16_t computeChecksum(uint8_t * ram_start_address, uint16_t num_bytes) {
 /****** GAS SENSOR SUPPORT FUNCTIONS ******/
 
 void selectNoSlot(void) {
+  digitalWrite(7, LOW);
   digitalWrite(9, LOW);
   digitalWrite(10, LOW);
 }
@@ -2984,6 +3145,10 @@ void selectSlot2(void) {
   digitalWrite(9, HIGH);
 }
 
+void selectSlot3(void){
+  selectNoSlot();
+  digitalWrite(7, HIGH); 
+}
 /****** LCD SUPPORT FUNCTIONS ******/
 void safe_dtostrf(float value, signed char width, unsigned char precision, char * target_buffer, uint16_t target_buffer_length){
   char tmp[32] = {0}; // working buffer, don't modify real buffer until we know it fits in width
@@ -4632,7 +4797,7 @@ void printCsvDataLine(const char * augmented_header){
   }  
   
   Serial.print(F("csv: "));
-  Serial.print(current_millis);
+  printCurrentTimestamp();
   Serial.print(F(","));
   
   if(temperature_ready){
@@ -5209,6 +5374,29 @@ void mirrored_config_erase(void){
 
 void get_mirrored_config(uint8_t * config_buffer){
   flash.readBytes(SECOND_TO_LAST_4K_PAGE_ADDRESS, config_buffer, EEPROM_CONFIG_MEMORY_SIZE);
+}
+
+/****** TIMESTAMPING SUPPORT FUNCTIONS ******/
+time_t AQE_now(void){
+  selectSlot3();
+  DateTime t = rtc.now();
+  return (time_t) t.unixtime();
+}
+
+void currentTimestamp(char * dst, uint16_t max_len){
+  snprintf(dst, max_len, "%d/%d/%d %d:%d:%d", 
+    month(),
+    day(),
+    year(),
+    hour(),
+    minute(),
+    second());
+}
+
+void printCurrentTimestamp(void){
+  char datetime[32] = {0};
+  currentTimestamp(datetime, 31);
+  Serial.print(datetime);
 }
 
 /*
