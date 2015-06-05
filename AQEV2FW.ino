@@ -225,6 +225,9 @@ void set_update_filename(char * arg);
 void force_command(char * arg);
 void set_backlight_behavior(char * arg);
 void AQE_set_datetime(char * arg);
+void list_command(char * arg);
+void download_command(char * arg);
+void delete_command(char * arg);
 // Note to self:
 //   When implementing a new parameter, ask yourself:
 //     should there be a command for the user to set its value directly
@@ -277,6 +280,9 @@ char * commands[] = {
   "force      ",
   "backlight  ",
   "datetime   ",
+  "list       ",
+  "download   ",
+  "delete     ",
   0
 };
 
@@ -314,6 +320,9 @@ void (*command_functions[])(char * arg) = {
   force_command,
   set_backlight_behavior,
   AQE_set_datetime,
+  list_command,
+  download_command,
+  delete_command,
   0
 };
 
@@ -1315,6 +1324,19 @@ void help_menu(char * arg) {
       Serial.println(F("      dhcp - wipes the Static IP address from the EEPROM"));
       warn_could_break_connect();      
     }
+    else if (strncmp("list", arg, 4) == 0) {
+      Serial.println(F("list <param>"));
+      Serial.println(F("   <param> is one of:"));
+      Serial.println(F("      files - lists all files on the sd card (if inserted)"));   
+    }
+    else if (strncmp("download", arg, 8) == 0) {
+      Serial.println(F("download <filename>"));
+      Serial.println(F("   prints the contents of the named file to the console."));
+    }   
+    else if (strncmp("delete", arg, 6) == 0) {
+      Serial.println(F("delete <filename>"));
+      Serial.println(F("   deletes the named file from the SD card."));
+    }       
     else if (strncmp("force", arg, 5) == 0) {
       Serial.println(F("force <param>"));
       Serial.println(F("   <param> is one of:"));
@@ -2680,9 +2702,83 @@ void force_command(char * arg){
   else {
     Serial.print(F("Error: Invalid parameter provided to 'force' command - \""));
     Serial.print(arg);
-    Serial.println("\"");
+    Serial.println(F("\""));
     return;
   }  
+}
+
+void printDirectory(File dir, int numTabs) {
+   for(;;){     
+     File entry =  dir.openNextFile();
+     if (! entry) {
+       // no more files
+       break;
+     }
+     for (uint8_t i=0; i<numTabs; i++) {
+       Serial.print(F("\t"));
+     }
+     Serial.print(entry.name());
+     if (entry.isDirectory()) {
+       Serial.println(F("/"));
+       printDirectory(entry, numTabs+1);
+     } else {
+       // files have sizes, directories do not
+       Serial.print(F("\t"));
+       Serial.print(F("\t"));       
+       Serial.println(entry.size(), DEC);
+     }
+     entry.close();
+   }
+}
+
+void list_command(char * arg){
+  if (strncmp("files", arg, 5) == 0){
+    if(init_sdcard_ok){
+      File root = SD.open("/");
+      printDirectory(root, 0);      
+    }
+    else{
+      Serial.println(F("Error: SD Card is not initialized, can't list files."));
+    }    
+  }
+  else{
+    Serial.print(F("Error: Invalid parameter provided to 'list' command - \""));
+    Serial.print(arg);
+    Serial.println(F("\""));
+  }
+}
+
+void download_command(char * arg){
+  if(arg != NULL){
+    File dataFile = SD.open(arg);
+    if (dataFile) {
+      while (dataFile.available()) {
+        Serial.write(dataFile.read());
+      }
+      dataFile.close();      
+    }
+    else {
+      Serial.print("Error: Failed to open file named \"");
+      Serial.print(arg);
+      Serial.print(F("\""));
+    }    
+  }
+  Serial.println();  
+}
+
+void delete_command(char * arg){
+  if(arg != NULL){
+    if (SD.remove(arg)) {
+      Serial.print("Info: Removed file named \"");
+      Serial.print(arg);
+      Serial.println(F("\""));
+    }
+    else {
+      Serial.print("Error: Failed to delete file named \"");
+      Serial.print(arg);
+      Serial.println(F("\""));
+    }    
+  }
 }
 
 void set_mqtt_password(char * arg) {
@@ -2954,7 +3050,7 @@ void backup(char * arg) {
     valid = false;
     Serial.print(F("Error: Invalid parameter provided to 'backup' command - \""));
     Serial.print(arg);
-    Serial.println("\"");
+    Serial.println(F("\""));
   }
 
   if (valid) {
@@ -4797,15 +4893,15 @@ void printCsvDataLine(const char * augmented_header){
   uint16_t dataStringRemaining = 511;                  
   
   if(first){
-    char * header_row = "csv: "
-                   "Timestamp,"
+    char * header_row = "Timestamp,"
                    "Temperature[degC],"
                    "Humidity[percent],"                   
                    "NO2[ppb],"                    
                    "CO[ppm],"      
                    "NO2[V]," 
                    "CO[V]";        
-    first = false;                
+    first = false;      
+    Serial.print(F("csv: "));    
     Serial.print(header_row);
     appendToString(header_row, dataString, &dataStringRemaining);
           
@@ -4818,7 +4914,7 @@ void printCsvDataLine(const char * augmented_header){
     }
     
     Serial.println();
-    appendToString("\r\n", dataString, &dataStringRemaining);  
+    appendToString("\n", dataString, &dataStringRemaining);  
   }  
   
   Serial.print(F("csv: "));
@@ -4906,7 +5002,7 @@ void printCsvDataLine(const char * augmented_header){
   }
   else{
     Serial.println();
-    appendToString("\r\n", dataString, &dataStringRemaining);  
+    appendToString("\n", dataString, &dataStringRemaining);  
   }
   
   if((mode == SUBMODE_OFFLINE) && init_sdcard_ok){
