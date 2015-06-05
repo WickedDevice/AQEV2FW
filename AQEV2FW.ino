@@ -108,6 +108,7 @@ boolean init_rtc_ok = false;
 // submodes of normal behavior
 #define SUBMODE_NORMAL   (3)
 #define SUBMODE_ZEROING  (4)
+#define SUBMODE_OFFLINE  (5)
 
 uint8_t mode = MODE_OPERATIONAL;
 
@@ -319,10 +320,6 @@ void (*command_functions[])(char * arg) = {
 // tiny watchdog timer intervals
 unsigned long previous_tinywdt_millis = 0;
 const long tinywdt_interval = 1000;
-
-// mqtt publish timer intervals
-unsigned long previous_mqtt_publish_millis = 0;
-const long mqtt_publish_interval = 5000;
 
 // sensor sampling timer intervals
 unsigned long previous_sensor_sampling_millis = 0;
@@ -634,7 +631,7 @@ void setup() {
                   "NO2  ---  CO ---"));           
     SUCCESS_MESSAGE_DELAY();                      
   }
-  else{
+  else if(mode == SUBMODE_ZEROING){
     setLCD_P(PSTR("ZERO-ING SENSORS"
                   "NO2  ---  CO ---"));           
     SUCCESS_MESSAGE_DELAY();                            
@@ -669,23 +666,9 @@ void loop() {
     case SUBMODE_ZEROING: 
       loop_zeroing_mode();
       break;
-      // TODO: commenting the following code out because we aren't currently implementing
-      // an automatic termination from zero-ing mode
-      // 
-      //      if(loop_zeroing_mode()){
-      //        mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
-      //        if(mode != SUBMODE_NORMAL){
-      //          eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);
-      //          recomputeAndStoreConfigChecksum();        
-      //        }
-      //        
-      //        // reset because Zero-ing is complete
-      //        updateLCD("COMPLETE", 1);
-      //        lcdSmiley(15, 1);
-      //        SUCCESS_MESSAGE_DELAY();                
-      //        watchdogForceReset();
-      //      }
-      //      break;
+    case SUBMODE_OFFLINE:
+      loop_offline_mode();
+      break;
     default: // unkown operating mode, nothing to be done 
       break;
   }
@@ -1451,6 +1434,8 @@ void help_menu(char * arg) {
       Serial.println(F("      normal - publish data to MQTT server over Wi-Fi"));
       Serial.println(F("      zero - perform sensor zero-ing function, and resume normal mode when complete."));
       Serial.println(F("             Note: This process may take several hours to complete from cold start."));      
+      Serial.println(F("      offline - this mode writes data to an installed microSD card, creating one file per day, "));
+      Serial.println(F("                named by convention YYYYMMDD.csv, intended to be used in conjunction with RTC module"));
     }    
     else if (strncmp("tempunit", arg, 8) == 0) {
       Serial.println(F("tempunit <unit>"));
@@ -1706,6 +1691,9 @@ void print_eeprom_operational_mode(uint8_t opmode){
     case SUBMODE_ZEROING:
       Serial.println(F("Zeroing"));
       break;
+    case SUBMODE_OFFLINE:
+      Serial.println(F("Offline"));
+      break;
     default:
       Serial.print(F("Error: Unknown operational mode [0x"));
       if (opmode < 0x10) {
@@ -1823,7 +1811,7 @@ void print_eeprom_value(char * arg) {
     print_eeprom_backlight();
   }
   else if(strncmp(arg, "timestamp", 9) == 0) {
-    printCurrentTimestamp();
+    printCurrentTimestamp(NULL, NULL);
     Serial.println();
   } 
   else if(strncmp(arg, "updatesrv", 9) == 0) {
@@ -2489,6 +2477,9 @@ void set_operational_mode(char * arg) {
   }
   else if (strncmp("zero", arg, 4) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_ZEROING);
+  }
+  else if (strncmp("offline", arg, 7) == 0) {
+    eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_OFFLINE);
   }
   else {
     Serial.print(F("Error: Invalid operational mode entered - \""));
@@ -4411,7 +4402,11 @@ void watchdogInitialize(void){
 void loop_wifi_mqtt_mode(void){
   static uint8_t num_mqtt_connect_retries = 0;
   static uint8_t num_mqtt_intervals_without_wifi = 0; 
-
+  
+  // mqtt publish timer intervals
+  static unsigned long previous_mqtt_publish_millis = 0;
+  static const long mqtt_publish_interval = 5000;
+  
   if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){   
     previous_mqtt_publish_millis = current_millis;      
     
@@ -4745,6 +4740,20 @@ boolean loop_zeroing_mode(void){
   return complete;
 }
 
+void loop_offline_mode(void){
+  
+  // write record timer intervals
+  static unsigned long previous_write_record_millis = 0;
+  static const long write_record_interval = 5000;  
+
+  if(current_millis - previous_write_record_millis >= write_record_interval){   
+    previous_write_record_millis = current_millis;
+    printCsvDataLine(NULL);
+  }  
+}
+
+/****** SIGNAL PROCESSING MATH SUPPORT FUNCTIONS ******/
+
 float calculateAverage(float * buf, uint16_t num_samples){
   float average = 0.0f;
   for(uint16_t ii = 0; ii < num_samples; ii++){
@@ -4778,81 +4787,152 @@ void calculateBestFit(float * x, float xmean, float * y, float ymean, uint16_t n
   *best_fit_intercept = ymean - (*best_fit_slope) * xmean;
 }
 
+// if the caller passes an augmented_header to printCsvDataLine
+// it's the caller's responsibility to terminate the line
+// otherwise printCsvDataLine will terminate the line implicitly
 void printCsvDataLine(const char * augmented_header){
   static boolean first = true;
+  char dataString[512] = {0};
+  uint16_t len = 0;
+  uint16_t dataStringRemaining = 511;                  
+  
   if(first){
-    first = false;
-    Serial.print(F("csv: "
-                   "Timestamp[milliseconds],"
+    char * header_row = "csv: "
+                   "Timestamp,"
                    "Temperature[degC],"
-                   "Humidity[percent],"
-                   "NO2[ppb],"
-                   "CO[ppm]"));
-                   
+                   "Humidity[percent],"                   
+                   "NO2[ppb],"                    
+                   "CO[ppm],"      
+                   "NO2[V]," 
+                   "CO[V]";        
+    first = false;                
+    Serial.print(header_row);
+    appendToString(header_row, dataString, &dataStringRemaining);
+          
     if(augmented_header != 0){
       Serial.print(F(","));
-      Serial.print(augmented_header); 
+      appendToString(",", dataString, &dataStringRemaining);
+
+      Serial.print(augmented_header);     
+      appendToString((char *) augmented_header, dataString, &dataStringRemaining);     
     }
+    
     Serial.println();
+    appendToString("\r\n", dataString, &dataStringRemaining);  
   }  
   
   Serial.print(F("csv: "));
-  printCurrentTimestamp();
+  printCurrentTimestamp(dataString, &dataStringRemaining);
   Serial.print(F(","));
+  appendToString("," , dataString, &dataStringRemaining);
   
   if(temperature_ready){
     temperature_degc = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
     float reported_temperature = temperature_degc - reported_temperature_offset_degC;
     if(temperature_units == 'F'){
       reported_temperature = toFahrenheit(reported_temperature);
-    }    
+    }
     Serial.print(reported_temperature, 2);
+    appendToString(reported_temperature, 2, dataString, &dataStringRemaining);
   }
   else{
     Serial.print(F("---"));
+    appendToString("---", dataString, &dataStringRemaining);
   }
+  
   Serial.print(F(","));
+  appendToString("," , dataString, &dataStringRemaining);
   
   if(humidity_ready){
     relative_humidity_percent = calculateAverage(humidity_sample_buffer, HUMIDITY_SAMPLE_BUFFER_DEPTH);
     Serial.print(relative_humidity_percent, 2);
+    appendToString(relative_humidity_percent, 2, dataString, &dataStringRemaining);
   }
   else{
     Serial.print(F("---"));
+    appendToString("---", dataString, &dataStringRemaining);
   }    
-  Serial.print(F(","));
   
+  Serial.print(F(","));
+  appendToString("," , dataString, &dataStringRemaining);
+  
+  float no2_moving_average = 0.0f;
   if(no2_ready){
     float converted_value = 0.0f, compensated_value = 0.0f;    
-    float no2_moving_average = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
+    no2_moving_average = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
     no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
     no2_ppb = compensated_value;      
     Serial.print(no2_ppb, 2);
+    appendToString(no2_ppb, 2, dataString, &dataStringRemaining);
   }
   else{
     Serial.print(F("---"));
+    appendToString("---", dataString, &dataStringRemaining);
   }
-  Serial.print(F(","));
   
-  if(co_ready){
-    
+  Serial.print(F(","));
+  appendToString("," , dataString, &dataStringRemaining);
+  
+  float co_moving_average = 0.0f;
+  if(co_ready){    
     float converted_value = 0.0f, compensated_value = 0.0f;   
-    float co_moving_average = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
+    co_moving_average = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
     co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
     co_ppm = compensated_value;     
     Serial.print(co_ppm, 2);
+    appendToString(co_ppm, 2, dataString, &dataStringRemaining);
   }
   else{
     Serial.print(F("---"));
+    appendToString("---", dataString, &dataStringRemaining);
   }   
+  
+  Serial.print(F(","));
+  appendToString("," , dataString, &dataStringRemaining);
+  
+  Serial.print(no2_moving_average, 6);
+  appendToString(no2_moving_average, 6, dataString, &dataStringRemaining);
+  
+  Serial.print(F(","));
+  appendToString("," , dataString, &dataStringRemaining);
+  
+  
+  Serial.print(co_moving_average, 6);
+  appendToString(co_moving_average, 6, dataString, &dataStringRemaining);
   
   if(augmented_header != 0){
     Serial.print(F(","));
+    appendToString("," , dataString, &dataStringRemaining);
   }
   else{
     Serial.println();
+    appendToString("\r\n", dataString, &dataStringRemaining);  
   }
   
+  if((mode == SUBMODE_OFFLINE) && init_sdcard_ok){
+    char filename[16] = {0};
+    getNowFilename(filename, 15);     
+    File dataFile = SD.open(filename, FILE_WRITE);
+    if (dataFile) {
+      dataFile.println(dataString);
+      dataFile.close();
+      setLCD_P(PSTR("  LOGGING DATA  "
+                    "   TO SD CARD   "));   
+    }
+    else {
+      Serial.print("Error: Failed to open SD card file named \"");
+      Serial.print(filename);
+      Serial.println(F("\""));
+      setLCD_P(PSTR("  SD CARD FILE  "
+                    "  OPEN FAILED   "));
+      lcdFrownie(15, 1);      
+    }
+  }
+  else if((mode == SUBMODE_OFFLINE) && !init_sdcard_ok){
+    setLCD_P(PSTR(" INITIALIZING SD "
+                  "   CARD FAILED   ")); 
+    lcdFrownie(15, 1);                  
+  }
 }
 
 boolean mode_requires_wifi(uint8_t opmode){
@@ -5384,19 +5464,47 @@ time_t AQE_now(void){
 }
 
 void currentTimestamp(char * dst, uint16_t max_len){
-  snprintf(dst, max_len, "%d/%d/%d %d:%d:%d", 
-    month(),
-    day(),
-    year(),
-    hour(),
-    minute(),
-    second());
+  time_t n = now();
+  
+  snprintf(dst, max_len, "%02d/%02d/%04d %02d:%02d:%02d", 
+    month(n),
+    day(n),
+    year(n),
+    hour(n),
+    minute(n),
+    second(n));
 }
 
-void printCurrentTimestamp(void){
+void printCurrentTimestamp(char * append_to, uint16_t * append_to_capacity_and_update){
   char datetime[32] = {0};
   currentTimestamp(datetime, 31);
   Serial.print(datetime);
+  
+  appendToString(datetime, append_to, append_to_capacity_and_update);  
+}
+
+void appendToString(char * str, char * append_to, uint16_t * append_to_capacity_and_update){
+  if(append_to != 0){
+    uint16_t len = strlen(str);
+    if(*append_to_capacity_and_update >= len){
+      strcat(append_to, str);
+      *append_to_capacity_and_update -= len;
+    }
+  }  
+}
+
+void appendToString(float val, uint8_t digits_after_decimal_point, char * append_to, uint16_t * append_to_capacity_and_update){
+  char temp[32] = {0};
+  safe_dtostrf(val, 0, digits_after_decimal_point, temp, 31);
+  appendToString(temp, append_to, append_to_capacity_and_update);
+}
+
+void getNowFilename(char * dst, uint16_t max_len){
+  time_t n = now();
+  snprintf(dst, max_len, "%04d%02d%02d.csv", 
+    year(n),
+    month(n),
+    day(n));
 }
 
 /*
