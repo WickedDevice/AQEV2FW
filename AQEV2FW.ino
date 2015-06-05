@@ -5010,7 +5010,7 @@ void printCsvDataLine(const char * augmented_header){
     getNowFilename(filename, 15);     
     File dataFile = SD.open(filename, FILE_WRITE);
     if (dataFile) {
-      dataFile.println(dataString);
+      dataFile.print(dataString);
       dataFile.close();
       setLCD_P(PSTR("  LOGGING DATA  "
                     "   TO SD CARD   "));   
