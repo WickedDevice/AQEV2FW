@@ -2749,7 +2749,7 @@ void list_command(char * arg){
 }
 
 void download_command(char * arg){
-  if(arg != NULL){
+  if(arg != NULL && init_sdcard_ok){
     File dataFile = SD.open(arg);
     if (dataFile) {
       while (dataFile.available()) {
@@ -2767,7 +2767,7 @@ void download_command(char * arg){
 }
 
 void delete_command(char * arg){
-  if(arg != NULL){
+  if(arg != NULL && init_sdcard_ok){
     if (SD.remove(arg)) {
       Serial.print("Info: Removed file named \"");
       Serial.print(arg);
