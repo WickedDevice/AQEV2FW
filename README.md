@@ -18,3 +18,5 @@ The baseline code for Air Quality Egg version 2 WildFire firmware
 * https://github.com/PaulStoffregen/Time
 * https://github.com/PaulStoffregen/CapacitiveSensor
 * https://github.com/arduino-libraries/LiquidCrystal
+* https://github.com/arduino-libraries/SD
+* https://github.com/mizraith/RTClib
