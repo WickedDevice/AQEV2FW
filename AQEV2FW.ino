@@ -5597,10 +5597,11 @@ void appendToString(float val, uint8_t digits_after_decimal_point, char * append
 
 void getNowFilename(char * dst, uint16_t max_len){
   time_t n = now();
-  snprintf(dst, max_len, "%04d%02d%02d.csv", 
-    year(n),
+  snprintf(dst, max_len, "%02d%02d%02d%02d.csv", 
+    year(n) % 100,
     month(n),
-    day(n));
+    day(n),
+    hour(n));
 }
 
 /*
