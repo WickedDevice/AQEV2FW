@@ -107,7 +107,7 @@ boolean init_rtc_ok = false;
 #define MODE_OPERATIONAL (2)
 // submodes of normal behavior
 #define SUBMODE_NORMAL   (3)
-#define SUBMODE_ZEROING  (4)
+// #define SUBMODE_ZEROING  (4) // deprecated for SUBMODE_OFFLINE
 #define SUBMODE_OFFLINE  (5)
 
 uint8_t mode = MODE_OPERATIONAL;
@@ -143,7 +143,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_MQTT_AUTH          (EEPROM_MQTT_CLIENT_ID - 1)     // MQTT authentication enabled, single byte value 0 = disabled or 1 = enabled
 #define EEPROM_MQTT_PORT          (EEPROM_MQTT_AUTH - 4)          // MQTT authentication enabled, reserve four bytes, even though you only need two for a port
 #define EEPROM_UPDATE_SERVER_NAME (EEPROM_MQTT_PORT - 32)         // string, the DNS name of the Firmware Update server (default update.wickeddevice.com), up to 32 characters (one of which is a null terminator)
-#define EEPROM_OPERATIONAL_MODE   (EEPROM_UPDATE_SERVER_NAME - 1) // operational mode encoded as a single byte value (e.g. NORMAL, ZEROING, etc.)
+#define EEPROM_OPERATIONAL_MODE   (EEPROM_UPDATE_SERVER_NAME - 1) // operational mode encoded as a single byte value (e.g. NORMAL, OFFLINE, etc.)
 #define EEPROM_TEMPERATURE_UNITS  (EEPROM_OPERATIONAL_MODE - 1)   // temperature units 'F' for Fahrenheit and 'C' for Celsius
 #define EEPROM_UPDATE_FILENAME    (EEPROM_TEMPERATURE_UNITS - 32) // 32-bytes for the update server filename (excluding the implied extension)
 #define EEPROM_TEMPERATURE_OFFSET (EEPROM_UPDATE_FILENAME - 4)    // float value, 4-bytes, the offset applied to the sensor for reporting
@@ -341,10 +341,6 @@ const long touch_sampling_interval = 200;
 // progress dots timer intervals  
 unsigned long previous_progress_dots_millis = 0;
 const long progress_dots_interval = 1000;
-
-// zero check timer intervals
-unsigned long previous_zero_check_millis = 0;
-const long zero_check_interval = 5000;
 
 #define NUM_HEARTBEAT_WAVEFORM_SAMPLES (84)
 const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
@@ -640,11 +636,6 @@ void setup() {
                   "NO2  ---  CO ---"));           
     SUCCESS_MESSAGE_DELAY();                      
   }
-  else if(mode == SUBMODE_ZEROING){
-    setLCD_P(PSTR("ZERO-ING SENSORS"
-                  "NO2  ---  CO ---"));           
-    SUCCESS_MESSAGE_DELAY();                            
-  }
 }
 
 void loop() {
@@ -671,9 +662,6 @@ void loop() {
   switch(mode){
     case SUBMODE_NORMAL:
       loop_wifi_mqtt_mode();
-      break;
-    case SUBMODE_ZEROING: 
-      loop_zeroing_mode();
       break;
     case SUBMODE_OFFLINE:
       loop_offline_mode();
@@ -1454,8 +1442,6 @@ void help_menu(char * arg) {
       Serial.println(F("opmode <mode>"));
       Serial.println(F("   <mode> is one of:"));
       Serial.println(F("      normal - publish data to MQTT server over Wi-Fi"));
-      Serial.println(F("      zero - perform sensor zero-ing function, and resume normal mode when complete."));
-      Serial.println(F("             Note: This process may take several hours to complete from cold start."));      
       Serial.println(F("      offline - this mode writes data to an installed microSD card, creating one file per day, "));
       Serial.println(F("                named by convention YYYYMMDD.csv, intended to be used in conjunction with RTC module"));
     }    
@@ -1709,9 +1695,6 @@ void print_eeprom_operational_mode(uint8_t opmode){
   switch (opmode) {
     case SUBMODE_NORMAL:
       Serial.println(F("Normal"));
-      break;
-    case SUBMODE_ZEROING:
-      Serial.println(F("Zeroing"));
       break;
     case SUBMODE_OFFLINE:
       Serial.println(F("Offline"));
@@ -2497,9 +2480,6 @@ void set_operational_mode(char * arg) {
   if (strncmp("normal", arg, 6) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);
   }
-  else if (strncmp("zero", arg, 4) == 0) {
-    eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_ZEROING);
-  }
   else if (strncmp("offline", arg, 7) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_OFFLINE);
   }
@@ -2507,7 +2487,7 @@ void set_operational_mode(char * arg) {
     Serial.print(F("Error: Invalid operational mode entered - \""));
     Serial.print(arg);
     Serial.println(F("\""));
-    Serial.println(F("       valid options are: 'normal', 'zero'"));
+    Serial.println(F("       valid options are: 'normal', 'offline'"));
     valid = false;
   }
 
@@ -4644,198 +4624,6 @@ void loop_wifi_mqtt_mode(void){
   }    
 }
 
-boolean loop_zeroing_mode(void){
-  static boolean first_time = true;
-  boolean complete = false;
-  boolean no2_zero_complete = false;
-  boolean co_zero_complete = false;
-  
-  const long no2_warmup_interval = 60000L * 30L; // 30 minutes
-  const long no2_convergence_interval = 60000L * 5L; // 5 minutes
-  static unsigned long no2_initial_millis_warmup_time = 0;
-  static unsigned long no2_initial_millis_convergence_time = 0;  
-  static boolean no2_warmup_complete = false;
-  float no2_best_fit_slope = 0.0f;
-  float no2_best_fit_intercept = 0.0f;
-  
-  const long co_warmup_interval = 60000L * 30L; // 30 minutes
-  const long co_convergence_interval = 60000L * 5L; // 5 minutes
-  static unsigned long co_initial_millis_warmup_time = 0;
-  static unsigned long co_initial_millis_convergence_time = 0;    
-  static boolean co_warmup_complete = false;
-  float co_best_fit_slope = 0.0f;
-  float co_best_fit_intercept = 0.0f;
-  
-  // the following buffers hold the window window of time over
-  // which the best fit least squares slope is calculated
-  // the depth is based on a sampling interval of 5 seconds
-  // as dictated by zero_check_interval, so 60 samples is 5 minutes
-  // 5 [minutes] * 60 [seconds/minute] / 5 [seconds/sample] = 60 samples
-  #define NO2_ZEROING_SAMPLE_BUFFER_DEPTH (60)
-  static uint16_t no2_zeroing_sample_buffer_index = 0;
-  static boolean no2_zeroing_sample_buffer_full = false;
-  static float no2_zeroing_sample_buffer[NO2_ZEROING_SAMPLE_BUFFER_DEPTH] = {0};  
-  static float no2_zeroing_time_buffer[NO2_ZEROING_SAMPLE_BUFFER_DEPTH] = {0};
-  
-  
-  #define CO_ZEROING_SAMPLE_BUFFER_DEPTH (60)
-  static uint16_t co_zeroing_sample_buffer_index = 0;  
-  static boolean co_zeroing_sample_buffer_full = false;  
-  static float co_zeroing_sample_buffer[CO_ZEROING_SAMPLE_BUFFER_DEPTH] = {0};
-  static float co_zeroing_time_buffer[CO_ZEROING_SAMPLE_BUFFER_DEPTH] = {0};    
-  
-  if(first_time){
-    no2_initial_millis_warmup_time = current_millis;
-    co_initial_millis_warmup_time = current_millis;    
-    first_time = false;
-  }
-  
-  if(current_millis - no2_initial_millis_warmup_time >= no2_warmup_interval){
-    no2_warmup_complete = true;
-  }  
-
-  if(current_millis - co_initial_millis_warmup_time >= co_warmup_interval){
-    co_warmup_complete = true;
-  }  
-  
-  if(current_millis - previous_zero_check_millis >= zero_check_interval){  
-    previous_zero_check_millis = current_millis;
-    // handle display updates
-    if(init_no2_afe_ok && init_no2_adc_ok){
-      if(no2_ready){
-        updateLCD(no2_ppb, 5, 1, 3);  
-      }
-      else{
-        updateLCD("---", 5, 1, 3); 
-      }
-    }
-    else{
-      updateLCD("XXX", 5, 1, 3); 
-    }
-    
-    if(init_no2_afe_ok && init_no2_adc_ok){
-      if(co_ready){
-        updateLCD(co_ppm, 13, 1, 3); 
-      }
-      else{
-        updateLCD("---", 13, 1, 3);  
-      }    
-    }
-    else{
-      updateLCD("XXX", 13, 1, 3);  
-    }
-    
-    // accrue moving average voltage samples
-    float no2_sample = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
-    no2_zeroing_sample_buffer[no2_zeroing_sample_buffer_index] = no2_sample;
-    no2_zeroing_time_buffer[no2_zeroing_sample_buffer_index] = current_millis / 1000.0f;
-    no2_zeroing_sample_buffer_index++;
-    if(no2_zeroing_sample_buffer_index >= NO2_ZEROING_SAMPLE_BUFFER_DEPTH){
-      no2_zeroing_sample_buffer_index = 0;
-      no2_zeroing_sample_buffer_full = true;
-    }
-    
-    float co_sample = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
-    co_zeroing_sample_buffer[co_zeroing_sample_buffer_index] = co_sample;
-    co_zeroing_time_buffer[co_zeroing_sample_buffer_index] = current_millis / 1000.0f;
-    co_zeroing_sample_buffer_index++;
-    if(co_zeroing_sample_buffer_index >= CO_ZEROING_SAMPLE_BUFFER_DEPTH){
-      co_zeroing_sample_buffer_index = 0; 
-      co_zeroing_sample_buffer_full = true;
-    }
-    
-    // output a line of CSV data, and augment the header row with statistics columns
-    printCsvDataLine("NO2_mean[V],NO2_stdev[V],NO2_slope[V/minute],NO2_intercept[V],CO_mean[V],CO_stdev[V],CO_slope[V/minute],CO_intercept[V],");
-    
-    // if enough samples have been collected, calculate statistics and augment the csv line
-    if(no2_zeroing_sample_buffer_full){      
-      float no2_mean = calculateAverage(no2_zeroing_sample_buffer, NO2_ZEROING_SAMPLE_BUFFER_DEPTH);
-      float no2_stdev = calculateStandardDeviation(no2_zeroing_sample_buffer, NO2_ZEROING_SAMPLE_BUFFER_DEPTH, no2_mean);
-      float time_mean = calculateAverage(no2_zeroing_time_buffer, NO2_ZEROING_SAMPLE_BUFFER_DEPTH);      
-      float no2_best_fit_slope = 0.0f;
-      float no2_best_fit_intercept = 0.0f;
-
-      calculateBestFit(no2_zeroing_time_buffer, time_mean,  // X-values and mean of X-values
-                       no2_zeroing_sample_buffer, no2_mean, // Y-values and mean of Y-values
-                       NO2_ZEROING_SAMPLE_BUFFER_DEPTH,     // number of data points
-                       &no2_best_fit_slope, &no2_best_fit_intercept); // outputs
-      
-      Serial.print(no2_mean, 8);
-      Serial.print(F(","));
-      Serial.print(no2_stdev, 8);  
-      Serial.print(F(","));
-      Serial.print(no2_best_fit_slope * 60.0f, 8); // converted from V/s to V/minute
-      Serial.print(F(","));
-      Serial.print(no2_best_fit_intercept, 8);
-      
-      if(no2_warmup_complete){
-        // we can start to consider convergence exit criteria
-        boolean no2_converging = false;        
-        const float best_fit_slope_epsilon = 0.01;
-        
-        if(!no2_converging){
-          no2_initial_millis_convergence_time = current_millis;
-        }
-        
-        if(current_millis - no2_initial_millis_convergence_time >= no2_convergence_interval){
-          no2_zero_complete = true;
-        }
-      }      
-    }
-    else{
-      // what to print before enough data has been collected for statistics
-      Serial.print(F("---,---,---,---"));      
-    }
-    Serial.print(F(","));       
-    
-    if(co_zeroing_sample_buffer_full){
-      float co_mean = calculateAverage(co_zeroing_sample_buffer, CO_ZEROING_SAMPLE_BUFFER_DEPTH);
-      float co_stdev = calculateStandardDeviation(co_zeroing_sample_buffer, CO_ZEROING_SAMPLE_BUFFER_DEPTH, co_mean); 
-      float time_mean = calculateAverage(co_zeroing_time_buffer, CO_ZEROING_SAMPLE_BUFFER_DEPTH);      
-      float co_best_fit_slope = 0.0f;
-      float co_best_fit_intercept = 0.0f;
-
-      calculateBestFit(co_zeroing_time_buffer, time_mean,  // X-values and mean of X-values
-                       co_zeroing_sample_buffer, co_mean, // Y-values and mean of Y-values
-                       CO_ZEROING_SAMPLE_BUFFER_DEPTH,     // number of data points
-                       &co_best_fit_slope, &co_best_fit_intercept); // outputs      
-      
-      Serial.print(co_mean, 8);
-      Serial.print(F(","));
-      Serial.print(co_stdev, 8);    
-      Serial.print(F(","));
-      Serial.print(co_best_fit_slope * 60.0f, 8);  // converted from V/s to V/minute
-      Serial.print(F(","));
-      Serial.print(co_best_fit_intercept, 8);
-      
-      if(co_warmup_complete){
-        // we can start to consider convergence exit criteria
-        boolean co_converging = false;
-
-        if(!co_converging){
-          co_initial_millis_convergence_time = current_millis;
-        }
-        
-        if(current_millis - co_initial_millis_convergence_time >= co_convergence_interval){
-          co_zero_complete = true;
-        } 
-      }                 
-    }
-    else{
-      // what to print before enough data has been collected for statistics
-      Serial.print(F("---,---,---,---"));       
-    } 
-    Serial.println();
-    // no trailing comma    
-  }
-  
-  if(no2_zero_complete && co_zero_complete){
-    complete = true; 
-  }
-  
-  return complete;
-}
-
 void loop_offline_mode(void){
   
   // write record timer intervals
@@ -4857,30 +4645,6 @@ float calculateAverage(float * buf, uint16_t num_samples){
   } 
   
   return average / num_samples;
-}
-
-float calculateStandardDeviation(float * buf, uint16_t num_samples, float mean){
-  float sum_of_squares_of_differences_from_mean = 0.0f;
-  for(uint16_t ii = 0; ii < num_samples; ii++){
-     float sample_difference_from_mean = (buf[ii] - mean);
-     sum_of_squares_of_differences_from_mean += sample_difference_from_mean * sample_difference_from_mean;
-  }
-  float average_sum_square_difference = sum_of_squares_of_differences_from_mean / num_samples;
-  return sqrt(average_sum_square_difference);
-}
-
-// calculates line of best fit, using least squares method
-void calculateBestFit(float * x, float xmean, float * y, float ymean, uint16_t num_values, float * best_fit_slope, float * best_fit_intercept){
-  float numerator = 0.0f;
-  float denominator = 0.0f;
-  
-  for(uint16_t ii = 0; ii < num_values; ii++){
-    numerator += (x[ii] - xmean) * (y[ii] - ymean);
-    denominator += (x[ii] - xmean) * (x[ii] - xmean);
-  }
-  
-  *best_fit_slope = numerator / denominator;
-  *best_fit_intercept = ymean - (*best_fit_slope) * xmean;
 }
 
 // if the caller passes an augmented_header to printCsvDataLine
