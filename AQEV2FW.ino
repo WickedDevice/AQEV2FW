@@ -623,6 +623,7 @@ void setup() {
     // it's a mode that doesn't require Wi-Fi
     // save settings as necessary
     commitConfigToMirroredConfig();
+    cc3000.stop(); // save power!
   }
   
   // get the temperature units
