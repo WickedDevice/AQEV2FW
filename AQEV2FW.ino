@@ -63,18 +63,17 @@ float relative_humidity_percent = 0.0f;
 float no2_ppb = 0.0f;
 float co_ppm = 0.0f;
 
-// samples are buffered approximately every two seconds
-#define NO2_SAMPLE_BUFFER_DEPTH (32)
-float no2_sample_buffer[NO2_SAMPLE_BUFFER_DEPTH] = {0};
+#define MAX_SAMPLE_BUFFER_DEPTH (240) // 20 minutes @ 5 second resolution
+#define NO2_SAMPLE_BUFFER         (0)
+#define CO_SAMPLE_BUFFER          (1)
+#define TEMPERATURE_SAMPLE_BUFFER (2)
+#define HUMIDITY_SAMPLE_BUFFER    (3)
+float sample_buffer[4][MAX_SAMPLE_BUFFER_DEPTH] = {0};
+uint16_t sample_buffer_idx = 0;
 
-#define CO_SAMPLE_BUFFER_DEPTH (32)
-float co_sample_buffer[CO_SAMPLE_BUFFER_DEPTH] = {0};
-
-#define TEMPERATURE_SAMPLE_BUFFER_DEPTH (16)
-float temperature_sample_buffer[TEMPERATURE_SAMPLE_BUFFER_DEPTH] = {0};
-
-#define HUMIDITY_SAMPLE_BUFFER_DEPTH (16)
-float humidity_sample_buffer[HUMIDITY_SAMPLE_BUFFER_DEPTH] = {0};
+uint32_t sampling_interval = 0;    // how frequently the sensorss are sampled
+uint16_t sample_buffer_depth = 0;  // how many samples are kept in memory for averaging
+uint32_t reporting_interval = 0;   // how frequently readings are reported (to wifi or console/sd)
 
 #define TOUCH_SAMPLE_BUFFER_DEPTH (4)
 float touch_sample_buffer[TOUCH_SAMPLE_BUFFER_DEPTH] = {0};
@@ -150,6 +149,9 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_HUMIDITY_OFFSET    (EEPROM_TEMPERATURE_OFFSET - 4) // float value, 4-bytes, the offset applied to the sensor for reporting
 #define EEPROM_BACKLIGHT_DURATION (EEPROM_HUMIDITY_OFFSET - 2)    // integer value, 2-bytes, how long, in seconds the backlight should stay on when it turns on
 #define EEPROM_BACKLIGHT_STARTUP  (EEPROM_BACKLIGHT_DURATION - 1) // boolean value, whether or not the backlight should turn on at startup
+#define EEPROM_SAMPLING_INTERVAL  (EEPROM_BACKLIGHT_STARTUP - 2)  // integer value, number of seconds between sensor samplings
+#define EEPROM_REPORTING_INTERVAL (EEPROM_SAMPLING_INTERVAL - 2)  // integer value, number of seconds between sensor reports
+#define EEPROM_AVERAGING_INTERVAL (EEPROM_REPORTING_INTERVAL - 2) // integer value, number of seconds of samples averaged
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
@@ -228,6 +230,7 @@ void AQE_set_datetime(char * arg);
 void list_command(char * arg);
 void download_command(char * arg);
 void delete_command(char * arg);
+void sampling_command(char * arg);
 // Note to self:
 //   When implementing a new parameter, ask yourself:
 //     should there be a command for the user to set its value directly
@@ -283,6 +286,7 @@ char * commands[] = {
   "list       ",
   "download   ",
   "delete     ",
+  "sampling   ", 
   0
 };
 
@@ -323,6 +327,7 @@ void (*command_functions[])(char * arg) = {
   list_command,
   download_command,
   delete_command,
+  sampling_command,
   0
 };
 
@@ -332,7 +337,6 @@ const long tinywdt_interval = 1000;
 
 // sensor sampling timer intervals
 unsigned long previous_sensor_sampling_millis = 0;
-const long sensor_sampling_interval = 2000;
 
 // touch sampling timer intervals
 unsigned long previous_touch_sampling_millis = 0;
@@ -355,6 +359,8 @@ const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
   105, 106, 101, 96  
 };
 uint8_t heartbeat_waveform_index = 0;
+
+char scratch[1024] = { 0 };  // scratch buffer, for general use
 
 void setup() {
   boolean integrity_check_passed = false;
@@ -387,7 +393,7 @@ void setup() {
   
   valid_ssid_passed = valid_ssid_config();  
   uint8_t target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
-  boolean ok_to_exit_config_mode = true;
+  boolean ok_to_exit_config_mode = true;   
   
   // config mode processing loop
   do{
@@ -632,6 +638,11 @@ void setup() {
     temperature_units = 'C';
   }
   
+  // get the sampling, reporting, and averaging parameters
+  sampling_interval = eeprom_read_word((uint16_t * ) EEPROM_SAMPLING_INTERVAL) * 1000L;
+  reporting_interval = eeprom_read_word((uint16_t * ) EEPROM_REPORTING_INTERVAL) * 1000L;
+  sample_buffer_depth = (uint16_t) ((((uint32_t) eeprom_read_word((uint16_t * ) EEPROM_AVERAGING_INTERVAL)) * 1000L) / sampling_interval);
+  
   if(mode == SUBMODE_NORMAL){
     setLCD_P(PSTR("TEMP ---  RH ---"
                   "NO2  ---  CO ---"));           
@@ -642,14 +653,15 @@ void setup() {
 void loop() {
   current_millis = millis();
 
-  if(current_millis - previous_sensor_sampling_millis >= sensor_sampling_interval){
+  if(current_millis - previous_sensor_sampling_millis >= sampling_interval){
     previous_sensor_sampling_millis = current_millis;    
     Serial.print(F("Info: Sampling Sensors @ "));
     Serial.println(millis());
     collectNO2();
     collectCO();
     collectTemperature();
-    collectHumidity();  
+    collectHumidity(); 
+    advanceSampleBufferIndex(); 
   }
 
   if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
@@ -1211,6 +1223,9 @@ void help_menu(char * arg) {
       Serial.println(F("      tempunit - the unit of measure Temperature is reported in (F or C)"));      
       Serial.println(F("      backlight - the backlight behavior settings (duration, mode)"));
       Serial.println(F("      timestamp - the current timestamp in the format m/d/y h:m:s"));
+      Serial.println(F("      sampleint - the sensor sampling interval in seconds"));
+      Serial.println(F("      reportint - the reporting sampling interval in seconds"));
+      Serial.println(F("      avgint - the sensor averaging interval in seconds"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));
     }
@@ -1236,7 +1251,8 @@ void help_menu(char * arg) {
       Serial.println(F("                   performs 'mqttauth enable'"));        
       Serial.println(F("                   performs 'mqttuser wickeddevice'"));  
       Serial.println(F("                   performs 'temp_off 3.5'"));      
-      Serial.println(F("                   performs 'hum_off 0.0'"));        
+      Serial.println(F("                   performs 'hum_off 0.0'"));    
+      Serial.println(F("                   performs 'sampling 5, 160, 5'"));
       Serial.println(F("                   performs 'restore mac'"));
       Serial.println(F("                   performs 'restore mqttpwd'"));
       Serial.println(F("                   performs 'restore mqttid'"));      
@@ -1333,6 +1349,12 @@ void help_menu(char * arg) {
       Serial.println(F("               configures for normal mode, and exits config mode, "));
       Serial.println(F("               and should initiate firmware update after connecting to wi-fi."));
     }    
+    else if (strncmp("sampling", arg, 8) == 0) {
+      Serial.println(F("sampling <sampling_interval>, <averaging_interval>, <reporting_interval>"));
+      Serial.println(F("   <sampling_interval> is the duration between sensor samples, in integer seconds (at least 3)"));
+      Serial.println(F("   <averaging_interval> is the duration that is averaged in reporting, in seconds (multiple of sample interval)"));
+      Serial.println(F("   <reporting_interval> is the duration between sensor reports (wifi/console/sd/etc.), in seconds (multiple of sample interval)"));
+    }
     else if (strncmp("mqttpwd", arg, 7) == 0) {
       Serial.println(F("mqttpwd <string>"));
       Serial.println(F("   <string> is the password the device will use to connect "));
@@ -1826,6 +1848,15 @@ void print_eeprom_value(char * arg) {
   else if(strncmp(arg, "updatefile", 10) == 0) {
     print_eeprom_string((const char *) EEPROM_UPDATE_FILENAME);    
   }  
+  else if(strncmp(arg, "sampleint", 9) == 0) {
+    Serial.println(eeprom_read_word((uint16_t *) EEPROM_SAMPLING_INTERVAL));    
+  }   
+  else if(strncmp(arg, "reportint", 9) == 0) {
+    Serial.println(eeprom_read_word((uint16_t *) EEPROM_REPORTING_INTERVAL));    
+  }     
+  else if(strncmp(arg, "avgint", 6) == 0) {
+    Serial.println(eeprom_read_word((uint16_t *) EEPROM_AVERAGING_INTERVAL));    
+  }     
   else if (strncmp(arg, "settings", 8) == 0) {
     char allff[64] = {0};
     memset(allff, 0xff, 64);
@@ -1840,6 +1871,16 @@ void print_eeprom_value(char * arg) {
     print_eeprom_temperature_units();
     Serial.print(F("    Backlight Settings: "));
     print_eeprom_backlight();
+    Serial.print(F("    Sensor Sampling Interval: "));
+    Serial.print(eeprom_read_word((uint16_t *) EEPROM_SAMPLING_INTERVAL));  
+    Serial.println(F(" seconds"));
+    Serial.print(F("    Sensor Averaging Interval: "));
+    Serial.print(eeprom_read_word((uint16_t *) EEPROM_AVERAGING_INTERVAL));  
+    Serial.println(F(" seconds"));
+    Serial.print(F("    Sensor Reporting Interval: "));
+    Serial.print(eeprom_read_word((uint16_t *) EEPROM_REPORTING_INTERVAL));  
+    Serial.println(F(" seconds"));
+    
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | Network Settings:                                           |"));
     Serial.println(F(" +-------------------------------------------------------------+"));
@@ -2003,7 +2044,8 @@ void restore(char * arg) {
     configInject("mqttauth enable\r");    
     configInject("mqttuser wickeddevice\r");
     configInject("temp_off 3.5\r");
-    configInject("hum_off 0.0\r");        
+    configInject("hum_off 0.0\r");  
+    configInject("sampling 5, 160, 5\r");    
     configInject("restore mqttpwd\r");
     configInject("restore mqttid\r");
     configInject("restore updatesrv\r");
@@ -2198,6 +2240,110 @@ void set_backlight_behavior(char * arg){
   }  
 }
 
+void sampling_command(char * arg){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  } 
+
+  uint16_t len = strlen(arg);
+  uint8_t num_commas = 0;  
+  
+  for(uint16_t ii = 0; ii < len; ii++){
+    // if any character is not a space, comma, or digit it's unparseable
+    if((!isdigit(arg[ii])) && (arg[ii] != ' ') && (arg[ii] != ',')){
+      Serial.print(F("Error: Found invalid character '"));
+      Serial.print((char) arg[ii]);
+      Serial.print(F("'"));
+      Serial.println();
+      return;
+    }
+
+    if(arg[ii] == ','){
+      num_commas++;
+    }
+  }    
+    
+  if(num_commas != 2){
+    Serial.print(F("Error: sampling expects exactly 3 values separated by commas, but received "));
+    Serial.print(num_commas - 1);
+    Serial.println();
+    return; 
+  }  
+  
+  // ok we have 3 numeric arguments separated by commas, parse them
+  // ok we have six numeric arguments separated by commas, parse them
+  char tmp[32] = {0};  
+  strncpy(tmp, arg, 31); // copy the string so you don't mutilate the argument
+  char * token = strtok(tmp, ",");
+  uint8_t token_number = 0;  
+  uint16_t l_sample_interval = 0;
+  uint16_t l_averaging_interval = 0;
+  uint16_t l_reporting_interval = 0;
+  
+  while (token != NULL) {
+    switch(token_number++){
+      case 0:
+        l_sample_interval = (uint16_t) strtoul(token, NULL, 10);
+        if(l_sample_interval < 3){
+          Serial.print(F("Error: Sampling interval must be greater than 2 [was ")); 
+          Serial.print(l_sample_interval);
+          Serial.print(F("]"));
+          Serial.println();
+          return;
+        }
+        break;      
+      case 1:
+        l_averaging_interval = (uint16_t) strtoul(token, NULL, 10);
+        if(l_averaging_interval < 1){
+          Serial.print(F("Error: Averaging interval must be greater than 0 [was ")); 
+          Serial.print(l_averaging_interval);
+          Serial.print(F("]"));
+          Serial.println();
+          return;
+        }
+        else if((l_averaging_interval % l_sample_interval) != 0){
+          Serial.print(F("Error: Averaging interval must be an integer multiple of the Sampling interval"));
+          Serial.println();
+          return;          
+        }
+        else if((l_averaging_interval / l_sample_interval) > MAX_SAMPLE_BUFFER_DEPTH){
+          Serial.print(F("Error: Insufficient memory available for averaging interval @ sampling interval."));
+          Serial.print(F("       Must require no more than "));          
+          Serial.print(MAX_SAMPLE_BUFFER_DEPTH);
+          Serial.print(F(" samples, but requires"));
+          Serial.print(l_averaging_interval / l_sample_interval);
+          Serial.println(F(" samples"));
+          Serial.println();
+          return;                    
+        }
+        break;
+      case 2:
+        l_reporting_interval = (uint16_t) strtoul(token, NULL, 10);
+        if(l_reporting_interval < 1){
+          Serial.print(F("Error: Reporting interval must be greater than 0 [was ")); 
+          Serial.print(l_reporting_interval);
+          Serial.print(F("]"));
+          Serial.println();
+          return;
+        }
+        else if((l_reporting_interval % l_sample_interval) != 0){
+          Serial.print(F("Error: Reporting interval must be an integer multiple of the Sampling interval"));
+          Serial.println();
+          return;          
+        }        
+        break;
+    }    
+    
+    token = strtok(NULL, ",");
+  } 
+  
+  // we got through all the checks! save these parameters to config memory
+  eeprom_write_word((uint16_t *) EEPROM_SAMPLING_INTERVAL, l_sample_interval);
+  eeprom_write_word((uint16_t *) EEPROM_REPORTING_INTERVAL, l_reporting_interval);
+  eeprom_write_word((uint16_t *) EEPROM_AVERAGING_INTERVAL, l_averaging_interval);
+  recomputeAndStoreConfigChecksum();  
+}
+
 void AQE_set_datetime(char * arg){
   if(!configMemoryUnlocked(__LINE__)){
     return;
@@ -2303,14 +2449,14 @@ void AQE_set_datetime(char * arg){
   }
   
   // if we have an RTC set the time in the RTC
-  DateTime datatime(yr,mo,dy,hr,mn,sc);
+  DateTime datetime(yr,mo,dy,hr,mn,sc);
   if(init_rtc_ok){
     selectSlot3();
-    rtc.adjust(datatime);
+    rtc.adjust(datetime);
   }
   
   // at any rate sync the time to this
-  setTime(datatime.unixtime());
+  setTime(datetime.unixtime());
   
 }
 
@@ -4092,12 +4238,21 @@ boolean mqttReconnect(void){
    }  
 }
 
-boolean mqqtPublish(char * topic, char *str){
+boolean mqttPublish(char * topic, char *str){
   boolean response_status = true;
-  Serial.print(F("MQTT publishing to topic "));
+  
+  Serial.print(F("Info: MQTT publishing to topic "));
   Serial.print(topic);
   Serial.print(F("..."));
-  if(mqtt_client.publish(topic, str)){
+  
+  uint32_t space_required = 5;
+  space_required += strlen(topic);
+  space_required += strlen(str);
+  if(space_required >= 511){
+    Serial.println(F("Aborted."));
+    response_status = false;
+  } 
+  else if(mqtt_client.publish(topic, str)){
     Serial.println(F("OK."));
     response_status = true;
   } 
@@ -4111,10 +4266,10 @@ boolean mqqtPublish(char * topic, char *str){
 
 
 boolean publishHeartbeat(){
-  static uint32_t post_counter = 0;
-  char tmp[512] = { 0 };  
+  static uint32_t post_counter = 0;  
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
-  snprintf(tmp, 511, 
+  memset(scratch, 0, 512);
+  snprintf(scratch, 511, 
   "{"
   "\"serial-number\":\"%s\","
   "\"converted-value\":%d,"
@@ -4122,11 +4277,12 @@ boolean publishHeartbeat(){
   "\"publishes\":[\"no2\",\"co\",\"temperature\",\"humidity\"],"
   "\"counter\":%lu"
   "}", mqtt_client_id, sample, firmware_version, post_counter++);  
+  
   if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
      heartbeat_waveform_index = 0;
   }
   
-  return mqqtPublish(MQTT_TOPIC_PREFIX "heartbeat", tmp); 
+  return mqttPublish(MQTT_TOPIC_PREFIX "heartbeat", scratch); 
 }
 
 float toFahrenheit(float degC){
@@ -4134,10 +4290,10 @@ float toFahrenheit(float degC){
 }
 
 boolean publishTemperature(){
-  char tmp[512] = { 0 };
   char value_string[64] = {0};
   char raw_string[64] = {0};
-  float temperature_moving_average = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
+  memset(scratch, 0, 512);
+  float temperature_moving_average = calculateAverage(sample_buffer[TEMPERATURE_SAMPLE_BUFFER], sample_buffer_depth);
   temperature_degc = temperature_moving_average;
   float raw_temperature = temperature_degc;
   float reported_temperature = temperature_degc - reported_temperature_offset_degC;
@@ -4149,7 +4305,7 @@ boolean publishTemperature(){
   safe_dtostrf(raw_temperature, -6, 2, raw_string, 16);
   trim_string(value_string);
   trim_string(raw_string);
-  snprintf(tmp, 511,
+  snprintf(scratch, 511,
     "{"
     "\"serial-number\":\"%s\","
     "\"converted-value\":%s,"
@@ -4158,14 +4314,15 @@ boolean publishTemperature(){
     "\"raw-units\":\"deg%c\","
     "\"sensor-part-number\":\"SHT25\""
     "}", mqtt_client_id, value_string, temperature_units, raw_string, temperature_units);
-  return mqqtPublish(MQTT_TOPIC_PREFIX "temperature", tmp);
+    
+  return mqttPublish(MQTT_TOPIC_PREFIX "temperature", scratch);
 }
 
 boolean publishHumidity(){
-  char tmp[512] = { 0 };  
   char value_string[64] = {0};  
   char raw_string[64] = {0};
-  float humidity_moving_average = calculateAverage(humidity_sample_buffer, HUMIDITY_SAMPLE_BUFFER_DEPTH);
+  memset(scratch, 0, 512);
+  float humidity_moving_average = calculateAverage(sample_buffer[HUMIDITY_SAMPLE_BUFFER], sample_buffer_depth);
   relative_humidity_percent = humidity_moving_average;
   float raw_humidity = relative_humidity_percent;
   float reported_humidity = relative_humidity_percent - reported_humidity_offset_percent;  
@@ -4174,7 +4331,7 @@ boolean publishHumidity(){
   safe_dtostrf(raw_humidity, -6, 2, raw_string, 16);
   trim_string(value_string);
   trim_string(raw_string);
-  snprintf(tmp, 511, 
+  snprintf(scratch, 511, 
     "{"
     "\"serial-number\":\"%s\","    
     "\"converted-value\":%s,"
@@ -4183,18 +4340,15 @@ boolean publishHumidity(){
     "\"raw-units\":\"percent\","  
     "\"sensor-part-number\":\"SHT25\""
     "}", mqtt_client_id, value_string, raw_string);  
-  return mqqtPublish(MQTT_TOPIC_PREFIX "humidity", tmp);
+  return mqttPublish(MQTT_TOPIC_PREFIX "humidity", scratch);
 }
 
 void collectTemperature(void){
-  static uint8_t sample_write_index = 0;
   float raw_value = 0.0f;
   if(init_sht25_ok){
     if(sht25.getTemperature(&raw_value)){
-      temperature_sample_buffer[sample_write_index++] = raw_value;
-      
-      if(sample_write_index == TEMPERATURE_SAMPLE_BUFFER_DEPTH){
-        sample_write_index = 0; 
+      addSample(TEMPERATURE_SAMPLE_BUFFER, raw_value);       
+      if(sample_buffer_idx == (sample_buffer_depth - 1)){
         temperature_ready = true;
       }
     }
@@ -4202,14 +4356,11 @@ void collectTemperature(void){
 }
 
 void collectHumidity(void){
-  static uint8_t sample_write_index = 0;
   float raw_value = 0.0f;
   if(init_sht25_ok){
     if(sht25.getRelativeHumidity(&raw_value)){
-      humidity_sample_buffer[sample_write_index++] = raw_value;
-      
-      if(sample_write_index == HUMIDITY_SAMPLE_BUFFER_DEPTH){
-        sample_write_index = 0; 
+      addSample(HUMIDITY_SAMPLE_BUFFER, raw_value);       
+      if(sample_buffer_idx == (sample_buffer_depth - 1)){
         humidity_ready = true;
       }
     }
@@ -4274,17 +4425,27 @@ void processTouchQuietly(void){
   processTouchVerbose(false);
 }
 
-void collectNO2(void ){
-  static uint8_t sample_write_index = 0;
+void advanceSampleBufferIndex(void){
+  sample_buffer_idx++;
+  if((sample_buffer_idx >= sample_buffer_depth) || (sample_buffer_idx >= MAX_SAMPLE_BUFFER_DEPTH)){
+    sample_buffer_idx = 0;
+  }
+}
+
+void addSample(uint8_t sample_type, float value){
+  if((sample_type < 4) && (sample_buffer_idx < MAX_SAMPLE_BUFFER_DEPTH)){
+    sample_buffer[sample_type][sample_buffer_idx] = value;    
+  }
+}
+
+void collectNO2(void){
   float raw_value = 0.0f;
   
   if(init_no2_afe_ok && init_no2_adc_ok){
     selectSlot2();  
     if(burstSampleADC(&raw_value)){      
-      no2_sample_buffer[sample_write_index++] = raw_value;
-      
-      if(sample_write_index == NO2_SAMPLE_BUFFER_DEPTH){
-        sample_write_index = 0; 
+      addSample(NO2_SAMPLE_BUFFER, raw_value);
+      if(sample_buffer_idx == (sample_buffer_depth - 1)){
         no2_ready = true;
       }
     }
@@ -4293,17 +4454,14 @@ void collectNO2(void ){
   selectNoSlot(); 
 }
 
-void collectCO(void ){
-  static uint8_t sample_write_index = 0;
+void collectCO(void ){  
   float raw_value = 0.0f;
   
   if(init_co_afe_ok && init_co_adc_ok){
     selectSlot1();  
     if(burstSampleADC(&raw_value)){   
-      co_sample_buffer[sample_write_index++] = raw_value;
-      
-      if(sample_write_index == CO_SAMPLE_BUFFER_DEPTH){
-        sample_write_index = 0; 
+      addSample(CO_SAMPLE_BUFFER, raw_value);      
+      if(sample_buffer_idx == (sample_buffer_depth - 1)){
         co_ready = true;
       }      
     }
@@ -4350,12 +4508,12 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
 }
 
 boolean publishNO2(){
-  char tmp[512] = { 0 };  
   char raw_value_string[64] = {0};  
   char converted_value_string[64] = {0};
   char compensated_value_string[64] = {0};
+  memset(scratch, 0, 512);  
   float converted_value = 0.0f, compensated_value = 0.0f;    
-  float no2_moving_average = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
+  float no2_moving_average = calculateAverage(sample_buffer[NO2_SAMPLE_BUFFER], sample_buffer_depth);
   no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
   no2_ppb = compensated_value;  
   safe_dtostrf(no2_moving_average, -8, 5, raw_value_string, 16);
@@ -4364,7 +4522,7 @@ boolean publishNO2(){
   trim_string(raw_value_string);
   trim_string(converted_value_string);
   trim_string(compensated_value_string);  
-  snprintf(tmp, 511, 
+  snprintf(scratch, 511, 
     "{"
     "\"serial-number\":\"%s\","       
     "\"raw-value\":%s,"
@@ -4378,7 +4536,7 @@ boolean publishNO2(){
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
-  return mqqtPublish(MQTT_TOPIC_PREFIX "no2", tmp);     
+  return mqttPublish(MQTT_TOPIC_PREFIX "no2", scratch);     
 }
 
 void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * temperature_compensated_value){
@@ -4420,12 +4578,12 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
 }
 
 boolean publishCO(){
-  char tmp[512] = {0};  
   char raw_value_string[64] = {0};  
   char converted_value_string[64] = {0};
+  memset(scratch, 0, 512);
   char compensated_value_string[64] = {0};
   float converted_value = 0.0f, compensated_value = 0.0f;   
-  float co_moving_average = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
+  float co_moving_average = calculateAverage(sample_buffer[CO_SAMPLE_BUFFER], sample_buffer_depth);
   co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
   co_ppm = compensated_value;  
   safe_dtostrf(co_moving_average, -8, 5, raw_value_string, 16);
@@ -4434,7 +4592,7 @@ boolean publishCO(){
   trim_string(raw_value_string);
   trim_string(converted_value_string);
   trim_string(compensated_value_string);    
-  snprintf(tmp, 511, 
+  snprintf(scratch, 511, 
     "{"
     "\"serial-number\":\"%s\","      
     "\"raw-value\":%s,"
@@ -4448,7 +4606,7 @@ boolean publishCO(){
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
-  return mqqtPublish(MQTT_TOPIC_PREFIX "co", tmp);
+  return mqttPublish(MQTT_TOPIC_PREFIX "co", scratch);
 }
 
 void petWatchdog(void){
@@ -4482,9 +4640,8 @@ void loop_wifi_mqtt_mode(void){
   
   // mqtt publish timer intervals
   static unsigned long previous_mqtt_publish_millis = 0;
-  static const long mqtt_publish_interval = 5000;
   
-  if(current_millis - previous_mqtt_publish_millis >= mqtt_publish_interval){   
+  if(current_millis - previous_mqtt_publish_millis >= reporting_interval){   
     previous_mqtt_publish_millis = current_millis;      
     
     printCsvDataLine(NULL);
@@ -4629,9 +4786,8 @@ void loop_offline_mode(void){
   
   // write record timer intervals
   static unsigned long previous_write_record_millis = 0;
-  static const long write_record_interval = 5000;  
 
-  if(current_millis - previous_write_record_millis >= write_record_interval){   
+  if(current_millis - previous_write_record_millis >= reporting_interval){   
     previous_write_record_millis = current_millis;
     printCsvDataLine(NULL);
   }  
@@ -4688,7 +4844,7 @@ void printCsvDataLine(const char * augmented_header){
   appendToString("," , dataString, &dataStringRemaining);
   
   if(temperature_ready){
-    temperature_degc = calculateAverage(temperature_sample_buffer, TEMPERATURE_SAMPLE_BUFFER_DEPTH);
+    temperature_degc = calculateAverage(sample_buffer[TEMPERATURE_SAMPLE_BUFFER], sample_buffer_depth);
     float reported_temperature = temperature_degc - reported_temperature_offset_degC;
     if(temperature_units == 'F'){
       reported_temperature = toFahrenheit(reported_temperature);
@@ -4705,7 +4861,7 @@ void printCsvDataLine(const char * augmented_header){
   appendToString("," , dataString, &dataStringRemaining);
   
   if(humidity_ready){
-    relative_humidity_percent = calculateAverage(humidity_sample_buffer, HUMIDITY_SAMPLE_BUFFER_DEPTH);
+    relative_humidity_percent = calculateAverage(sample_buffer[HUMIDITY_SAMPLE_BUFFER], sample_buffer_depth);
     Serial.print(relative_humidity_percent, 2);
     appendToString(relative_humidity_percent, 2, dataString, &dataStringRemaining);
   }
@@ -4720,7 +4876,7 @@ void printCsvDataLine(const char * augmented_header){
   float no2_moving_average = 0.0f;
   if(no2_ready){
     float converted_value = 0.0f, compensated_value = 0.0f;    
-    no2_moving_average = calculateAverage(no2_sample_buffer, NO2_SAMPLE_BUFFER_DEPTH);
+    no2_moving_average = calculateAverage(sample_buffer[NO2_SAMPLE_BUFFER], sample_buffer_depth);
     no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
     no2_ppb = compensated_value;      
     Serial.print(no2_ppb, 2);
@@ -4737,7 +4893,7 @@ void printCsvDataLine(const char * augmented_header){
   float co_moving_average = 0.0f;
   if(co_ready){    
     float converted_value = 0.0f, compensated_value = 0.0f;   
-    co_moving_average = calculateAverage(co_sample_buffer, CO_SAMPLE_BUFFER_DEPTH);
+    co_moving_average = calculateAverage(sample_buffer[CO_SAMPLE_BUFFER], sample_buffer_depth);
     co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
     co_ppm = compensated_value;     
     Serial.print(co_ppm, 2);
