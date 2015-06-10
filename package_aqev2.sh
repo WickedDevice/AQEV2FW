@@ -124,9 +124,11 @@ cp package_template.json package_airqualityegg-$version\_index.json
 replace_version="s/%version%/$version/g"
 replace_githash="s/%githash%/$githash/g"
 replace_sha256="s/%sha256%/$sha256/g"
+replace_filesize="s/%filesize%/$filesize/g"
 sed -i $replace_version package_airqualityegg-$version\_index.json
 sed -i $replace_githash package_airqualityegg-$version\_index.json
 sed -i $replace_sha256 package_airqualityegg-$version\_index.json
+sed -i $replace_filesize package_airqualityegg-$version\_index.json
 
 rm -rf tmp
 rm -rf AirQualityEgg
