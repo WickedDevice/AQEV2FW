@@ -1,0 +1,29 @@
+{
+  "packages": [ {
+    "name":"Air Quality Egg v2",
+    "maintainer":"Wicked Device LLC",
+    "websiteURL":"http://airqualityegg.com",
+    "email":"support@wickeddevice.com",
+    "help":{
+      "online":"http://wickeddevice.com"
+    },
+
+    "platforms": [ {
+      "name":"Air Quality Egg",
+      "architecture":"avr",
+      "version":"%version%-%githash%",
+      "category":"Air Quality Egg",
+      "url":"http://update.wickeddevice.com/AQEV2_Arduino-%githash%.zip",
+      "archiveFileName":"AQEV2_Arduino-%githash%.zip",
+      "checksum":"SHA-256:%sha256%",
+      "size":"%size%",
+      "help":{
+        "online":"http://wickeddevice.com"
+      },
+      "boards":[ {
+          "name":"Air Quality Egg v2 NO2/CO"
+        }
+      ]
+    } ]
+  } ]
+}
