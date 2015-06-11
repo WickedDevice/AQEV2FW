@@ -11,12 +11,12 @@
     "platforms": [ {
       "name":"Air Quality Egg",
       "architecture":"avr",
-      "version":"%version%-%githash%",
+      "version":"%version%",
       "category":"Air Quality Egg",
-      "url":"http://update.wickeddevice.com/AQEV2_Arduino-%githash%.zip",
-      "archiveFileName":"AQEV2_Arduino-%githash%.zip",
+      "url":"http://update.wickeddevice.com/AQEV2-%version%-Arduino-%githash%.zip",
+      "archiveFileName":"AQEV2-%version%-Arduino-%githash%.zip",
       "checksum":"SHA-256:%sha256%",
-      "size":"%size%",
+      "size":"%filesize%",
       "help":{
         "online":"http://wickeddevice.com"
       },
@@ -24,6 +24,7 @@
           "name":"Air Quality Egg v2 NO2/CO"
         }
       ]
-    } ]
+    } ],
+    "tools":[]
   } ]
 }

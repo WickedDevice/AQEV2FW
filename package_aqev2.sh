@@ -114,11 +114,11 @@ cd ../
 
 cd ../
 
-rm AQEV2_Arduino-$githash.zip
-zip -r AQEV2_Arduino-$githash.zip AirQualityEgg
+rm AQEV2-$version-Arduino-$githash.zip
+zip -r AQEV2-$version-Arduino-$githash.zip AirQualityEgg
 
-filesize=`stat --printf="%s" AQEV2_Arduino-$githash.zip`
-sha256=`sha256sum AQEV2_Arduino-$githash.zip | awk '{print $1;}'`
+filesize=`stat --printf="%s" AQEV2-$version-Arduino-$githash.zip`
+sha256=`sha256sum AQEV2-$version-Arduino-$githash.zip | awk '{print $1;}'`
 
 cp package_template.json package_airqualityegg-$version\_index.json
 replace_version="s/%version%/$version/g"
