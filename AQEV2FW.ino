@@ -952,14 +952,17 @@ void initializeHardware(void) {
 
 /****** CONFIGURATION SUPPORT FUNCTIONS ******/
 void initializeNewConfigSettings(void){
+  boolean in_config_mode = false; 
   allowed_to_write_config_eeprom = true;
-    
+  
   // backlight settings
   uint8_t backlight_startup = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
   uint16_t backlight_duration = eeprom_read_word((uint16_t *) EEPROM_BACKLIGHT_DURATION);
   if((backlight_startup == 0xFF) || (backlight_duration == 0xFFFF)){
+    configInject("aqe\r");
     configInject("backlight initon\r");
     configInject("backlight 60\r");
+    in_config_mode = true;
   }
   
   // sampling settings
@@ -967,8 +970,16 @@ void initializeNewConfigSettings(void){
   uint16_t l_reporting_interval = eeprom_read_word((uint16_t * ) EEPROM_REPORTING_INTERVAL);
   uint16_t l_averaging_interval = eeprom_read_word((uint16_t * ) EEPROM_AVERAGING_INTERVAL);
   if((l_sampling_interval == 0xFFFF) || (l_reporting_interval == 0xFFFF) || (l_averaging_interval == 0xFFFF)){
+    if(!in_config_mode){
+      configInject("aqe\r");
+    }
     configInject("sampling 5, 160, 5\r");
+    in_config_mode = true;
   }    
+  
+  if(in_config_mode){
+    configInject("exit\r");
+  }
   
   allowed_to_write_config_eeprom = false;  
 }
