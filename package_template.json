@@ -1,6 +1,6 @@
 {
   "packages": [ {
-    "name":"Air Quality Egg v2",
+    "name":"Air Quality Egg v2 - %version%",
     "maintainer":"Wicked Device LLC",
     "websiteURL":"http://airqualityegg.com",
     "email":"support@wickeddevice.com",
