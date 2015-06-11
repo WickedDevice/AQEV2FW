@@ -395,6 +395,10 @@ void setup() {
   uint8_t target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
   boolean ok_to_exit_config_mode = true;   
   
+  // if a software update introduced new settings
+  // they should be populated with defaults as necessary
+  initializeNewConfigSettings();      
+  
   // config mode processing loop
   do{
     // check for initial integrity of configuration in eeprom
@@ -485,11 +489,7 @@ void setup() {
       Serial.println(F("-~=* In CONFIG Mode *=~-"));
       if(integrity_check_passed && valid_ssid_passed){
         setLCD_P(PSTR("  CONFIG MODE"));
-      }
-      
-      // if a software update introduced new settings
-      // they should be populated with defaults as necessary
-      initializeNewConfigSettings();        
+      }          
       
       Serial.print(F("OPERATIONAL mode begins automatically after "));
       Serial.print((idle_timeout_period_ms / 1000UL) / 60UL);
@@ -952,6 +952,8 @@ void initializeHardware(void) {
 
 /****** CONFIGURATION SUPPORT FUNCTIONS ******/
 void initializeNewConfigSettings(void){
+  allowed_to_write_config_eeprom = true;
+    
   // backlight settings
   uint8_t backlight_startup = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
   uint16_t backlight_duration = eeprom_read_word((uint16_t *) EEPROM_BACKLIGHT_DURATION);
@@ -967,6 +969,8 @@ void initializeNewConfigSettings(void){
   if((l_sampling_interval == 0xFFFF) || (l_reporting_interval == 0xFFFF) || (l_averaging_interval == 0xFFFF)){
     configInject("sampling 5, 160, 5\r");
   }    
+  
+  allowed_to_write_config_eeprom = false;  
 }
 
 boolean checkConfigIntegrity(void) {
