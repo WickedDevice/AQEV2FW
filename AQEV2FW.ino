@@ -4983,9 +4983,8 @@ void printCsvDataLine(const char * augmented_header){
     }
   }
   else if((mode == SUBMODE_OFFLINE) && !init_sdcard_ok){
-    setLCD_P(PSTR(" INITIALIZING SD "
-                  "   CARD FAILED   ")); 
-    lcdFrownie(15, 1);                  
+    setLCD_P(PSTR("  LOGGING DATA  "
+                  "  TO USB-SERIAL "));
   }
 }
 
