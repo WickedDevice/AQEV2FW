@@ -1513,7 +1513,7 @@ void help_menu(char * arg) {
     }
     else if (strncmp("datetime", arg, 8) == 0) {
       Serial.println(F("datetime <csv-date-time>"));
-      Serial.println(F("   <csv-date-time> is a comma separated date in the order month, day, year, hours, minutes, seconds"));    
+      Serial.println(F("   <csv-date-time> is a comma separated date in the order year, month, day, hours, minutes, seconds"));    
     }
     else if (strncmp("backlight", arg, 9) == 0){
       Serial.println(F("backlight <config>"));
