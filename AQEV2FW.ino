@@ -384,11 +384,15 @@ void setup() {
   // if the integrity check failed, try and undo the damage using the mirror config, if it's valid
   if(!integrity_check_passed){
     Serial.println(F("Info: Startup config integrity check failed, attempting to restore from mirrored configuration."));
+    allowed_to_write_config_eeprom = true;
     integrity_check_passed = mirrored_config_restore_and_validate(); 
+    allowed_to_write_config_eeprom = false;
   }
   else if(!mirrored_config_matches_eeprom_config()){
     Serial.println(F("Info: Startup config integrity check passed, but mirrored config differs, attempting to restore from mirrored configuration."));
+    allowed_to_write_config_eeprom = true;
     integrity_check_passed = mirrored_config_restore_and_validate();
+    allowed_to_write_config_eeprom = false;
   }     
   
   valid_ssid_passed = valid_ssid_config();  
@@ -397,7 +401,7 @@ void setup() {
   
   // if a software update introduced new settings
   // they should be populated with defaults as necessary
-  initializeNewConfigSettings();      
+  initializeNewConfigSettings();
   
   // config mode processing loop
   do{
