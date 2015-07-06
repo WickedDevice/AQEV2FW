@@ -384,11 +384,15 @@ void setup() {
   // if the integrity check failed, try and undo the damage using the mirror config, if it's valid
   if(!integrity_check_passed){
     Serial.println(F("Info: Startup config integrity check failed, attempting to restore from mirrored configuration."));
+    allowed_to_write_config_eeprom = true;
     integrity_check_passed = mirrored_config_restore_and_validate(); 
+    allowed_to_write_config_eeprom = false;
   }
   else if(!mirrored_config_matches_eeprom_config()){
     Serial.println(F("Info: Startup config integrity check passed, but mirrored config differs, attempting to restore from mirrored configuration."));
+    allowed_to_write_config_eeprom = true;
     integrity_check_passed = mirrored_config_restore_and_validate();
+    allowed_to_write_config_eeprom = false;
   }     
   
   valid_ssid_passed = valid_ssid_config();  
@@ -397,7 +401,7 @@ void setup() {
   
   // if a software update introduced new settings
   // they should be populated with defaults as necessary
-  initializeNewConfigSettings();      
+  initializeNewConfigSettings();
   
   // config mode processing loop
   do{
@@ -1513,7 +1517,7 @@ void help_menu(char * arg) {
     }
     else if (strncmp("datetime", arg, 8) == 0) {
       Serial.println(F("datetime <csv-date-time>"));
-      Serial.println(F("   <csv-date-time> is a comma separated date in the order month, day, year, hours, minutes, seconds"));    
+      Serial.println(F("   <csv-date-time> is a comma separated date in the order year, month, day, hours, minutes, seconds"));    
     }
     else if (strncmp("backlight", arg, 9) == 0){
       Serial.println(F("backlight <config>"));
@@ -4983,9 +4987,8 @@ void printCsvDataLine(const char * augmented_header){
     }
   }
   else if((mode == SUBMODE_OFFLINE) && !init_sdcard_ok){
-    setLCD_P(PSTR(" INITIALIZING SD "
-                  "   CARD FAILED   ")); 
-    lcdFrownie(15, 1);                  
+    setLCD_P(PSTR("  LOGGING DATA  "
+                  "  TO USB-SERIAL "));
   }
 }
 
