@@ -4856,9 +4856,11 @@ float calculateAverage(float * buf, uint16_t num_samples){
 // otherwise printCsvDataLine will terminate the line implicitly
 void printCsvDataLine(const char * augmented_header){
   static boolean first = true;
-  char dataString[512] = {0};
+  static char dataString[512] = {0};  
+  memset(dataString, 0, 512);
+  
   uint16_t len = 0;
-  uint16_t dataStringRemaining = 511;                  
+  uint16_t dataStringRemaining = 511;
   
   if(first){
     char * header_row = "Timestamp,"
