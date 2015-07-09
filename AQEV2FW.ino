@@ -2491,11 +2491,17 @@ void AQE_set_datetime(char * arg){
   
   // if we have an RTC set the time in the RTC
   DateTime datetime(yr,mo,dy,hr,mn,sc);
-  if(init_rtc_ok){
-    selectSlot3();
-    rtc.adjust(datetime);
-  }
   
+  // it's not harmful to do this
+  // even if the RTC is not present
+  selectSlot3();
+  rtc.adjust(datetime);
+  
+  // also clear the Oscillator Stop Flag
+  // this should really be folded into the RTCLib code
+  rtcClearOscillatorStopFlag();
+  
+      
   // at any rate sync the time to this
   setTime(datetime.unixtime());
   
@@ -5563,6 +5569,24 @@ void getNowFilename(char * dst, uint16_t max_len){
     month(n),
     day(n),
     hour(n));
+}
+
+void rtcClearOscillatorStopFlag(void){
+    Wire.beginTransmission(DS3231_ADDRESS);
+    Wire.write(DS3231_REG_CONTROL);
+    Wire.endTransmission();
+
+    // control registers
+    Wire.requestFrom(DS3231_ADDRESS, 2);
+    uint8_t creg = Wire.read(); 
+    uint8_t sreg = Wire.read();   
+    
+    sreg &= ~_BV(7); // clear bit 7 (msbit)
+    
+    Wire.beginTransmission(DS3231_ADDRESS);
+    Wire.write((uint8_t) DS3231_REG_STATUS_CTL);
+    Wire.write((uint8_t) sreg);
+    Wire.endTransmission();    
 }
 
 /*
