@@ -268,10 +268,10 @@ char * commands[] = {
   "mqttauth   ",
   "updatesrv  ",
   "backup     ",
-  "no2_cal    ",
+  "no2_sen    ",
   "no2_slope  ",
   "no2_off    ",
-  "co_cal     ",
+  "co_sen     ",
   "co_slope   ",
   "co_off     ",
   "temp_off   ",
@@ -1251,10 +1251,10 @@ void help_menu(char * arg) {
       Serial.println(F("      mqttauth - MQTT authentication enabled?"));      
       Serial.println(F("      updatesrv - Update server name"));      
       Serial.println(F("      updatefile - Update filename (no extension)"));          
-      Serial.println(F("      no2_cal - NO2 sensitivity [nA/ppm]"));
+      Serial.println(F("      no2_sen - NO2 sensitivity [nA/ppm]"));
       Serial.println(F("      no2_slope - NO2 sensors slope [ppb/V]"));
       Serial.println(F("      no2_off - NO2 sensors offset [V]"));
-      Serial.println(F("      co_cal - CO sensitivity [nA/ppm]"));
+      Serial.println(F("      co_sen - CO sensitivity [nA/ppm]"));
       Serial.println(F("      co_slope - CO sensors slope [ppm/V]"));
       Serial.println(F("      co_off - CO sensors offset [V]"));
       Serial.println(F("      temp_off - Temperature sensor reporting offset [degC] (subtracted)"));
@@ -1463,8 +1463,8 @@ void help_menu(char * arg) {
       Serial.println(F("      hum      - backs up the Humidity calibration parameters"));      
       Serial.println(F("      all      - does all of the above"));
     }
-    else if (strncmp("no2_cal", arg, 7) == 0) {
-      Serial.println(F("no2_cal <number>"));
+    else if (strncmp("no2_sen", arg, 7) == 0) {
+      Serial.println(F("no2_sen <number>"));
       Serial.println(F("   <number> is the decimal value of NO2 sensitivity [nA/ppm]"));
       Serial.println(F("   note: also sets the NO2 slope based on the sensitivity"));
     }
@@ -1476,8 +1476,8 @@ void help_menu(char * arg) {
       Serial.println(F("no2_off <number>"));
       Serial.println(F("   <number> is the decimal value of NO2 sensor offset [V]"));
     }
-    else if (strncmp("co_cal", arg, 6) == 0) {
-      Serial.println(F("co_cal <number>"));
+    else if (strncmp("co_sen", arg, 6) == 0) {
+      Serial.println(F("co_sen <number>"));
       Serial.println(F("   <number> is the decimal value of CO sensitivity [nA/ppm]"));
       Serial.println(F("   note: also sets the CO slope based on the sensitivity"));      
     }
@@ -1831,7 +1831,7 @@ void print_eeprom_value(char * arg) {
   else if (strncmp(arg, "ipmode", 6) == 0) {
     print_eeprom_ipmode();
   }
-  else if (strncmp(arg, "no2_cal", 7) == 0) {
+  else if (strncmp(arg, "no2_sen", 7) == 0) {
     print_eeprom_float((const float *) EEPROM_NO2_SENSITIVITY);
   }
   else if (strncmp(arg, "no2_slope", 9) == 0) {
@@ -1840,7 +1840,7 @@ void print_eeprom_value(char * arg) {
   else if (strncmp(arg, "no2_off", 7) == 0) {
     print_eeprom_float((const float *) EEPROM_NO2_CAL_OFFSET);
   }
-  else if (strncmp(arg, "co_cal", 6) == 0) {
+  else if (strncmp(arg, "co_sen", 6) == 0) {
     print_eeprom_float((const float *) EEPROM_CO_SENSITIVITY);
   }
   else if (strncmp(arg, "co_slope", 8) == 0) {
