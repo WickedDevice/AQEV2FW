@@ -4371,8 +4371,8 @@ boolean publishHumidity(){
   memset(scratch, 0, 512);
   float humidity_moving_average = calculateAverage(sample_buffer[HUMIDITY_SAMPLE_BUFFER], sample_buffer_depth);
   relative_humidity_percent = humidity_moving_average;
-  float raw_humidity = relative_humidity_percent;
-  float reported_humidity = relative_humidity_percent - reported_humidity_offset_percent;  
+  float raw_humidity = constrain(relative_humidity_percent, 0.0f, 100.0f);
+  float reported_humidity = constrain(relative_humidity_percent - reported_humidity_offset_percent, 0.0f, 100.0f);
   
   safe_dtostrf(reported_humidity, -6, 2, value_string, 16);
   safe_dtostrf(raw_humidity, -6, 2, raw_string, 16);
