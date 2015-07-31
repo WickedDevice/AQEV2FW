@@ -361,7 +361,10 @@ const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
 uint8_t heartbeat_waveform_index = 0;
 
 char scratch[1024] = { 0 };  // scratch buffer, for general use
-
+char converted_value_string[64] = {0};
+char compensated_value_string[64] = {0};
+char raw_value_string[64] = {0};
+  
 void setup() {
   boolean integrity_check_passed = false;
   boolean valid_ssid_passed = false; 
@@ -4150,6 +4153,13 @@ boolean burstSampleADC(float * result){
 }
 
 /****** MQTT SUPPORT FUNCTIONS ******/
+void clearTempBuffers(void){
+  memset(converted_value_string, 0, 64);
+  memset(compensated_value_string, 0, 64);
+  memset(raw_value_string, 0, 64);
+  memset(scratch, 0, 512);
+}
+
 boolean mqttResolve(void){
   uint32_t ip = 0;
   static boolean resolved = false;
@@ -4297,9 +4307,7 @@ float toFahrenheit(float degC){
 }
 
 boolean publishTemperature(){
-  char value_string[64] = {0};
-  char raw_string[64] = {0};
-  memset(scratch, 0, 512);
+  clearTempBuffers();
   float temperature_moving_average = calculateAverage(sample_buffer[TEMPERATURE_SAMPLE_BUFFER], sample_buffer_depth);
   temperature_degc = temperature_moving_average;
   float raw_temperature = temperature_degc;
@@ -4308,10 +4316,10 @@ boolean publishTemperature(){
     reported_temperature = toFahrenheit(reported_temperature);
     raw_temperature = toFahrenheit(raw_temperature);
   }
-  safe_dtostrf(reported_temperature, -6, 2, value_string, 16);
-  safe_dtostrf(raw_temperature, -6, 2, raw_string, 16);
-  trim_string(value_string);
-  trim_string(raw_string);
+  safe_dtostrf(reported_temperature, -6, 2, converted_value_string, 16);
+  safe_dtostrf(raw_temperature, -6, 2, raw_value_string, 16);
+  trim_string(converted_value_string);
+  trim_string(raw_value_string);
   snprintf(scratch, 511,
     "{"
     "\"serial-number\":\"%s\","
@@ -4320,24 +4328,22 @@ boolean publishTemperature(){
     "\"raw-value\":%s,"
     "\"raw-units\":\"deg%c\","
     "\"sensor-part-number\":\"SHT25\""
-    "}", mqtt_client_id, value_string, temperature_units, raw_string, temperature_units);
+    "}", mqtt_client_id, converted_value_string, temperature_units, raw_value_string, temperature_units);
     
   return mqttPublish(MQTT_TOPIC_PREFIX "temperature", scratch);
 }
 
 boolean publishHumidity(){
-  char value_string[64] = {0};  
-  char raw_string[64] = {0};
-  memset(scratch, 0, 512);
+  clearTempBuffers();
   float humidity_moving_average = calculateAverage(sample_buffer[HUMIDITY_SAMPLE_BUFFER], sample_buffer_depth);
   relative_humidity_percent = humidity_moving_average;
   float raw_humidity = constrain(relative_humidity_percent, 0.0f, 100.0f);
   float reported_humidity = constrain(relative_humidity_percent - reported_humidity_offset_percent, 0.0f, 100.0f);
   
-  safe_dtostrf(reported_humidity, -6, 2, value_string, 16);
-  safe_dtostrf(raw_humidity, -6, 2, raw_string, 16);
-  trim_string(value_string);
-  trim_string(raw_string);
+  safe_dtostrf(reported_humidity, -6, 2, converted_value_string, 16);
+  safe_dtostrf(raw_humidity, -6, 2, raw_value_string, 16);
+  trim_string(converted_value_string);
+  trim_string(raw_value_string);
   snprintf(scratch, 511, 
     "{"
     "\"serial-number\":\"%s\","    
@@ -4346,7 +4352,7 @@ boolean publishHumidity(){
     "\"raw-value\":%s,"
     "\"raw-units\":\"percent\","  
     "\"sensor-part-number\":\"SHT25\""
-    "}", mqtt_client_id, value_string, raw_string);  
+    "}", mqtt_client_id, converted_value_string, raw_value_string);  
   return mqttPublish(MQTT_TOPIC_PREFIX "humidity", scratch);
 }
 
@@ -4515,10 +4521,7 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
 }
 
 boolean publishNO2(){
-  char raw_value_string[64] = {0};  
-  char converted_value_string[64] = {0};
-  char compensated_value_string[64] = {0};
-  memset(scratch, 0, 512);  
+  clearTempBuffers();
   float converted_value = 0.0f, compensated_value = 0.0f;    
   float no2_moving_average = calculateAverage(sample_buffer[NO2_SAMPLE_BUFFER], sample_buffer_depth);
   no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
@@ -4585,9 +4588,7 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
 }
 
 boolean publishCO(){
-  char raw_value_string[64] = {0};  
-  char converted_value_string[64] = {0};
-  memset(scratch, 0, 512);
+  clearTempBuffers();
   char compensated_value_string[64] = {0};
   float converted_value = 0.0f, compensated_value = 0.0f;   
   float co_moving_average = calculateAverage(sample_buffer[CO_SAMPLE_BUFFER], sample_buffer_depth);
