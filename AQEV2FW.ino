@@ -405,7 +405,7 @@ void setup() {
   // if a software update introduced new settings
   // they should be populated with defaults as necessary
   initializeNewConfigSettings();
-  
+
   // config mode processing loop
   do{
     // check for initial integrity of configuration in eeprom
@@ -959,6 +959,7 @@ void initializeHardware(void) {
 
 /****** CONFIGURATION SUPPORT FUNCTIONS ******/
 void initializeNewConfigSettings(void){
+  static char command_buf[32] = {0};
   boolean in_config_mode = false; 
   allowed_to_write_config_eeprom = true;
   
@@ -966,7 +967,7 @@ void initializeNewConfigSettings(void){
   uint8_t backlight_startup = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
   uint16_t backlight_duration = eeprom_read_word((uint16_t *) EEPROM_BACKLIGHT_DURATION);
   if((backlight_startup == 0xFF) || (backlight_duration == 0xFFFF)){
-    configInject("aqe\r");
+    configInject("aqe\r");    
     configInject("backlight initon\r");
     configInject("backlight 60\r");
     in_config_mode = true;
@@ -979,10 +980,38 @@ void initializeNewConfigSettings(void){
   if((l_sampling_interval == 0xFFFF) || (l_reporting_interval == 0xFFFF) || (l_averaging_interval == 0xFFFF)){
     if(!in_config_mode){
       configInject("aqe\r");
+      in_config_mode = true;
     }
-    configInject("sampling 5, 160, 5\r");
-    in_config_mode = true;
+    configInject("sampling 5, 160, 5\r");    
   }    
+
+  // the following two blocks of code are a 'hot-fix' to the slope calculation, 
+  // only apply it if the slope is not already self consistent with the sensitivity
+  float sensitivity = eeprom_read_float((const float *) EEPROM_NO2_SENSITIVITY);  
+  float calculated_slope = convert_no2_sensitivity_to_slope(sensitivity);
+  float stored_slope = eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE);
+  if(calculated_slope != stored_slope){ 
+    if(!in_config_mode){
+      configInject("aqe\r");
+      in_config_mode = true;
+    }    
+    memset(command_buf, 0, 32);  
+    snprintf(command_buf, 31, "no2_sen %8.4f\r", sensitivity);
+    configInject(command_buf);
+  }
+  
+  sensitivity = eeprom_read_float((const float *) EEPROM_CO_SENSITIVITY);  
+  calculated_slope = convert_co_sensitivity_to_slope(sensitivity);
+  stored_slope = eeprom_read_float((const float *) EEPROM_CO_CAL_SLOPE);
+  if(calculated_slope != stored_slope){ 
+    if(!in_config_mode){
+      configInject("aqe\r");
+      in_config_mode = true;
+    }    
+    memset(command_buf, 0, 32);  
+    snprintf(command_buf, 31, "co_sen %8.4f\r", sensitivity);
+    configInject(command_buf);  
+  }
   
   if(in_config_mode){
     configInject("exit\r");
@@ -3248,14 +3277,20 @@ void set_float_param(char * arg, float * eeprom_address, float (*conversion)(flo
   if(!configMemoryUnlocked(__LINE__)){
     return;
   }
+
+  // read the value at that address from eeprom
+  float current_value = eeprom_read_float((const float *) eeprom_address);  
   
   float value = 0.0;
   if (convertStringToFloat(arg, &value)) {
     if (conversion) {
       value = conversion(value);
     }
-    eeprom_write_float(eeprom_address, value);
-    recomputeAndStoreConfigChecksum();
+
+    if(current_value != value){
+      eeprom_write_float(eeprom_address, value);
+      recomputeAndStoreConfigChecksum();
+    }
   }
   else {
     Serial.print(F("Error: Failed to convert string \""));
@@ -3267,12 +3302,12 @@ void set_float_param(char * arg, float * eeprom_address, float (*conversion)(flo
 // convert from nA/ppm to ppb/V
 // from SPEC Sensors, Sensor Development Kit, User Manual, Rev. 1.5
 // M[V/ppb] = Sensitivity[nA/ppm] * TIA_Gain[kV/A] * 10^-9[A/nA] * 10^3[V/kV] * 10^-3[ppb/ppm]
-// TIA_Gain[kV/A] for NO2 = 499
+// TIA_Gain[kV/A] for NO2 = 350
 // slope = 1/M
 float convert_no2_sensitivity_to_slope(float sensitivity) {
-  float ret = 1.0e9;
+  float ret = 1.0e9f;
   ret /= sensitivity;
-  ret /= 499.0;
+  ret /= 350.0f;
   return ret;
 }
 
@@ -3301,12 +3336,12 @@ void set_reported_humidity_offset(char * arg) {
 // convert from nA/ppm to ppb/V
 // from SPEC Sensors, Sensor Development Kit, User Manual, Rev. 1.5
 // M[V/ppm] = Sensitivity[nA/ppm] * TIA_Gain[kV/A] * 10^-9[A/nA] * 10^3[V/kV]
-// TIA_Gain[kV/A] for CO = 100
+// TIA_Gain[kV/A] for CO = 350
 // slope = 1/M
 float convert_co_sensitivity_to_slope(float sensitivity) {
-  float ret = 1.0e6;
+  float ret = 1.0e6f;
   ret /= sensitivity;
-  ret /= 100.0;
+  ret /= 350.0f;
   return ret;
 }
 
