@@ -3412,58 +3412,15 @@ void selectSlot3(void){
 }
 /****** LCD SUPPORT FUNCTIONS ******/
 void safe_dtostrf(float value, signed char width, unsigned char precision, char * target_buffer, uint16_t target_buffer_length){
-  char tmp[32] = {0}; // working buffer, don't modify real buffer until we know it fits in width
-  char * p_tmp = &(tmp[0]);
-  uint32_t whole_number_part = 0;
-  float fractional_part = 0.0f;
-  int8_t sign = value < 0.0f ? -1 : 1;
-  value = sign * value; // absolute value
-  uint32_t fractional_part_as_integer = 0;
-  uint8_t ii = 0;
-  
-  // ignore the allowed negativity of dtostrf
-  if(width < 0){
-    width = -width;  
-  }
-  
-  if(target_buffer_length < 2){ // need at least space for a character and the null terminator
-    return; 
-  }
-  
-  if((sign < 0) && (target_buffer_length < 3)){ // need at least space for the sign, a character, and the null terminator
-    return;
+  char meta_format_string[16] = "%%.%df";
+  char format_string[16] = {0};
+
+  if((target_buffer != NULL) && (target_buffer_length > 0)){  
+    snprintf(format_string, 15, meta_format_string, precision); // format string should come out to something like "%.2f"
+    snprintf(target_buffer, target_buffer_length - 1, format_string, value);
   }
 
-  whole_number_part = (uint32_t) value; // aboslute value
-  fractional_part = value - whole_number_part;   // remainder
-  
-  // move the decimal place over the precision number of times
-  uint32_t multiplier = 1L;
-  for(ii = 0; ii < precision; ii++){
-    multiplier *= 10L;
-  }
-  fractional_part *= 1.0f * multiplier;
-  
-  // round to the nearest
-  fractional_part += 0.5f;  
-  fractional_part_as_integer = (uint32_t) fractional_part; // truncate the value
-  
-  // handle negative numbers, we *know* that there is room to do the following operation
-  // based on guard above "if((sign < 0) && (target_buffer_length < 3)) return;"
-  if(sign < 0){
-    tmp[0] = '-';      // the first character is a negative sign
-    p_tmp = &(tmp[1]); // the beginning of the target buffer is now the next character
-    snprintf(p_tmp, 31, "%lu.%lu", whole_number_part, fractional_part_as_integer);    
-  }
-  else{
-    p_tmp = &(tmp[0]);
-    snprintf(p_tmp, 32, "%lu.%lu", whole_number_part, fractional_part_as_integer); // the full buffer is available
-  }
-  
-  if(strlen(tmp) < target_buffer_length){
-    strncpy(target_buffer, tmp, target_buffer_length);
-  }  
-
+    
 }
 
 void backlightOn(void) {
@@ -3999,10 +3956,13 @@ boolean restartWifi(){
     }
     delayForWatchdog();
     petWatchdog();
+    current_millis = millis();
     reconnectToAccessPoint();
+    current_millis = millis();
     delayForWatchdog();
     petWatchdog();    
     acquireIpAddress(); 
+    current_millis = millis();
     delayForWatchdog();
     petWatchdog();    
     displayConnectionDetails();
