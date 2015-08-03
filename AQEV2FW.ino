@@ -1100,7 +1100,10 @@ uint8_t configModeStateMachine(char b, boolean reset_buffers) {
 
     // Serial.print("buf = ");
     // Serial.println(buf);
-
+    
+    if (strncmp("aqe", lower_buf, 3) == 0) {
+      ret = CONFIG_MODE_GOT_INIT;
+    }
     if (strncmp("exit", lower_buf, 4) == 0) {
       Serial.println(F("Exiting CONFIG mode..."));
       ret = CONFIG_MODE_GOT_EXIT;
