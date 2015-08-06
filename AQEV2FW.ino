@@ -2990,8 +2990,9 @@ void printDirectory(File dir, int numTabs) {
 void list_command(char * arg){
   if (strncmp("files", arg, 5) == 0){
     if(init_sdcard_ok){
-      File root = SD.open("/");
-      printDirectory(root, 0);      
+      File root = SD.open("/", FILE_READ);
+      printDirectory(root, 0);   
+      root.close();       
     }
     else{
       Serial.println(F("Error: SD Card is not initialized, can't list files."));
@@ -3001,12 +3002,12 @@ void list_command(char * arg){
     Serial.print(F("Error: Invalid parameter provided to 'list' command - \""));
     Serial.print(arg);
     Serial.println(F("\""));
-  }
+  }  
 }
 
 void download_command(char * arg){
   if(arg != NULL && init_sdcard_ok){
-    File dataFile = SD.open(arg);
+    File dataFile = SD.open(arg, FILE_READ);
     if (dataFile) {
       while (dataFile.available()) {
         Serial.write(dataFile.read());
