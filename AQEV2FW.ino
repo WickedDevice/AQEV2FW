@@ -16,6 +16,7 @@
 #include <LiquidCrystal.h>
 #include <PubSubClient.h>
 #include <util/crc16.h>
+#include <math.h>
 
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
@@ -152,6 +153,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_SAMPLING_INTERVAL  (EEPROM_BACKLIGHT_STARTUP - 2)  // integer value, number of seconds between sensor samplings
 #define EEPROM_REPORTING_INTERVAL (EEPROM_SAMPLING_INTERVAL - 2)  // integer value, number of seconds between sensor reports
 #define EEPROM_AVERAGING_INTERVAL (EEPROM_REPORTING_INTERVAL - 2) // integer value, number of seconds of samples averaged
+#define EEPROM_ALTITUDE_METERS    (EEPROM_AVERAGING_INTERVAL - 2) // signed integer value, 2-bytes, the altitude in meters above sea level, where the Egg is located
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
@@ -231,6 +233,8 @@ void list_command(char * arg);
 void download_command(char * arg);
 void delete_command(char * arg);
 void sampling_command(char * arg);
+void altitude_command(char * arg);
+
 // Note to self:
 //   When implementing a new parameter, ask yourself:
 //     should there be a command for the user to set its value directly
@@ -287,6 +291,7 @@ char * commands[] = {
   "download   ",
   "delete     ",
   "sampling   ", 
+  "altitude   ",
   0
 };
 
@@ -328,6 +333,7 @@ void (*command_functions[])(char * arg) = {
   download_command,
   delete_command,
   sampling_command,
+  altitude_command,
   0
 };
 
@@ -1302,6 +1308,7 @@ void help_menu(char * arg) {
       Serial.println(F("      sampleint - the sensor sampling interval in seconds"));
       Serial.println(F("      reportint - the reporting sampling interval in seconds"));
       Serial.println(F("      avgint - the sensor averaging interval in seconds"));
+      Serial.println(F("      altitude - the altitude of the sensor in meters above sea level"));
       Serial.println(F("   result: the current, human-readable, value of <param>"));
       Serial.println(F("           is printed to the console."));
     }
@@ -1319,7 +1326,8 @@ void help_menu(char * arg) {
       Serial.println(F("                   performs 'security wpa2'"));
       Serial.println(F("                   performs 'use dhcp'"));
       Serial.println(F("                   performs 'opmode normal'"));
-      Serial.println(F("                   performs 'tempunit C'"));      
+      Serial.println(F("                   performs 'tempunit C'"));   
+      Serial.println(F("                   performs 'altitude -1")); 
       Serial.println(F("                   performs 'backlight 60'"));
       Serial.println(F("                   performs 'backlight initon'"));      
       Serial.println(F("                   performs 'mqttsrv opensensors.io'"));
@@ -1550,6 +1558,11 @@ void help_menu(char * arg) {
       Serial.println(F("      C - report temperature in Celsius"));
       Serial.println(F("      F - report temperature in Fahrenheit"));
     }
+    else if (strncmp("altitude", arg, 8) == 0) {
+      Serial.println(F("altitude <number>"));
+      Serial.println(F("   <number> is the height above sea level where the Egg is [meters]"));   
+      Serial.println(F("   Note: -1 is a special value meaning do not apply pressure compensation"));
+    }    
     else if (strncmp("datetime", arg, 8) == 0) {
       Serial.println(F("datetime <csv-date-time>"));
       Serial.println(F("   <csv-date-time> is a comma separated date in the order year, month, day, hours, minutes, seconds"));    
@@ -1829,6 +1842,17 @@ void print_eeprom_temperature_units(){
   }  
 }
 
+void print_altitude_settings(void){
+  int16_t l_altitude = (int16_t) eeprom_read_word((uint16_t *) EEPROM_ALTITUDE_METERS);
+  if(l_altitude != -1){
+    Serial.print(l_altitude);
+    Serial.println(F(" meters"));  
+  }
+  else{
+    Serial.println("Not set");
+  }
+}
+
 void print_eeprom_backlight(){   
   uint16_t backlight_duration = eeprom_read_word((uint16_t *) EEPROM_BACKLIGHT_DURATION);
   uint8_t backlight_startup = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
@@ -1932,8 +1956,11 @@ void print_eeprom_value(char * arg) {
   }     
   else if(strncmp(arg, "avgint", 6) == 0) {
     Serial.println(eeprom_read_word((uint16_t *) EEPROM_AVERAGING_INTERVAL));    
-  }     
-  else if (strncmp(arg, "settings", 8) == 0) {
+  } 
+  else if(strncmp(arg, "altitude", 8) == 0) {
+    Serial.println((int16_t) eeprom_read_word((uint16_t *) EEPROM_ALTITUDE_METERS));    
+  }         
+  else if(strncmp(arg, "settings", 8) == 0) {
     char allff[64] = {0};
     memset(allff, 0xff, 64);
 
@@ -1945,6 +1972,8 @@ void print_eeprom_value(char * arg) {
     print_eeprom_operational_mode(eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE));
     Serial.print(F("    Temperature Units: "));
     print_eeprom_temperature_units();
+    Serial.print(F("    Altitude: "));
+    print_altitude_settings();
     Serial.print(F("    Backlight Settings: "));
     print_eeprom_backlight();
     Serial.print(F("    Sensor Sampling Interval: "));
@@ -2113,6 +2142,7 @@ void restore(char * arg) {
     configInject("use dhcp\r");
     configInject("opmode normal\r");
     configInject("tempunit C\r");    
+    configInject("altitude -1\r");    
     configInject("backlight 60\r");
     configInject("backlight initon\r");
     configInject("mqttsrv opensensors.io\r");
@@ -2314,6 +2344,23 @@ void set_backlight_behavior(char * arg){
   if (valid) {
     recomputeAndStoreConfigChecksum();
   }  
+}
+
+void altitude_command(char * arg){
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+
+  char * endptr = NULL;
+  trim_string(arg);
+  int16_t l_altitude = (int16_t) strtol(arg, &endptr, 10);
+  if(*endptr == NULL){
+    eeprom_write_word((uint16_t *) EEPROM_ALTITUDE_METERS, l_altitude);
+    recomputeAndStoreConfigChecksum();
+  }
+  else{
+    Serial.println(F("Error: altitude must be a numeric"));
+  }
 }
 
 void sampling_command(char * arg){
@@ -4521,6 +4568,32 @@ void collectCO(void ){
   selectNoSlot();     
 }
 
+float pressure_scale_factor(void){
+  float ret = 1.0f;
+  
+  static boolean first_access = true;
+  static int16_t altitude_meters = 0.0f;
+  
+  if(first_access){
+    first_access = false;
+    altitude_meters = (int16_t) eeprom_read_word((uint16_t *) EEPROM_ALTITUDE_METERS);
+  }
+
+  if(altitude_meters != -1){
+    // calculate scale factor of altitude and temperature
+    const float kelvin_offset = 273.15f;
+    const float lapse_rate_kelvin_per_meter = -0.0065f;
+    const float pressure_exponentiation_constant = 5.2558774324f;
+    
+    float outside_temperature_kelvin = kelvin_offset + (temperature_degc - reported_temperature_offset_degC);
+    float outside_temperature_kelvin_at_sea_level = outside_temperature_kelvin - lapse_rate_kelvin_per_meter * altitude_meters; // lapse rate is negative
+    float pow_arg = 1.0f + ((lapse_rate_kelvin_per_meter * altitude_meters) / outside_temperature_kelvin_at_sea_level);
+    ret = powf(pow_arg, pressure_exponentiation_constant);
+  }
+  
+  return ret;
+}
+
 void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float * temperature_compensated_value){
   static boolean first_access = true;
   static float no2_zero_volts = 0.0f;
@@ -4582,13 +4655,17 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
   float baseline_offset_ppb_at_temperature = baseline_offset_ppm_at_temperature * 1000.0f;
   // multiply by 1000 because baseline offset graph shows NO2 in ppm  
   float baseline_offset_voltage_at_temperature = baseline_offset_ppb_at_temperature / no2_slope_ppb_per_volt;
+
+  float signal_scaling_factor_at_altitude = pressure_scale_factor();
   
   *converted_value = (volts - no2_zero_volts) * -1.0f * no2_slope_ppb_per_volt;
   if(*converted_value <= 0.0f){
     *converted_value = 0.0f; 
   }
   
-  *temperature_compensated_value = (volts - no2_zero_volts - baseline_offset_voltage_at_temperature) * -1.0f * no2_slope_ppb_per_volt / signal_scaling_factor_at_temperature;
+  *temperature_compensated_value = (volts - no2_zero_volts - baseline_offset_voltage_at_temperature) * -1.0f * no2_slope_ppb_per_volt 
+                                   / signal_scaling_factor_at_temperature 
+                                   / signal_scaling_factor_at_altitude;
   if(*temperature_compensated_value <= 0.0f){
     *temperature_compensated_value = 0.0f;
   }
@@ -4678,13 +4755,17 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
   }  
   float baseline_offset_ppm_at_temperature = (baseline_offset_ppm_slope * temperature_degc) + baseline_offset_ppm_intercept;  
   float baseline_offset_voltage_at_temperature = baseline_offset_ppm_at_temperature / co_slope_ppm_per_volt;
+
+  float signal_scaling_factor_at_altitude = pressure_scale_factor();
     
   *converted_value = (volts - co_zero_volts) * co_slope_ppm_per_volt;
   if(*converted_value <= 0.0f){
     *converted_value = 0.0f; 
   }
   
-  *temperature_compensated_value = (volts - co_zero_volts - baseline_offset_voltage_at_temperature) * co_slope_ppm_per_volt / signal_scaling_factor_at_temperature;
+  *temperature_compensated_value = (volts - co_zero_volts - baseline_offset_voltage_at_temperature) * co_slope_ppm_per_volt 
+                                   / signal_scaling_factor_at_temperature
+                                   / signal_scaling_factor_at_altitude;
   if(*temperature_compensated_value <= 0.0f){
     *temperature_compensated_value = 0.0f;
   }
