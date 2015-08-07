@@ -1335,9 +1335,9 @@ void help_menu(char * arg) {
       Serial.println(F("                   performs 'mqttport 1883'"));           
       Serial.println(F("                   performs 'mqttauth enable'"));        
       Serial.println(F("                   performs 'mqttuser wickeddevice'"));  
-      Serial.println(F("                   performs 'temp_off 3.5'"));      
-      Serial.println(F("                   performs 'hum_off 0.0'"));    
       Serial.println(F("                   performs 'sampling 5, 160, 5'"));
+      Serial.println(F("                   performs 'restore temp_off'"));      
+      Serial.println(F("                   performs 'restore hum_off'"));          
       Serial.println(F("                   performs 'restore mac'"));
       Serial.println(F("                   performs 'restore mqttpwd'"));
       Serial.println(F("                   performs 'restore mqttid'"));      
@@ -2150,9 +2150,9 @@ void restore(char * arg) {
     configInject("mqttport 1883\r");        
     configInject("mqttauth enable\r");    
     configInject("mqttuser wickeddevice\r");
-    configInject("temp_off 3.5\r");
-    configInject("hum_off 0.0\r");  
-    configInject("sampling 5, 160, 5\r");    
+    configInject("sampling 5, 160, 5\r");   
+    configInject("restore temp_off\r");
+    configInject("restore hum_off\r");       
     configInject("restore mqttpwd\r");
     configInject("restore mqttid\r");
     configInject("restore updatesrv\r");
@@ -2265,23 +2265,25 @@ void restore(char * arg) {
   }
   else if (strncmp("temp_off", arg, 8) == 0) {
     if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_TEMPERATURE_CALIBRATION_BIT)) {
-      Serial.println(F("Error: Temperature reporting offset must be backed up  "));
-      Serial.println(F("       prior to executing a 'restore'."));
-      return;
+      Serial.println(F("Error: Temperature reporting offset should be backed up  "));
+      Serial.println(F("       prior to executing a 'restore'. Setting to 3.5"));
+      eeprom_write_float((float *) EEPROM_TEMPERATURE_OFFSET, 3.5f);  
     }
-
-    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_TEMPERATURE_OFFSET, 4);
-    eeprom_write_block(tmp, (void *) EEPROM_TEMPERATURE_OFFSET, 4);
+    else{
+      eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_TEMPERATURE_OFFSET, 4);
+      eeprom_write_block(tmp, (void *) EEPROM_TEMPERATURE_OFFSET, 4);
+    }
   }
-  else if (strncmp("hum_off", arg, 7) == 0) {
+  else if (strncmp("hum_off", arg, 7) == 0) {   
     if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_HUMIDITY_CALIBRATION_BIT)) {
-      Serial.println(F("Error: Humidity reporting offset must be backed up  "));
-      Serial.println(F("       prior to executing a 'restore'."));
-      return;
+      Serial.println(F("Warning: Humidity reporting offset should be backed up  "));
+      Serial.println(F("         prior to executing a 'restore'. Setting to 0.0."));   
+      eeprom_write_float((float *) EEPROM_HUMIDITY_OFFSET, 0.0f);
     }
-
-    eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_HUMIDITY_OFFSET, 4);
-    eeprom_write_block(tmp, (void *) EEPROM_HUMIDITY_OFFSET, 4);
+    else{
+      eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_HUMIDITY_OFFSET, 4);
+      eeprom_write_block(tmp, (void *) EEPROM_HUMIDITY_OFFSET, 4);
+    }
   }
   else {
     valid = false;
