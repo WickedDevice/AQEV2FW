@@ -2,7 +2,7 @@
 #include <SPI.h>
 #include <WildFire.h>
 #include <WildFire_CC3000.h>
-#include <SD.h>
+#include <SdFat.h>
 #include <RTClib.h>
 #include <RTC_DS3231.h>
 #include <Time.h>
@@ -42,6 +42,7 @@ PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
 WildFire_CC3000_Client wifiClient;
 RTC_DS3231 rtc;
+SdFat SD;
 
 uint32_t update_server_ip32 = 0;
 char update_server_name[32] = {0};
@@ -2973,7 +2974,9 @@ void printDirectory(File dir, int numTabs) {
      for (uint8_t i=0; i<numTabs; i++) {
        Serial.print(F("\t"));
      }
-     Serial.print(entry.name());
+     char tmp[16] = {0};
+     entry.getName(tmp, 16);
+     Serial.print(tmp);
      if (entry.isDirectory()) {
        Serial.println(F("/"));
        printDirectory(entry, numTabs+1);
