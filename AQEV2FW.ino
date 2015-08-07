@@ -1005,6 +1005,7 @@ void initializeNewConfigSettings(void){
     memset(command_buf, 0, 32);  
     snprintf(command_buf, 31, "no2_sen %8.4f\r", sensitivity);
     configInject(command_buf);
+    configInject("backup no2\r");
   }
   
   sensitivity = eeprom_read_float((const float *) EEPROM_CO_SENSITIVITY);  
@@ -1018,6 +1019,7 @@ void initializeNewConfigSettings(void){
     memset(command_buf, 0, 32);  
     snprintf(command_buf, 31, "co_sen %8.4f\r", sensitivity);
     configInject(command_buf);  
+    configInject("backup co\r");
   }
   
   if(in_config_mode){
