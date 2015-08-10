@@ -4889,7 +4889,8 @@ void loop_wifi_mqtt_mode(void){
               Serial.println(F("Error: Failed to publish Humidity."));         
             }
             else{
-              updateLCD(relative_humidity_percent, 13, 0, 3);  
+              float reported_relative_humidity_percent = relative_humidity_percent - reported_humidity_offset_percent;
+              updateLCD(reported_relative_humidity_percent, 13, 0, 3);  
             }
           }
           else{
@@ -5064,8 +5065,9 @@ void printCsvDataLine(const char * augmented_header){
   
   if(humidity_ready){
     relative_humidity_percent = calculateAverage(sample_buffer[HUMIDITY_SAMPLE_BUFFER], sample_buffer_depth);
-    Serial.print(relative_humidity_percent, 2);
-    appendToString(relative_humidity_percent, 2, dataString, &dataStringRemaining);
+    float reported_relative_humidity = relative_humidity_percent - reported_humidity_offset_percent;        
+    Serial.print(reported_relative_humidity, 2);
+    appendToString(reported_relative_humidity, 2, dataString, &dataStringRemaining);
   }
   else{
     Serial.print(F("---"));
