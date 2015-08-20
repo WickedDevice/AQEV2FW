@@ -4262,6 +4262,20 @@ uint32_t arrayToCC3000Ip(uint8_t * ip_array){
 // 62.5 microvolts resolution in 16-bit mode
 boolean burstSampleADC(float * result){
   #define NUM_SAMPLES_PER_BURST (8)
+
+  // autoprobe to find out which address the ADC is at in this slot
+  static uint8_t viable_addresses[8] = {0};
+  static boolean first_access = true;
+  if(first_access){
+    first_access = false;
+    // viable addresses for MCP3421 are 0x68...0x6F
+    for(uint8_t ii = 0; ii < 8; ii++){
+      viable_addresses[ii] = 0x68 + ii;
+    }
+  }
+
+  adc.autoprobe(viable_addresses, 8);
+  
   MCP342x::Config status;
   int32_t burst_sample_total = 0;
   uint8_t num_samples = 0;
