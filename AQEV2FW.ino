@@ -1488,8 +1488,8 @@ void help_menu(char * arg) {
     else if (strncmp("updatesrv", arg, 9) == 0) {
       Serial.println(F("updatesrv <string>"));
       Serial.println(F("   <string> is the DNS name of the Update server."));
-      Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
-      Serial.println(F("            probably not be using this command."));
+      Serial.println(F("   note: to disable internet firmware updates type 'updatesrv disable'"));
+      Serial.println(F("         to re-enable internet firmware updates type 'restore updatesrv'"));
       Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
       Serial.println(F("            from getting firmware updates over the internet."));
     }   
@@ -1777,8 +1777,20 @@ void print_eeprom_string(const char * address){
   Serial.println(tmp);
 }
 
+void print_eeprom_string(const char * address, const char * unless_it_matches_this, const char * in_which_case_print_this_instead){
+  char tmp[32] = {0};
+  eeprom_read_block(tmp, (const void *) address, 31);
+
+  if(strcmp(tmp, unless_it_matches_this) == 0){
+    Serial.println(in_which_case_print_this_instead);
+  }
+  else{
+    Serial.println(tmp);
+  }
+}
+
 void print_eeprom_update_server(){
-  print_eeprom_string((const char *) EEPROM_UPDATE_SERVER_NAME);
+  print_eeprom_string((const char *) EEPROM_UPDATE_SERVER_NAME, "", "Disabled");
 }
 
 void print_eeprom_update_filename(){
@@ -1950,7 +1962,7 @@ void print_eeprom_value(char * arg) {
     Serial.println();
   } 
   else if(strncmp(arg, "updatesrv", 9) == 0) {
-    print_eeprom_string((const char *) EEPROM_UPDATE_SERVER_NAME);    
+    print_eeprom_update_server();    
   }  
   else if(strncmp(arg, "updatefile", 10) == 0) {
     print_eeprom_string((const char *) EEPROM_UPDATE_FILENAME);    
@@ -3184,16 +3196,27 @@ void set_mqtt_port(char * arg) {
 }
 
 void set_update_server_name(char * arg){
+
+  static char server[32] = {0};
+  memset(server, 0, 32);
+  
   if(!configMemoryUnlocked(__LINE__)){
     return;
   }
   
+  trim_string(arg); // leading and trailing spaces are not relevant 
+  uint16_t len = strlen(arg);   
+  
   // we've reserved 32-bytes of EEPROM for an update server name
-  // so the argument's length must be <= 31
-  char server[32] = {0};
-  uint16_t len = strlen(arg);
-  if (len < 32) {
-    strncpy(server, arg, len);
+  // so the argument's length must be <= 31      
+  if (len < 32) {        
+    strncpy(server, arg, 31); // copy the argument as a case-sensitive server name
+    lowercase(arg);           // in case it's the "disable" special case, make arg case insensitive
+    
+    if(strncmp(arg, "disable", 7) == 0){      
+      memset(server, 0, 32); // wipe out the update server name 
+    }
+    
     eeprom_write_block(server, (void *) EEPROM_UPDATE_SERVER_NAME, 32);
     recomputeAndStoreConfigChecksum();
   }
@@ -5448,7 +5471,12 @@ boolean updateServerResolve(void){
   
   if(connectedToNetwork()){ 
     if(!resolved){
-      eeprom_read_block(update_server_name, (const void *) EEPROM_UPDATE_SERVER_NAME, 31);
+      eeprom_read_block(update_server_name, (const void *) EEPROM_UPDATE_SERVER_NAME, 31);      
+
+      if(strlen(update_server_name) == 0){
+        return false; // this is as indication that OTA updates are disabled
+      }
+      
       setLCD_P(PSTR("   RESOLVING"));
       updateLCD("UPDATE SERVER", 1);
       SUCCESS_MESSAGE_DELAY();
