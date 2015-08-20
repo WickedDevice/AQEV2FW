@@ -1647,6 +1647,11 @@ boolean valid_ssid_config(void) {
   char ssid[32] = {0};
   boolean ssid_contains_only_printables = true;
 
+  uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);    
+  if(connect_method == CONNECT_METHOD_SMARTCONFIG){
+    return true; // doesn't need an SSID
+  }
+  
   eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
   for (uint8_t ii = 0; ii < 32; ii++) {
     if (ssid[ii] == '\0') {
