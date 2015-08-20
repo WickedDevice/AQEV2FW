@@ -4444,7 +4444,7 @@ float toFahrenheit(float degC){
 
 boolean publishTemperature(){
   clearTempBuffers();
-  float temperature_moving_average = calculateAverage(sample_buffer[TEMPERATURE_SAMPLE_BUFFER], sample_buffer_depth);
+  float temperature_moving_average = calculateAverage(&(sample_buffer[TEMPERATURE_SAMPLE_BUFFER][0]), sample_buffer_depth);
   temperature_degc = temperature_moving_average;
   float raw_temperature = temperature_degc;
   float reported_temperature = temperature_degc - reported_temperature_offset_degC;
@@ -4471,7 +4471,7 @@ boolean publishTemperature(){
 
 boolean publishHumidity(){
   clearTempBuffers();
-  float humidity_moving_average = calculateAverage(sample_buffer[HUMIDITY_SAMPLE_BUFFER], sample_buffer_depth);
+  float humidity_moving_average = calculateAverage(&(sample_buffer[HUMIDITY_SAMPLE_BUFFER][0]), sample_buffer_depth);
   relative_humidity_percent = humidity_moving_average;
   float raw_humidity = constrain(relative_humidity_percent, 0.0f, 100.0f);
   float reported_humidity = constrain(relative_humidity_percent - reported_humidity_offset_percent, 0.0f, 100.0f);
@@ -4725,7 +4725,7 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
 boolean publishNO2(){
   clearTempBuffers();
   float converted_value = 0.0f, compensated_value = 0.0f;    
-  float no2_moving_average = calculateAverage(sample_buffer[NO2_SAMPLE_BUFFER], sample_buffer_depth);
+  float no2_moving_average = calculateAverage(&(sample_buffer[NO2_SAMPLE_BUFFER][0]), sample_buffer_depth);
   no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
   no2_ppb = compensated_value;  
   safe_dtostrf(no2_moving_average, -8, 5, raw_value_string, 16);
@@ -4825,7 +4825,7 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
 boolean publishCO(){
   clearTempBuffers();  
   float converted_value = 0.0f, compensated_value = 0.0f;   
-  float co_moving_average = calculateAverage(sample_buffer[CO_SAMPLE_BUFFER], sample_buffer_depth);
+  float co_moving_average = calculateAverage(&(sample_buffer[CO_SAMPLE_BUFFER][0]), sample_buffer_depth);
   co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
   co_ppm = compensated_value;  
   safe_dtostrf(co_moving_average, -8, 5, raw_value_string, 16);
@@ -5089,7 +5089,7 @@ void printCsvDataLine(const char * augmented_header){
   appendToString("," , dataString, &dataStringRemaining);
   
   if(temperature_ready){
-    temperature_degc = calculateAverage(sample_buffer[TEMPERATURE_SAMPLE_BUFFER], sample_buffer_depth);
+    temperature_degc = calculateAverage(&(sample_buffer[TEMPERATURE_SAMPLE_BUFFER][0]), sample_buffer_depth);
     float reported_temperature = temperature_degc - reported_temperature_offset_degC;
     if(temperature_units == 'F'){
       reported_temperature = toFahrenheit(reported_temperature);
@@ -5106,7 +5106,7 @@ void printCsvDataLine(const char * augmented_header){
   appendToString("," , dataString, &dataStringRemaining);
   
   if(humidity_ready){
-    relative_humidity_percent = calculateAverage(sample_buffer[HUMIDITY_SAMPLE_BUFFER], sample_buffer_depth);
+    relative_humidity_percent = calculateAverage(&(sample_buffer[HUMIDITY_SAMPLE_BUFFER][0]), sample_buffer_depth);
     float reported_relative_humidity = relative_humidity_percent - reported_humidity_offset_percent;        
     Serial.print(reported_relative_humidity, 2);
     appendToString(reported_relative_humidity, 2, dataString, &dataStringRemaining);
@@ -5122,7 +5122,7 @@ void printCsvDataLine(const char * augmented_header){
   float no2_moving_average = 0.0f;
   if(no2_ready){
     float converted_value = 0.0f, compensated_value = 0.0f;    
-    no2_moving_average = calculateAverage(sample_buffer[NO2_SAMPLE_BUFFER], sample_buffer_depth);
+    no2_moving_average = calculateAverage(&(sample_buffer[NO2_SAMPLE_BUFFER][0]), sample_buffer_depth);
     no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
     no2_ppb = compensated_value;      
     Serial.print(no2_ppb, 2);
@@ -5139,7 +5139,7 @@ void printCsvDataLine(const char * augmented_header){
   float co_moving_average = 0.0f;
   if(co_ready){    
     float converted_value = 0.0f, compensated_value = 0.0f;   
-    co_moving_average = calculateAverage(sample_buffer[CO_SAMPLE_BUFFER], sample_buffer_depth);
+    co_moving_average = calculateAverage(&(sample_buffer[CO_SAMPLE_BUFFER][0]), sample_buffer_depth);
     co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
     co_ppm = compensated_value;     
     Serial.print(co_ppm, 2);
