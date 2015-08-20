@@ -21,11 +21,15 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 2
+#define AQEV2FW_PATCH_VERSION 3
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 #define DEVICE_NAME "CC3000" // this is used for smart config
 #define WLAN_SEC_AUTO (10) // made up to support auto-config of security
+
+// the start address of the second to last 4k page, where config is backed up off MCU
+// the last page is reserved for use by the bootloader
+#define SECOND_TO_LAST_4K_PAGE_ADDRESS      0x7E000     
 
 WildFire wf;
 WildFire_CC3000 cc3000;
@@ -1030,8 +1034,8 @@ void initializeNewConfigSettings(void){
 }
 
 boolean checkConfigIntegrity(void) {
-  uint16_t computed_crc = computeConfigChecksum();
-  uint16_t stored_crc = eeprom_read_word((const uint16_t *) EEPROM_CRC_CHECKSUM);
+  uint16_t computed_crc = computeEepromChecksum();
+  uint16_t stored_crc = getStoredEepromChecksum();
   if (computed_crc == stored_crc) {
     return true;
   }
@@ -1964,7 +1968,7 @@ void print_eeprom_value(char * arg) {
     Serial.println((int16_t) eeprom_read_word((uint16_t *) EEPROM_ALTITUDE_METERS));    
   }         
   else if(strncmp(arg, "settings", 8) == 0) {
-    char allff[64] = {0};
+    static char allff[64] = {0};
     memset(allff, 0xff, 64);
 
     // print all the settings to the screen in an orderly fashion
@@ -3453,35 +3457,49 @@ void set_private_key(char * arg) {
   }
 }
 
-void get_eeprom_config(uint8_t * config_buffer){
-  eeprom_read_block(config_buffer, (const void *) EEPROM_CRC_CHECKSUM, EEPROM_CONFIG_MEMORY_SIZE);
-}
-
 void recomputeAndStoreConfigChecksum(void) {
   if(!configMemoryUnlocked(__LINE__)){
     return;
   }
   
-  uint16_t crc = computeConfigChecksum();
+  uint16_t crc = computeEepromChecksum();
   eeprom_write_word((uint16_t *) EEPROM_CRC_CHECKSUM, crc);
 }
 
-uint16_t computeConfigChecksum(void) {   
-  uint8_t eeprom_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
-  get_eeprom_config(eeprom_config);
-  // don't include the checksum in the checksum calculation
-  // in other words start the calculation 2 bytes past the array start
-  // and compute the checksum over 1022 bytes (1024 - 2)
-  uint16_t crc = computeChecksum(eeprom_config + 2, EEPROM_CONFIG_MEMORY_SIZE - 2);   
+uint16_t computeEepromChecksum(void) {
+  uint16_t crc = 0;
+
+  // there are EEPROM_CONFIG_MEMORY_SIZE - 2 bytes to compute the CRC16 over
+  // the first byte is located at EEPROM_CRC_CHECKSUM + 2
+  // the last byte is located at EEPROM_CONFIG_MEMORY_SIZE - 1
+  for (uint16_t ii = 0; ii < EEPROM_CONFIG_MEMORY_SIZE - 2; ii++) {
+    uint8_t value = eeprom_read_byte((uint8_t *) (EEPROM_CRC_CHECKSUM + 2 + ii));
+    crc = _crc16_update(crc, value);
+  }
   return crc;
 }
 
-uint16_t computeChecksum(uint8_t * ram_start_address, uint16_t num_bytes) {
+uint16_t getStoredEepromChecksum(void){
+  return eeprom_read_word((const uint16_t *) EEPROM_CRC_CHECKSUM);  
+}
+
+uint16_t computeFlashChecksum(void) {
   uint16_t crc = 0;
-  for (uint16_t ii = 0; ii < num_bytes; ii++) {
-    crc = _crc16_update(crc, ram_start_address[ii]);
+  // there are EEPROM_CONFIG_MEMORY_SIZE - 2 bytes to compute the CRC16 over
+  // the first byte is located at SECOND_TO_LAST_4K_PAGE_ADDRESS + 2
+  // the last byte is located at EEPROM_CONFIG_MEMORY_SIZE - 1  
+  for (uint16_t ii = 0; ii < EEPROM_CONFIG_MEMORY_SIZE - 2; ii++) {
+    uint8_t value = flash.readByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + 2UL + ((uint32_t) ii));
+    crc = _crc16_update(crc, value);
   }
   return crc;
+}
+
+uint16_t getStoredFlashChecksum(void){
+  uint16_t stored_crc = flash.readByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + 1UL);
+  stored_crc <<= 8;
+  stored_crc |= flash.readByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + 0UL);
+  return stored_crc;
 }
 
 /****** GAS SENSOR SUPPORT FUNCTIONS ******/
@@ -3822,12 +3840,14 @@ void leftpad_string(char * str, uint16_t target_length){
 }
 
 void updateLCD(float value, uint8_t pos_x, uint8_t pos_y, uint8_t field_width){
-  char tmp[64] = {0};
-  char asterisks_field[17] = {0};
-
+  static char tmp[64] = {0};
+  static char asterisks_field[17] = {0};
+  memset(tmp, 0, 64);
+  memset(asterisks_field, 0, 17);
+  
   for(uint8_t ii = 0; (ii < field_width) && (ii < 16); ii++){
      asterisks_field[ii] = '*'; 
-  }
+  }  
   
   //Serial.print(F("value: "));
   //Serial.println(value,8);  
@@ -4780,8 +4800,7 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
 }
 
 boolean publishCO(){
-  clearTempBuffers();
-  char compensated_value_string[64] = {0};
+  clearTempBuffers();  
   float converted_value = 0.0f, compensated_value = 0.0f;   
   float co_moving_average = calculateAverage(sample_buffer[CO_SAMPLE_BUFFER], sample_buffer_depth);
   co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
@@ -5320,7 +5339,9 @@ uint16_t downloadFile(char * filename, void (*responseBodyProcessor)(uint8_t, bo
 }
 
 void checkForFirmwareUpdates(){ 
-  char filename[64] = {0};
+  static char filename[64] = {0};
+  memset(filename, 0, 64);
+  
   if(updateServerResolve()){
     // try and download the integrity check file up to three times    
     setLCD_P(PSTR("  CHECKING FOR  "
@@ -5467,7 +5488,7 @@ boolean updateServerResolve(void){
 void processIntegrityCheckBody(uint8_t dataByte, boolean end_of_stream, unsigned long body_bytes_read, uint16_t crc16_checksum){
   char * endPtr;
   static char buff[64] = {0};
-  static uint8_t buff_idx = 0;
+  static uint8_t buff_idx = 0;  
   
   if(end_of_stream){
     integrity_num_bytes_total = strtoul(buff, &endPtr, 10);
@@ -5577,15 +5598,16 @@ void commitConfigToMirroredConfig(void){
 }
 
 boolean mirrored_config_matches_eeprom_config(void){
-  boolean ret = false;
-  uint8_t mirrored_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
-  uint8_t eeprom_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
-  
-  get_mirrored_config(mirrored_config);
-  get_eeprom_config(eeprom_config);  
-  
-  if(memcmp(mirrored_config, eeprom_config, EEPROM_CONFIG_MEMORY_SIZE) == 0){
-    ret = true;
+  boolean ret = true;
+
+  // compare each corresponding byte of the Flash into the EEPROM
+  for (uint16_t ii = 0; ii < EEPROM_CONFIG_MEMORY_SIZE; ii++) {
+    uint8_t flash_value = flash.readByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + ((uint32_t) ii));
+    uint8_t eeprom_value = eeprom_read_byte((uint8_t *) (EEPROM_CRC_CHECKSUM + ii));
+    if(flash_value != eeprom_value){
+      ret = false;
+      break;
+    }
   }
   
   return ret;
@@ -5603,16 +5625,10 @@ boolean configMemoryUnlocked(uint16_t call_id){
 
 boolean mirrored_config_integrity_check(){
   boolean ret = false;
-  uint8_t mirrored_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
-  
-  get_mirrored_config(mirrored_config); // read the mirrored config into RAM
-  
-  uint16_t computed_crc = computeChecksum(mirrored_config + 2, 1022); // calculate its checksum
+  uint16_t computed_crc = computeFlashChecksum();
   
   // interpret the CRC, little endian
-  uint16_t stored_crc = mirrored_config[1];
-  stored_crc <<= 8;
-  stored_crc |= mirrored_config[0];
+  uint16_t stored_crc = getStoredFlashChecksum();
   
   if(stored_crc == computed_crc){
     ret = true; 
@@ -5622,14 +5638,16 @@ boolean mirrored_config_integrity_check(){
 }
 
 
-void mirrored_config_restore(void){
+void mirrored_config_restore(void){  
   if(!allowed_to_write_config_eeprom){
     return;
   }
-  
-  uint8_t mirrored_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
-  get_mirrored_config(mirrored_config);
-  eeprom_write_block(mirrored_config, (void *) EEPROM_CRC_CHECKSUM, EEPROM_CONFIG_MEMORY_SIZE);
+
+  // copy each byte from the Flash into the EEPROM
+  for (uint16_t ii = 0; ii < EEPROM_CONFIG_MEMORY_SIZE; ii++) {
+    uint8_t value = flash.readByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + ((uint32_t) ii));
+    eeprom_write_byte((uint8_t *) (EEPROM_CRC_CHECKSUM + ii), value);
+  }
 }
 
 boolean mirrored_config_restore_and_validate(void){
@@ -5652,16 +5670,15 @@ boolean mirrored_config_restore_and_validate(void){
   return integrity_check_passed;
 }
 
-#define SECOND_TO_LAST_4K_PAGE_ADDRESS      0x7E000     // the start address of the second to last 4k page
 void mirrored_config_copy_from_eeprom(void){
-  uint8_t eeprom_config[EEPROM_CONFIG_MEMORY_SIZE] = {0};
-  get_eeprom_config(eeprom_config);  
+  
   mirrored_config_erase();
   Serial.print(F("Info: Writing mirrored config..."));
-  uint16_t offset = 0;
-  while(offset < EEPROM_CONFIG_MEMORY_SIZE){
-    flash.writeBytes(SECOND_TO_LAST_4K_PAGE_ADDRESS + offset, eeprom_config + offset, 256);   
-    offset += 256; 
+
+  // copy each byte from the EEPROM into the Flash
+  for (uint16_t ii = 0; ii < EEPROM_CONFIG_MEMORY_SIZE; ii++) {
+    uint8_t value = eeprom_read_byte((uint8_t *) (EEPROM_CRC_CHECKSUM + ii));
+    flash.writeByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + ((uint32_t) ii), value);    
   }
   Serial.println(F("OK."));
 }
@@ -5670,10 +5687,6 @@ void mirrored_config_erase(void){
   Serial.print(F("Info: Erasing mirrored config..."));  
   flash.blockErase4K(SECOND_TO_LAST_4K_PAGE_ADDRESS);
   Serial.println(F("OK."));  
-}
-
-void get_mirrored_config(uint8_t * config_buffer){
-  flash.readBytes(SECOND_TO_LAST_4K_PAGE_ADDRESS, config_buffer, EEPROM_CONFIG_MEMORY_SIZE);
 }
 
 /****** TIMESTAMPING SUPPORT FUNCTIONS ******/
