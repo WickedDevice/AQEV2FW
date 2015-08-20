@@ -378,6 +378,7 @@ char raw_value_string[64] = {0};
   
 void setup() {
   boolean integrity_check_passed = false;
+  boolean mirrored_config_mismatch = false;
   boolean valid_ssid_passed = false; 
   
   // initialize hardware
@@ -403,6 +404,7 @@ void setup() {
     allowed_to_write_config_eeprom = false;
   }
   else if(!mirrored_config_matches_eeprom_config()){
+    mirrored_config_mismatch = true;
     Serial.println(F("Info: Startup config integrity check passed, but mirrored config differs, attempting to restore from mirrored configuration."));
     allowed_to_write_config_eeprom = true;
     integrity_check_passed = mirrored_config_restore_and_validate();
@@ -429,7 +431,14 @@ void setup() {
       mode = MODE_CONFIG;
       allowed_to_write_config_eeprom = true;
     }
-    else if(!integrity_check_passed) {      
+    else if(!integrity_check_passed && !mirrored_config_mismatch) { 
+      // if there was not a mirrored config mismatch and integrity check did not pass
+      // that means startup config integrity check failed, and restoring from mirror configuration failed
+      // to result in a valid configuration as well
+      //
+      // if, on the other hand, there was a mirrored config mismatch, the logic above *implies* that the eeprom config 
+      // is valid and that the mirrored config is not (yet) valid, so we shouldn't go into this case, and instead 
+      // we should drop into the else case (i.e. what normally happens on a startup with a valid configuration)
       Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
       configInject("aqe\r");
       Serial.println();
