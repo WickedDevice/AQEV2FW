@@ -21,7 +21,7 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 3
+#define AQEV2FW_PATCH_VERSION 4
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 #define DEVICE_NAME "CC3000" // this is used for smart config
