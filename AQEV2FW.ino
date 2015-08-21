@@ -184,7 +184,6 @@ uint8_t mode = MODE_OPERATIONAL;
 // only DIRECT is supported initially
 #define CONNECT_METHOD_DIRECT        (0)
 #define CONNECT_METHOD_SMARTCONFIG   (1)
-#define CONNECT_METHOD_PFOD          (2)
 
 // backup status bits
 #define BACKUP_STATUS_MAC_ADDRESS_BIT             (7)
@@ -1387,8 +1386,7 @@ void help_menu(char * arg) {
       Serial.println(F("method <type>"));
       Serial.println(F("   <type> is one of:"));
       Serial.println(F("      direct - use parameters entered in CONFIG mode"));
-      Serial.println(F("      smartconfig - use smart config process"));
-      Serial.println(F("      pfod - use pfodWifiConnect config process  [not yet supported]"));
+      Serial.println(F("      smartconfig - use smart config process"));      
       warn_could_break_connect();      
     }
     else if (strncmp("ssid", arg, 4) == 0) {
@@ -1628,9 +1626,6 @@ void print_eeprom_connect_method(void) {
       break;
     case CONNECT_METHOD_SMARTCONFIG:
       Serial.println(F("Smart Config Connect"));
-      break;
-    case CONNECT_METHOD_PFOD:
-      Serial.println(F("Pfod Wi-Fi Connect [not currently supported]"));
       break;
     default:
       Serial.print(F("Error: Unknown connection method code [0x"));
@@ -2694,14 +2689,11 @@ void set_connection_method(char * arg) {
   else if (strncmp(arg, "smartconfig", 11) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_CONNECT_METHOD, CONNECT_METHOD_SMARTCONFIG);
   }
-  else if (strncmp(arg, "pfod", 4) == 0) {
-    eeprom_write_byte((uint8_t *) EEPROM_CONNECT_METHOD, CONNECT_METHOD_PFOD);
-  }
   else {
     Serial.print(F("Error: Invalid connection method entered - \""));
     Serial.print(arg);
     Serial.println(F("\""));
-    Serial.println(F("       valid options are: 'direct', 'smartconfig', and 'pfod'"));
+    Serial.println(F("       valid options are: 'direct' or 'smartconfig'"));
     valid = false;
   }
 
@@ -4094,19 +4086,17 @@ uint8_t rssi_to_bars(int8_t rssi_dbm){
   return num_bars;
 }
 
-boolean restartWifi(){
-  boolean first_time = true;
-  
-  if(!connectedToNetwork()){
+boolean restartWifi(){  
+  static boolean first_access = true;
     
-    if(first_time){
-      first_time = false;
-    }
-    else{
+  if(!connectedToNetwork()){    
+    if(!first_access){
       Serial.print(F("Info: Rebooting CC3000..."));
       cc3000.reboot();
-      Serial.println(F("OK."));
+      Serial.println(F("OK."));   
     }
+    first_access = false;
+    
     delayForWatchdog();
     petWatchdog();
     current_millis = millis();
@@ -4156,14 +4146,20 @@ bool displayConnectionDetails(void){
 }
 
 void reconnectToAccessPoint(void){
-  char ssid[32] = {0};
-  char network_password[32] = {0};
+  static char ssid[32] = {0};
+  static char network_password[32] = {0};
+  static uint8_t connect_method = 0;
+  static uint8_t network_security_mode = 0;
+  static boolean first_access = true;
   
-  uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
-  uint8_t network_security_mode = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);  
-  eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
-  eeprom_read_block(network_password, (const void *) EEPROM_NETWORK_PWD, 31); 
- 
+  if(first_access){
+    first_access = false;
+    connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
+    network_security_mode = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);  
+    eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
+    eeprom_read_block(network_password, (const void *) EEPROM_NETWORK_PWD, 31); 
+  }
+  
   switch(connect_method){
     case CONNECT_METHOD_DIRECT:
       Serial.print(F("Info: Connecting to Access Point with SSID \""));
@@ -4193,8 +4189,7 @@ void reconnectToAccessPoint(void){
         ; //TODO: implement timeout, though the watchdog is an implied timeout...
       }
       Serial.println(F("OK."));
-      break;
-    case CONNECT_METHOD_PFOD:
+      break;    
     default:
       Serial.println(F("Error: Connection method not currently supported"));
       break;
@@ -4202,9 +4197,14 @@ void reconnectToAccessPoint(void){
 }
 
 void acquireIpAddress(void){
-  uint8_t static_ip_address[4] = {0};
+  static boolean first_access = true;
+  static uint8_t static_ip_address[4] = {0};
   uint8_t noip[4] = {0};
-  eeprom_read_block(static_ip_address, (const void *) EEPROM_STATIC_IP_ADDRESS, 4);
+
+  if(first_access){
+    first_access = false;
+    eeprom_read_block(static_ip_address, (const void *) EEPROM_STATIC_IP_ADDRESS, 4);
+  }
   
   // if it's DHCP we're configured for, engage DHCP process
   if (memcmp(static_ip_address, noip, 4) == 0){
