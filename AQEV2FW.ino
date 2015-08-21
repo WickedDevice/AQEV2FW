@@ -4672,11 +4672,11 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
   float temperature_compensated_slope = 0.0f;
   if(first_access){
     // NO2 has negative slope in circuit, more negative voltages correspond to higher levels of NO2
-    no2_slope_ppb_per_volt = -1.0 * eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE); 
+    no2_slope_ppb_per_volt = eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE); 
     no2_zero_volts = eeprom_read_float((const float *) EEPROM_NO2_CAL_OFFSET);
     first_access = false;
   }
-  
+
   // apply piecewise linear regressions
   // to signal scaling effect curve
   float scaling_slope = 0.0f;
@@ -4698,30 +4698,30 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
 
   // apply piecewise linear regressions
   // to baseline offset effect curve
-  float baseline_offset_ppb_slope = 0.0f;
-  float baseline_offset_ppb_intercept = 0.0f;
+  float baseline_offset_ppm_slope = 0.0f;
+  float baseline_offset_ppm_intercept = 0.0f;
                                                                      
   if(temperature_degc < 33.0f){                          // < 33C
-    baseline_offset_ppb_slope = -0.0007019288f;
-    baseline_offset_ppb_intercept = 0.0177058403f;
+    baseline_offset_ppm_slope = -0.0007019288f;
+    baseline_offset_ppm_intercept = 0.0177058403f;
   }
   else if(temperature_degc < 38.0f){                     // 33C .. 38C
-    baseline_offset_ppb_slope = -0.0085978946f;
-    baseline_offset_ppb_intercept = 0.2777254052f;
+    baseline_offset_ppm_slope = -0.0085978946f;
+    baseline_offset_ppm_intercept = 0.2777254052f;
   }
   else if(temperature_degc < 42.0f){                     // 38C .. 42C
-    baseline_offset_ppb_slope = -0.0196092331f;
-    baseline_offset_ppb_intercept = 0.6994563331f;    
+    baseline_offset_ppm_slope = -0.0196092331f;
+    baseline_offset_ppm_intercept = 0.6994563331f;    
   }
   else if(temperature_degc < 46.0f){                     // 42C .. 46C
-    baseline_offset_ppb_slope = -0.0351416006f;
-    baseline_offset_ppb_intercept = 1.3566041809f;          
+    baseline_offset_ppm_slope = -0.0351416006f;
+    baseline_offset_ppm_intercept = 1.3566041809f;          
   }
   else{                                                  // > 46C
-    baseline_offset_ppb_slope = -0.0531894279f;
-    baseline_offset_ppb_intercept =  2.1948987152f;        
+    baseline_offset_ppm_slope = -0.0531894279f;
+    baseline_offset_ppm_intercept =  2.1948987152f;        
   }  
-  float baseline_offset_ppm_at_temperature = ((baseline_offset_ppb_slope * temperature_degc) + baseline_offset_ppb_intercept); 
+  float baseline_offset_ppm_at_temperature = ((baseline_offset_ppm_slope * temperature_degc) + baseline_offset_ppm_intercept); 
   float baseline_offset_ppb_at_temperature = baseline_offset_ppm_at_temperature * 1000.0f;
   // multiply by 1000 because baseline offset graph shows NO2 in ppm  
   float baseline_offset_voltage_at_temperature = baseline_offset_ppb_at_temperature / no2_slope_ppb_per_volt;
