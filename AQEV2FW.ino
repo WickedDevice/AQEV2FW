@@ -4086,17 +4086,8 @@ uint8_t rssi_to_bars(int8_t rssi_dbm){
   return num_bars;
 }
 
-boolean restartWifi(){  
-  static boolean first_access = true;
-    
-  if(!connectedToNetwork()){    
-    if(!first_access){
-      Serial.print(F("Info: Rebooting CC3000..."));
-      cc3000.reboot();
-      Serial.println(F("OK."));   
-    }
-    first_access = false;
-    
+boolean restartWifi(){    
+  if(!connectedToNetwork()){        
     delayForWatchdog();
     petWatchdog();
     current_millis = millis();
