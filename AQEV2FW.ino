@@ -21,7 +21,7 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 4
+#define AQEV2FW_PATCH_VERSION 5
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 #define DEVICE_NAME "CC3000" // this is used for smart config
@@ -974,6 +974,11 @@ void initializeHardware(void) {
       init_cc3000_ok = false;
     }
   } 
+
+  updateLCD("NO2 / CO", 0);
+  updateLCD("MODEL", 1);
+  SUCCESS_MESSAGE_DELAY();  
+  
 }
 
 /****** CONFIGURATION SUPPORT FUNCTIONS ******/
@@ -2262,7 +2267,7 @@ void restore(char * arg) {
     eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_PRIVATE_KEY, 32);
     eeprom_write_block(tmp, (void *) EEPROM_PRIVATE_KEY, 32);
   }
-  else if (strncmp("no2", arg, 6) == 0) {
+  else if (strncmp("no2", arg, 3) == 0) {
     if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_NO2_CALIBRATION_BIT)) {
       Serial.println(F("Error: NO2 calibration must be backed up  "));
       Serial.println(F("       prior to executing a 'restore'."));
