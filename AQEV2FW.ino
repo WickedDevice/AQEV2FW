@@ -21,7 +21,7 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 5
+#define AQEV2FW_PATCH_VERSION 4
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 #define DEVICE_NAME "CC3000" // this is used for smart config
@@ -4729,18 +4729,20 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
   float baseline_offset_ppm_at_temperature = ((baseline_offset_ppm_slope * temperature_degc) + baseline_offset_ppm_intercept); 
   float baseline_offset_ppb_at_temperature = baseline_offset_ppm_at_temperature * 1000.0f;
   // multiply by 1000 because baseline offset graph shows NO2 in ppm  
-  float baseline_offset_voltage_at_temperature = baseline_offset_ppb_at_temperature / no2_slope_ppb_per_volt;
-
+  float baseline_offset_voltage_at_temperature = -1.0f * baseline_offset_ppb_at_temperature / no2_slope_ppb_per_volt;
+  // multiply by -1 because the ppm curve goes negative but the voltage actually *increases*
+  
   float signal_scaling_factor_at_altitude = pressure_scale_factor();
   
-  *converted_value = (volts - no2_zero_volts) * -1.0f * no2_slope_ppb_per_volt;
+  *converted_value = (no2_zero_volts - volts) * no2_slope_ppb_per_volt;
   if(*converted_value <= 0.0f){
-    *converted_value = 0.0f; 
+    *converted_value = 0.0f;
   }
   
-  *temperature_compensated_value = (volts - no2_zero_volts - baseline_offset_voltage_at_temperature) * -1.0f * no2_slope_ppb_per_volt 
+  *temperature_compensated_value = (no2_zero_volts - volts - baseline_offset_voltage_at_temperature) * no2_slope_ppb_per_volt 
                                    / signal_scaling_factor_at_temperature 
                                    / signal_scaling_factor_at_altitude;
+                                   
   if(*temperature_compensated_value <= 0.0f){
     *temperature_compensated_value = 0.0f;
   }
