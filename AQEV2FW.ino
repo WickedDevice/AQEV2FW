@@ -29,7 +29,7 @@
 
 // the start address of the second to last 4k page, where config is backed up off MCU
 // the last page is reserved for use by the bootloader
-#define SECOND_TO_LAST_4K_PAGE_ADDRESS      0x7E000     
+#define SECOND_TO_LAST_4K_PAGE_ADDRESS      0x7E000
 
 WildFire wf;
 WildFire_CC3000 cc3000;
@@ -41,7 +41,7 @@ WildFire_SPIFlash flash;
 CapacitiveSensor touch = CapacitiveSensor(A0, A1);
 LiquidCrystal lcd(A3, A2, 4, 5, 6, 8);
 char g_lcd_buffer[2][17] = {0}; // 2 rows of 16 characters each, with space for NULL terminator
-byte mqtt_server_ip[4] = { 0 };    
+byte mqtt_server_ip[4] = { 0 };
 PubSubClient mqtt_client;
 char mqtt_client_id[32] = {0};
 WildFire_CC3000_Client wifiClient;
@@ -271,7 +271,7 @@ char * commands[] = {
   "mqttsrv    ",
   "mqttport   ",
   "mqttuser   ",
-  "mqttpwd    ",  
+  "mqttpwd    ",
   "mqttid     ",
   "mqttauth   ",
   "updatesrv  ",
@@ -294,7 +294,7 @@ char * commands[] = {
   "list       ",
   "download   ",
   "delete     ",
-  "sampling   ", 
+  "sampling   ",
   "altitude   ",
   0
 };
@@ -311,9 +311,9 @@ void (*command_functions[])(char * arg) = {
   set_static_ip_address,
   use_command,
   set_mqtt_server,
-  set_mqtt_port,  
+  set_mqtt_port,
   set_mqtt_username,
-  set_mqtt_password,  
+  set_mqtt_password,
   set_mqtt_client_id,
   set_mqtt_authentication,
   set_update_server_name,
@@ -352,7 +352,7 @@ unsigned long previous_sensor_sampling_millis = 0;
 unsigned long previous_touch_sampling_millis = 0;
 const long touch_sampling_interval = 200;
 
-// progress dots timer intervals  
+// progress dots timer intervals
 unsigned long previous_progress_dots_millis = 0;
 const long progress_dots_interval = 1000;
 
@@ -362,11 +362,11 @@ const uint8_t heartbeat_waveform[NUM_HEARTBEAT_WAVEFORM_SAMPLES] PROGMEM = {
   95, 96, 95, 94, 95, 96, 95, 97, 105, 112,
   117, 119, 120, 117, 111, 103, 95, 94, 95, 96,
   95, 94, 100, 131, 162, 193, 224, 255, 244, 214,
-  183, 152, 121, 95, 88, 80, 71, 74, 82, 90, 
-  96, 95, 94, 95, 96, 97, 106, 113, 120, 125, 
+  183, 152, 121, 95, 88, 80, 71, 74, 82, 90,
+  96, 95, 94, 95, 96, 97, 106, 113, 120, 125,
   129, 132, 133, 131, 128, 124, 118, 111, 103, 96,
-  95, 96, 95, 94, 95, 96, 95, 94, 95, 99, 
-  105, 106, 101, 96  
+  95, 96, 95, 94, 95, 96, 95, 94, 95, 99,
+  105, 106, 101, 96
 };
 uint8_t heartbeat_waveform_index = 0;
 
@@ -374,54 +374,54 @@ char scratch[1024] = { 0 };  // scratch buffer, for general use
 char converted_value_string[64] = {0};
 char compensated_value_string[64] = {0};
 char raw_value_string[64] = {0};
-  
+
 void setup() {
   boolean integrity_check_passed = false;
   boolean mirrored_config_mismatch = false;
-  boolean valid_ssid_passed = false; 
-  
+  boolean valid_ssid_passed = false;
+
   // initialize hardware
-  initializeHardware(); 
+  initializeHardware();
   backlightOff();
-      
+
   //  uint8_t tmp[EEPROM_CONFIG_MEMORY_SIZE] = {0};
   //  get_eeprom_config(tmp);
   //  Serial.println(F("EEPROM Config:"));
   //  dump_config(tmp);
   //  Serial.println();
   //  Serial.println(F("Mirrored Config:"));
-  //  get_mirrored_config(tmp);  
+  //  get_mirrored_config(tmp);
   //  dump_config(tmp);
   //  Serial.println();
-  
+
   integrity_check_passed = checkConfigIntegrity();
   // if the integrity check failed, try and undo the damage using the mirror config, if it's valid
-  if(!integrity_check_passed){
+  if (!integrity_check_passed) {
     Serial.println(F("Info: Startup config integrity check failed, attempting to restore from mirrored configuration."));
     allowed_to_write_config_eeprom = true;
-    integrity_check_passed = mirrored_config_restore_and_validate(); 
+    integrity_check_passed = mirrored_config_restore_and_validate();
     allowed_to_write_config_eeprom = false;
   }
-  else if(!mirrored_config_matches_eeprom_config()){
+  else if (!mirrored_config_matches_eeprom_config()) {
     mirrored_config_mismatch = true;
     Serial.println(F("Info: Startup config integrity check passed, but mirrored config differs, attempting to restore from mirrored configuration."));
     allowed_to_write_config_eeprom = true;
     integrity_check_passed = mirrored_config_restore_and_validate();
     allowed_to_write_config_eeprom = false;
-  }     
-  
-  valid_ssid_passed = valid_ssid_config();  
-  uint8_t target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);  
-  boolean ok_to_exit_config_mode = true;   
-  
+  }
+
+  valid_ssid_passed = valid_ssid_config();
+  uint8_t target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);
+  boolean ok_to_exit_config_mode = true;
+
   // if a software update introduced new settings
   // they should be populated with defaults as necessary
   initializeNewConfigSettings();
 
   // config mode processing loop
-  do{
+  do {
     // check for initial integrity of configuration in eeprom
-    if(mode_requires_wifi(target_mode) && !valid_ssid_passed){
+    if (mode_requires_wifi(target_mode) && !valid_ssid_passed) {
       Serial.println(F("Info: No valid SSID configured, automatically falling back to CONFIG mode."));
       configInject("aqe\r");
       Serial.println();
@@ -430,13 +430,13 @@ void setup() {
       mode = MODE_CONFIG;
       allowed_to_write_config_eeprom = true;
     }
-    else if(!integrity_check_passed && !mirrored_config_mismatch) { 
+    else if (!integrity_check_passed && !mirrored_config_mismatch) {
       // if there was not a mirrored config mismatch and integrity check did not pass
       // that means startup config integrity check failed, and restoring from mirror configuration failed
       // to result in a valid configuration as well
       //
-      // if, on the other hand, there was a mirrored config mismatch, the logic above *implies* that the eeprom config 
-      // is valid and that the mirrored config is not (yet) valid, so we shouldn't go into this case, and instead 
+      // if, on the other hand, there was a mirrored config mismatch, the logic above *implies* that the eeprom config
+      // is valid and that the mirrored config is not (yet) valid, so we shouldn't go into this case, and instead
       // we should drop into the else case (i.e. what normally happens on a startup with a valid configuration)
       Serial.println(F("Info: Config memory integrity check failed, automatically falling back to CONFIG mode."));
       configInject("aqe\r");
@@ -444,8 +444,8 @@ void setup() {
       setLCD_P(PSTR("CONFIG INTEGRITY"
                     "  CHECK FAILED  "));
       mode = MODE_CONFIG;
-      allowed_to_write_config_eeprom = true;   
-    }    
+      allowed_to_write_config_eeprom = true;
+    }
     else {
       // if the appropriate escape sequence is received within 8 seconds
       // go into config mode
@@ -459,39 +459,39 @@ void setup() {
       Serial.println(F(" secs of no input."));
       setLCD_P(PSTR("CONNECT TERMINAL"
                     "FOR CONFIG MODE "));
-                    
+
       current_millis = millis();
       while (current_millis < start + startup_time_period) { // can get away with this sort of thing at start up
         current_millis = millis();
-        
-        if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
+
+        if (current_millis - previous_touch_sampling_millis >= touch_sampling_interval) {
           static uint8_t num_touch_intervals = 0;
-          previous_touch_sampling_millis = current_millis;    
-          collectTouch();    
+          previous_touch_sampling_millis = current_millis;
+          collectTouch();
           processTouchQuietly();
-          
+
           num_touch_intervals++;
-          if(num_touch_intervals == 5){
-            petWatchdog(); 
+          if (num_touch_intervals == 5) {
+            petWatchdog();
             num_touch_intervals = 0;
           }
-          
-        }      
-      
+
+        }
+
         if (Serial.available()) {
           if (got_serial_input == false) {
             Serial.println();
           }
           got_serial_input = true;
-  
-          start = millis(); // reset the timeout
+
+          start = millis(); // reset the 
           if (CONFIG_MODE_GOT_INIT == configModeStateMachine(Serial.read(), false)) {
             mode = MODE_CONFIG;
             allowed_to_write_config_eeprom = true;
             break;
           }
         }
-  
+
         // output a countdown to the Serial Monitor
         if (millis() - start >= min_over) {
           uint8_t countdown_value_display = (startup_time_period - 500 - min_over) / 1000;
@@ -499,30 +499,30 @@ void setup() {
             Serial.print(countdown_value_display);
             Serial.print(F("..."));
           }
-          
+
           updateCornerDot();
-          
+
           min_over += 1000;
         }
       }
     }
     Serial.println();
     delayForWatchdog();
-    
-    if (mode == MODE_CONFIG) {      
+
+    if (mode == MODE_CONFIG) {
       const uint32_t idle_timeout_period_ms = 1000UL * 60UL * 5UL; // 5 minutes
       uint32_t idle_time_ms = 0;
       Serial.println(F("-~=* In CONFIG Mode *=~-"));
-      if(integrity_check_passed && valid_ssid_passed){
+      if (integrity_check_passed && valid_ssid_passed) {
         setLCD_P(PSTR("  CONFIG MODE"));
-      }          
-      
+      }
+
       Serial.print(F("OPERATIONAL mode begins automatically after "));
       Serial.print((idle_timeout_period_ms / 1000UL) / 60UL);
       Serial.println(F(" mins without input."));
       Serial.println(F("Enter 'help' for a list of available commands, "));
       Serial.println(F("      ...or 'help <cmd>' for help on a specific command"));
-  
+
       configInject("get settings\r");
       Serial.println();
       Serial.println(F(" @=============================================================@"));
@@ -532,23 +532,23 @@ void setup() {
       Serial.println(F(" #   Then type 'pwd your_network_password' & press <enter>     #"));
       Serial.println(F(" #   Then type 'get settings' & press <enter> to review config #"));
       Serial.println(F(" #   Finally, type 'exit' to go into OPERATIONAL mode,         #"));
-      Serial.println(F(" #     and verify that the Egg connects to your network!       #")); 
+      Serial.println(F(" #     and verify that the Egg connects to your network!       #"));
       Serial.println(F(" @=============================================================@"));
-  
+
       prompt();
       for (;;) {
         current_millis = millis();
-        if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
-          previous_touch_sampling_millis = current_millis;   
-          collectTouch();    
-          processTouchQuietly();  
+        if (current_millis - previous_touch_sampling_millis >= touch_sampling_interval) {
+          previous_touch_sampling_millis = current_millis;
+          collectTouch();
+          processTouchQuietly();
         }
-  
+
         // stuck in this loop until the command line receives an exit command
-        if(mode != MODE_CONFIG){
+        if (mode != MODE_CONFIG) {
           break; // if a command changes mode, we're done with config
         }
-        
+
         if (Serial.available()) {
           idle_time_ms = 0;
           // if you get serial traffic, pass it along to the configModeStateMachine for consumption
@@ -556,61 +556,61 @@ void setup() {
             break;
           }
         }
-  
-        // pet the watchdog once a second      
+
+        // pet the watchdog once a second
         if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
           idle_time_ms += tinywdt_interval;
           petWatchdog();
           previous_tinywdt_millis = current_millis;
         }
-  
+
         if (idle_time_ms >= idle_timeout_period_ms) {
           Serial.println(F("Info: Idle time expired, exiting CONFIG mode."));
           break;
         }
       }
     }
-    
+
     integrity_check_passed = checkConfigIntegrity();
-    valid_ssid_passed = valid_ssid_config();    
+    valid_ssid_passed = valid_ssid_config();
     ok_to_exit_config_mode = true;
-    
-    target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);      
-       
-    if(!integrity_check_passed){
+
+    target_mode = eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE);
+
+    if (!integrity_check_passed) {
       ok_to_exit_config_mode = false;
     }
-    else if(mode_requires_wifi(target_mode) && !valid_ssid_passed){
+    else if (mode_requires_wifi(target_mode) && !valid_ssid_passed) {
       ok_to_exit_config_mode = false;
     }
-    
-  } while(!ok_to_exit_config_mode);
+
+  } while (!ok_to_exit_config_mode);
 
   allowed_to_write_config_eeprom = false;
-  
+
   Serial.println(F("-~=* In OPERATIONAL Mode *=~-"));
   setLCD_P(PSTR("OPERATIONAL MODE"));
   SUCCESS_MESSAGE_DELAY();
-  
+
   // ... but *which* operational mode are we in?
   mode = target_mode;
-  
+
   // ... and what is the temperature and humdidity offset we should use
   reported_temperature_offset_degC = eeprom_read_float((float *) EEPROM_TEMPERATURE_OFFSET);
   reported_humidity_offset_percent = eeprom_read_float((float *) EEPROM_HUMIDITY_OFFSET);
-  
-  if(mode_requires_wifi(mode)){
-    // Scan Networks to show RSSI    
-    uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);    
-    if(connect_method != CONNECT_METHOD_SMARTCONFIG){
+
+  if (mode_requires_wifi(mode)) {
+    // Scan Networks to show RSSI
+    uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
+    if (connect_method != CONNECT_METHOD_SMARTCONFIG) {
       displayRSSI(); // not sure this will work if Smart Config is used
     }
-    
+
     delayForWatchdog();
     petWatchdog();
-    
+
     // Try and Connect to the Configured Network
-    if(!restartWifi()){
+    if (!restartWifi()) {
       // technically this code should be unreachable
       // because error conditions internal to the restartWifi function
       // should restart the unit at a finer granularity
@@ -621,98 +621,107 @@ void setup() {
     }
     delayForWatchdog();
     petWatchdog();
-  
+
     // at this point we have connected to the network successfully
     // it's an opportunity to mirror the eeprom configuration
     // if it's different from what's already there
-    // importantly this check only happens at startup    
+    // importantly this check only happens at startup
     commitConfigToMirroredConfig();
-  
-    // Check for Firmware Updates 
+
+    // Check for Firmware Updates
     checkForFirmwareUpdates();
     integrity_check_passed = checkConfigIntegrity();
-    if(!integrity_check_passed){
+    if (!integrity_check_passed) {
       Serial.println(F("Error: Config Integrity Check Failed after checkForFirmwareUpdates"));
       setLCD_P(PSTR("CONFIG INTEGRITY"
                     "  CHECK FAILED  "));
-      for(;;){
+      for (;;) {
         // prevent automatic reset
         delay(1000);
         petWatchdog();
-      }      
+      }
     }
+
+    // set Time from NTP
+  /* use NTP */
+  Serial.println(F("Get time from NTP"));
+  unsigned long gt = getTime() ;
+  Serial.println(F("Set time from NTP"));
+  setTime(gt);
+  Serial.println(F("Time set from NTP"));
     
+
     // Connect to MQTT server
-    if(!mqttReconnect()){
+    if (!mqttReconnect()) {
       setLCD_P(PSTR("  MQTT CONNECT  "
                     "     FAILED     "));
       lcdFrownie(15, 1);
-      ERROR_MESSAGE_DELAY();      
+      ERROR_MESSAGE_DELAY();
       Serial.println(F("Error: Unable to connect to MQTT server"));
       Serial.flush();
-      watchdogForceReset();    
+      watchdogForceReset();
     }
     delayForWatchdog();
     petWatchdog();
   }
-  else{
+  else {
     // it's a mode that doesn't require Wi-Fi
     // save settings as necessary
     commitConfigToMirroredConfig();
     cc3000.stop(); // save power!
   }
-  
+
   // get the temperature units
   temperature_units = eeprom_read_byte((const uint8_t *) EEPROM_TEMPERATURE_UNITS);
-  if((temperature_units != 'C') && (temperature_units != 'F')){
+  if ((temperature_units != 'C') && (temperature_units != 'F')) {
     temperature_units = 'C';
   }
-  
+
   // get the sampling, reporting, and averaging parameters
   sampling_interval = eeprom_read_word((uint16_t * ) EEPROM_SAMPLING_INTERVAL) * 1000L;
   reporting_interval = eeprom_read_word((uint16_t * ) EEPROM_REPORTING_INTERVAL) * 1000L;
   sample_buffer_depth = (uint16_t) ((((uint32_t) eeprom_read_word((uint16_t * ) EEPROM_AVERAGING_INTERVAL)) * 1000L) / sampling_interval);
-  
-  if(mode == SUBMODE_NORMAL){
+
+  if (mode == SUBMODE_NORMAL) {
     setLCD_P(PSTR("TEMP ---  RH ---"
-                  "NO2  ---  CO ---"));           
-    SUCCESS_MESSAGE_DELAY();                      
+                  "NO2  ---  CO ---"));
+    SUCCESS_MESSAGE_DELAY();
   }
 }
 
 void loop() {
   current_millis = millis();
 
-  if(current_millis - previous_sensor_sampling_millis >= sampling_interval){
-    previous_sensor_sampling_millis = current_millis;    
+  if (current_millis - previous_sensor_sampling_millis >= sampling_interval) {
+    previous_sensor_sampling_millis = current_millis;
     Serial.print(F("Info: Sampling Sensors @ "));
     Serial.println(millis());
     collectNO2();
     collectCO();
     collectTemperature();
-    collectHumidity(); 
-    advanceSampleBufferIndex(); 
+    collectHumidity();
+    advanceSampleBufferIndex();
   }
 
-  if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
-    previous_touch_sampling_millis = current_millis;    
-    collectTouch();    
-    processTouchQuietly();  
-  }  
+  if (current_millis - previous_touch_sampling_millis >= touch_sampling_interval) {
+    previous_touch_sampling_millis = current_millis;
+    collectTouch();
+    processTouchQuietly();
+  }
 
   // the following loop routines *must* return reasonably frequently
   // so that the watchdog timer is serviced
-  switch(mode){
+  switch (mode) {
     case SUBMODE_NORMAL:
       loop_wifi_mqtt_mode();
       break;
     case SUBMODE_OFFLINE:
       loop_offline_mode();
       break;
-    default: // unkown operating mode, nothing to be done 
+    default: // unkown operating mode, nothing to be done
       break;
   }
-  
+
   // pet the watchdog
   if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
     previous_tinywdt_millis = current_millis;
@@ -723,19 +732,19 @@ void loop() {
 }
 
 /****** INITIALIZATION SUPPORT FUNCTIONS ******/
-void ERROR_MESSAGE_DELAY(void){
+void ERROR_MESSAGE_DELAY(void) {
   delay(LCD_ERROR_MESSAGE_DELAY);
 }
 
-void SUCCESS_MESSAGE_DELAY(void){
+void SUCCESS_MESSAGE_DELAY(void) {
   delay(LCD_SUCCESS_MESSAGE_DELAY);
 }
 
-void init_firmware_version(void){
-  snprintf(firmware_version, 15, "%d.%d.%d", 
-    AQEV2FW_MAJOR_VERSION, 
-    AQEV2FW_MINOR_VERSION, 
-    AQEV2FW_PATCH_VERSION);
+void init_firmware_version(void) {
+  snprintf(firmware_version, 15, "%d.%d.%d",
+           AQEV2FW_MAJOR_VERSION,
+           AQEV2FW_MINOR_VERSION,
+           AQEV2FW_PATCH_VERSION);
 }
 
 void initializeHardware(void) {
@@ -743,14 +752,14 @@ void initializeHardware(void) {
   Serial.begin(115200);
 
   init_firmware_version();
-  
+
   // without this line, if the touch hardware is absent
   // serial input processing grinds to a snails pace
-  touch.set_CS_Timeout_Millis(100); 
+  touch.set_CS_Timeout_Millis(100);
 
   Serial.println(F(" +------------------------------------+"));
-  Serial.println(F(" |   Welcome to Air Quality Egg 2.0   |"));
-  Serial.println(F(" |       NO2 / CO Sensor Suite        |"));  
+  Serial.println(F(" |   Welcome to Air Quality Egg 2.0.4i|"));
+  Serial.println(F(" |       NO2 / CO Sensor Suite + NTP  |"));
   Serial.print(F(" |       Firmware Version "));
   Serial.print(firmware_version);
   Serial.println(F("       |"));
@@ -760,7 +769,7 @@ void initializeHardware(void) {
   Serial.print(F(" Egg Serial Number: "));
   print_eeprom_mqtt_client_id();
   Serial.println();
-  
+
   // Initialize Tiny Watchdog
   Serial.print(F("Info: Tiny Watchdog Initialization..."));
   watchdogInitialize();
@@ -768,73 +777,73 @@ void initializeHardware(void) {
 
   pinMode(A6, OUTPUT);
   uint8_t backlight_behavior = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
-  if((BACKLIGHT_ON_AT_STARTUP == backlight_behavior) || (backlight_behavior == BACKLIGHT_ALWAYS_ON)){
+  if ((BACKLIGHT_ON_AT_STARTUP == backlight_behavior) || (backlight_behavior == BACKLIGHT_ALWAYS_ON)) {
     backlightOn();
   }
-  else{
+  else {
     backlightOff();
   }
 
   // smiley face
   byte smiley[8] = {
-          B00000,
-          B00000,
-          B01010,
-          B00000,
-          B10001,
-          B01110,
-          B00000,
-          B00000
+    B00000,
+    B00000,
+    B01010,
+    B00000,
+    B10001,
+    B01110,
+    B00000,
+    B00000
   };
-  
+
   byte frownie[8] = {
-          B00000,
-          B00000,
-          B01010,
-          B00000,
-          B01110,
-          B10001,
-          B00000,
-          B00000
+    B00000,
+    B00000,
+    B01010,
+    B00000,
+    B01110,
+    B10001,
+    B00000,
+    B00000
   };
-  
+
   byte emptybar[8] = {
-          B11111,
-          B10001,
-          B10001,
-          B10001,
-          B10001,
-          B10001,
-          B10001,
-          B11111
+    B11111,
+    B10001,
+    B10001,
+    B10001,
+    B10001,
+    B10001,
+    B10001,
+    B11111
   };
-  
+
   byte fullbar[8] = {
-          B11111,
-          B11111,
-          B11111,
-          B11111,
-          B11111,
-          B11111,
-          B11111,
-          B11111
-  };     
-  
+    B11111,
+    B11111,
+    B11111,
+    B11111,
+    B11111,
+    B11111,
+    B11111,
+    B11111
+  };
+
   lcd.createChar(0, smiley);
-  lcd.createChar(1, frownie);  
+  lcd.createChar(1, frownie);
   lcd.createChar(2, emptybar);
   lcd.createChar(3, fullbar);
-  
+
   lcd.begin(16, 2);
   setLCD_P(PSTR("AIR QUALITY EGG "));
   char tmp[17] = {0};
-  snprintf(tmp, 16, "VERSION %d.%d.%d", 
-    AQEV2FW_MAJOR_VERSION, 
-    AQEV2FW_MINOR_VERSION,
-    AQEV2FW_PATCH_VERSION);
-    
+  snprintf(tmp, 16, "VERSION %d.%d.%d",
+           AQEV2FW_MAJOR_VERSION,
+           AQEV2FW_MINOR_VERSION,
+           AQEV2FW_PATCH_VERSION);
+
   updateLCD(tmp, 1);
-  
+
   Wire.begin();
 
   // Initialize slot select pins
@@ -844,7 +853,7 @@ void initializeHardware(void) {
   pinMode(10, OUTPUT);
   selectNoSlot();
   Serial.println(F("OK."));
-  
+
   // Initialize SPI Flash
   Serial.print(F("Info: SPI Flash Initialization..."));
   if (flash.initialize()) {
@@ -854,17 +863,17 @@ void initializeHardware(void) {
   else {
     Serial.println(F("Fail."));
     init_spi_flash_ok = false;
-  }  
-  
-  // Initialize SD card
-  Serial.print(F("Info: SD Card Initialization..."));        
-  if (SD.begin(16)) {
-    Serial.println(F("OK."));     
-    init_sdcard_ok = true;        
   }
-  else{
-    Serial.println(F("Fail.")); 
-    init_sdcard_ok = false;  
+
+  // Initialize SD card
+  Serial.print(F("Info: SD Card Initialization..."));
+  if (SD.begin(16)) {
+    Serial.println(F("OK."));
+    init_sdcard_ok = true;
+  }
+  else {
+    Serial.println(F("Fail."));
+    init_sdcard_ok = false;
   }
 
   getCurrentFirmwareSignature();
@@ -897,13 +906,13 @@ void initializeHardware(void) {
   }
 
   Serial.print(F("Info: NO2 Sensor ADC Initialization..."));
-  if(MCP342x::errorNone == adc.convert(MCP342x::channel1, MCP342x::oneShot, MCP342x::resolution16, MCP342x::gain1)){
+  if (MCP342x::errorNone == adc.convert(MCP342x::channel1, MCP342x::oneShot, MCP342x::resolution16, MCP342x::gain1)) {
     Serial.println(F("OK."));
-    init_no2_adc_ok = true;    
+    init_no2_adc_ok = true;
   }
-  else{
+  else {
     Serial.println(F("Failed."));
-    init_no2_adc_ok = false;    
+    init_no2_adc_ok = false;
   }
 
   Serial.print(F("Info: CO Sensor AFE Initialization..."));
@@ -920,51 +929,51 @@ void initializeHardware(void) {
     Serial.println(F("Failed."));
     init_co_afe_ok = false;
   }
-  
+
   Serial.print(F("Info: CO Sensor ADC Initialization..."));
-  if(MCP342x::errorNone == adc.convert(MCP342x::channel1, MCP342x::oneShot, MCP342x::resolution16, MCP342x::gain1)){
+  if (MCP342x::errorNone == adc.convert(MCP342x::channel1, MCP342x::oneShot, MCP342x::resolution16, MCP342x::gain1)) {
     Serial.println(F("OK."));
-    init_co_adc_ok = true;    
+    init_co_adc_ok = true;
   }
-  else{
+  else {
     Serial.println(F("Failed."));
-    init_co_adc_ok = false;    
+    init_co_adc_ok = false;
   }
 
   // Initialize SD card
-  Serial.print(F("Info: RTC Initialization..."));   
-  selectSlot3();  
+  Serial.print(F("Info: RTC Initialization..."));
+  selectSlot3();
   rtc.begin();
   if (rtc.isrunning()) {
-    Serial.println(F("OK."));   
-    setSyncProvider(AQE_now);  
-    init_rtc_ok = true;       
+    Serial.println(F("OK."));
+    setSyncProvider(AQE_now);
+    init_rtc_ok = true;
   }
-  else{
-    Serial.println(F("Fail.")); 
-    init_rtc_ok = false;  
+  else {
+    Serial.println(F("Fail."));
+    init_rtc_ok = false;
   }
 
   selectNoSlot();
 
   uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
-  Serial.print(F("Info: CC3000 Initialization..."));  
+  Serial.print(F("Info: CC3000 Initialization..."));
   SUCCESS_MESSAGE_DELAY(); // don't race past the splash screen, and give watchdog some breathing room
   petWatchdog();
-  if(connect_method == CONNECT_METHOD_SMARTCONFIG){
+  if (connect_method == CONNECT_METHOD_SMARTCONFIG) {
     setLCD_P(PSTR("  SMART CONFIG  "
                   "  RECONNECTING  "));
-    if (cc3000.begin(false, true, DEVICE_NAME)){
+    if (cc3000.begin(false, true, DEVICE_NAME)) {
       lcdSmiley(15, 1);
       Serial.println("OK.");
     }
-    else{
+    else {
       Serial.println("Failed.");
       updateLCD("FAILED", 1);
-      lcdFrownie(15, 1);      
+      lcdFrownie(15, 1);
     }
   }
-  else{
+  else {
     if (cc3000.begin()) {
       Serial.println(F("OK."));
       init_cc3000_ok = true;
@@ -973,77 +982,77 @@ void initializeHardware(void) {
       Serial.println(F("Failed."));
       init_cc3000_ok = false;
     }
-  } 
+  }
 
   updateLCD("NO2 / CO", 0);
   updateLCD("MODEL", 1);
-  SUCCESS_MESSAGE_DELAY();  
-  
+  SUCCESS_MESSAGE_DELAY();
+
 }
 
 /****** CONFIGURATION SUPPORT FUNCTIONS ******/
-void initializeNewConfigSettings(void){
+void initializeNewConfigSettings(void) {
   static char command_buf[32] = {0};
-  boolean in_config_mode = false; 
+  boolean in_config_mode = false;
   allowed_to_write_config_eeprom = true;
-  
+
   // backlight settings
   uint8_t backlight_startup = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
   uint16_t backlight_duration = eeprom_read_word((uint16_t *) EEPROM_BACKLIGHT_DURATION);
-  if((backlight_startup == 0xFF) || (backlight_duration == 0xFFFF)){
-    configInject("aqe\r");    
+  if ((backlight_startup == 0xFF) || (backlight_duration == 0xFFFF)) {
+    configInject("aqe\r");
     configInject("backlight initon\r");
     configInject("backlight 60\r");
     in_config_mode = true;
   }
-  
+
   // sampling settings
   uint16_t l_sampling_interval = eeprom_read_word((uint16_t * ) EEPROM_SAMPLING_INTERVAL);
   uint16_t l_reporting_interval = eeprom_read_word((uint16_t * ) EEPROM_REPORTING_INTERVAL);
   uint16_t l_averaging_interval = eeprom_read_word((uint16_t * ) EEPROM_AVERAGING_INTERVAL);
-  if((l_sampling_interval == 0xFFFF) || (l_reporting_interval == 0xFFFF) || (l_averaging_interval == 0xFFFF)){
-    if(!in_config_mode){
+  if ((l_sampling_interval == 0xFFFF) || (l_reporting_interval == 0xFFFF) || (l_averaging_interval == 0xFFFF)) {
+    if (!in_config_mode) {
       configInject("aqe\r");
       in_config_mode = true;
     }
-    configInject("sampling 5, 160, 5\r");    
-  }    
+    configInject("sampling 5, 160, 5\r");
+  }
 
-  // the following two blocks of code are a 'hot-fix' to the slope calculation, 
+  // the following two blocks of code are a 'hot-fix' to the slope calculation,
   // only apply it if the slope is not already self consistent with the sensitivity
-  float sensitivity = eeprom_read_float((const float *) EEPROM_NO2_SENSITIVITY);  
+  float sensitivity = eeprom_read_float((const float *) EEPROM_NO2_SENSITIVITY);
   float calculated_slope = convert_no2_sensitivity_to_slope(sensitivity);
   float stored_slope = eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE);
-  if(calculated_slope != stored_slope){ 
-    if(!in_config_mode){
+  if (calculated_slope != stored_slope) {
+    if (!in_config_mode) {
       configInject("aqe\r");
       in_config_mode = true;
-    }    
-    memset(command_buf, 0, 32);  
+    }
+    memset(command_buf, 0, 32);
     snprintf(command_buf, 31, "no2_sen %8.4f\r", sensitivity);
     configInject(command_buf);
     configInject("backup no2\r");
   }
-  
-  sensitivity = eeprom_read_float((const float *) EEPROM_CO_SENSITIVITY);  
+
+  sensitivity = eeprom_read_float((const float *) EEPROM_CO_SENSITIVITY);
   calculated_slope = convert_co_sensitivity_to_slope(sensitivity);
   stored_slope = eeprom_read_float((const float *) EEPROM_CO_CAL_SLOPE);
-  if(calculated_slope != stored_slope){ 
-    if(!in_config_mode){
+  if (calculated_slope != stored_slope) {
+    if (!in_config_mode) {
       configInject("aqe\r");
       in_config_mode = true;
-    }    
-    memset(command_buf, 0, 32);  
+    }
+    memset(command_buf, 0, 32);
     snprintf(command_buf, 31, "co_sen %8.4f\r", sensitivity);
-    configInject(command_buf);  
+    configInject(command_buf);
     configInject("backup co\r");
   }
-  
-  if(in_config_mode){
+
+  if (in_config_mode) {
     configInject("exit\r");
   }
-  
-  allowed_to_write_config_eeprom = false;  
+
+  allowed_to_write_config_eeprom = false;
 }
 
 boolean checkConfigIntegrity(void) {
@@ -1087,7 +1096,7 @@ uint8_t configModeStateMachine(char b, boolean reset_buffers) {
   // if you are at the last write-able location in the buffer
   // the only legal characters to accept are a backspace, a newline, or a carriage return
   // reject anything else implicitly
-  if((buf_idx == buf_max_write_idx) && (b != 0x7F) && (b != 0x0D) && (b != 0x0A)){
+  if ((buf_idx == buf_max_write_idx) && (b != 0x7F) && (b != 0x0D) && (b != 0x0A)) {
     Serial.println(F("Warn: Input buffer full and cannot accept new characters. Press enter to clear buffers."));
   }
   // the following logic rejects all non-printable characters besides 0D, 0A, and 7F
@@ -1126,7 +1135,7 @@ uint8_t configModeStateMachine(char b, boolean reset_buffers) {
 
     // Serial.print("buf = ");
     // Serial.println(buf);
-    
+
     if (strncmp("aqe", lower_buf, 3) == 0) {
       ret = CONFIG_MODE_GOT_INIT;
     }
@@ -1246,19 +1255,19 @@ void lowercase(char * str) {
   }
 }
 
-void note_know_what_youre_doing(){
+void note_know_what_youre_doing() {
   Serial.println(F("   note:    Unless you *really* know what you're doing, you should"));
-  Serial.println(F("            probably not be using this command."));  
+  Serial.println(F("            probably not be using this command."));
 }
 
-void warn_could_break_upload(){
+void warn_could_break_upload() {
   Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
-  Serial.println(F("            from publishing data to the internet."));  
+  Serial.println(F("            from publishing data to the internet."));
 }
 
-void warn_could_break_connect(){
+void warn_could_break_connect() {
   Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
-  Serial.println(F("            from connecting to your network."));  
+  Serial.println(F("            from connecting to your network."));
 }
 
 void help_menu(char * arg) {
@@ -1305,13 +1314,13 @@ void help_menu(char * arg) {
       Serial.println(F("      security - the Wi-Fi security mode"));
       Serial.println(F("      ipmode - the Wi-Fi IP-address mode"));
       Serial.println(F("      mqttsrv - MQTT server name"));
-      Serial.println(F("      mqttport - MQTT server port"));           
+      Serial.println(F("      mqttport - MQTT server port"));
       Serial.println(F("      mqttuser - MQTT username"));
-      Serial.println(F("      mqttpwd - lol, sorry, that's not happening either!"));      
-      Serial.println(F("      mqttid - MQTT client ID"));      
-      Serial.println(F("      mqttauth - MQTT authentication enabled?"));      
-      Serial.println(F("      updatesrv - Update server name"));      
-      Serial.println(F("      updatefile - Update filename (no extension)"));          
+      Serial.println(F("      mqttpwd - lol, sorry, that's not happening either!"));
+      Serial.println(F("      mqttid - MQTT client ID"));
+      Serial.println(F("      mqttauth - MQTT authentication enabled?"));
+      Serial.println(F("      updatesrv - Update server name"));
+      Serial.println(F("      updatefile - Update filename (no extension)"));
       Serial.println(F("      no2_sen - NO2 sensitivity [nA/ppm]"));
       Serial.println(F("      no2_slope - NO2 sensors slope [ppb/V]"));
       Serial.println(F("      no2_off - NO2 sensors offset [V]"));
@@ -1319,10 +1328,10 @@ void help_menu(char * arg) {
       Serial.println(F("      co_slope - CO sensors slope [ppm/V]"));
       Serial.println(F("      co_off - CO sensors offset [V]"));
       Serial.println(F("      temp_off - Temperature sensor reporting offset [degC] (subtracted)"));
-      Serial.println(F("      hum_off - Humidity sensor reporting offset [%] (subtracted)"));      
+      Serial.println(F("      hum_off - Humidity sensor reporting offset [%] (subtracted)"));
       Serial.println(F("      key - lol, sorry, that's also not happening!"));
       Serial.println(F("      opmode - the Operational Mode the Egg is configured for"));
-      Serial.println(F("      tempunit - the unit of measure Temperature is reported in (F or C)"));      
+      Serial.println(F("      tempunit - the unit of measure Temperature is reported in (F or C)"));
       Serial.println(F("      backlight - the backlight behavior settings (duration, mode)"));
       Serial.println(F("      timestamp - the current timestamp in the format m/d/y h:m:s"));
       Serial.println(F("      sampleint - the sensor sampling interval in seconds"));
@@ -1346,38 +1355,38 @@ void help_menu(char * arg) {
       Serial.println(F("                   performs 'security wpa2'"));
       Serial.println(F("                   performs 'use dhcp'"));
       Serial.println(F("                   performs 'opmode normal'"));
-      Serial.println(F("                   performs 'tempunit C'"));   
-      Serial.println(F("                   performs 'altitude -1")); 
+      Serial.println(F("                   performs 'tempunit C'"));
+      Serial.println(F("                   performs 'altitude -1"));
       Serial.println(F("                   performs 'backlight 60'"));
-      Serial.println(F("                   performs 'backlight initon'"));      
+      Serial.println(F("                   performs 'backlight initon'"));
       Serial.println(F("                   performs 'mqttsrv opensensors.io'"));
-      Serial.println(F("                   performs 'mqttport 1883'"));           
-      Serial.println(F("                   performs 'mqttauth enable'"));        
-      Serial.println(F("                   performs 'mqttuser wickeddevice'"));  
+      Serial.println(F("                   performs 'mqttport 1883'"));
+      Serial.println(F("                   performs 'mqttauth enable'"));
+      Serial.println(F("                   performs 'mqttuser wickeddevice'"));
       Serial.println(F("                   performs 'sampling 5, 160, 5'"));
-      Serial.println(F("                   performs 'restore temp_off'"));      
-      Serial.println(F("                   performs 'restore hum_off'"));          
+      Serial.println(F("                   performs 'restore temp_off'"));
+      Serial.println(F("                   performs 'restore hum_off'"));
       Serial.println(F("                   performs 'restore mac'"));
       Serial.println(F("                   performs 'restore mqttpwd'"));
-      Serial.println(F("                   performs 'restore mqttid'"));      
-      Serial.println(F("                   performs 'restore updatesrv'"));   
-      Serial.println(F("                   performs 'restore updatefile'"));         
+      Serial.println(F("                   performs 'restore mqttid'"));
+      Serial.println(F("                   performs 'restore updatesrv'"));
+      Serial.println(F("                   performs 'restore updatefile'"));
       Serial.println(F("                   performs 'restore key'"));
       Serial.println(F("                   performs 'restore no2'"));
-      Serial.println(F("                   performs 'restore co'"));          
+      Serial.println(F("                   performs 'restore co'"));
       Serial.println(F("                   clears the SSID from memory"));
       Serial.println(F("                   clears the Network Password from memory"));
       Serial.println(F("      mac        - retrieves the mac address from BACKUP"));
       Serial.println(F("                   and assigns it to the CC3000, via a 'mac' command"));
       Serial.println(F("      mqttpwd    - restores the MQTT password from BACKUP "));
-      Serial.println(F("      mqttid     - restores the MQTT client ID"));    
-      Serial.println(F("      updatesrv  - restores the Update server name"));          
-      Serial.println(F("      updatefile - restores the Update filename"));           
+      Serial.println(F("      mqttid     - restores the MQTT client ID"));
+      Serial.println(F("      updatesrv  - restores the Update server name"));
+      Serial.println(F("      updatefile - restores the Update filename"));
       Serial.println(F("      key        - restores the Private Key from BACKUP "));
       Serial.println(F("      no2        - restores the NO2 calibration parameters from BACKUP "));
       Serial.println(F("      co         - restores the CO calibration parameters from BACKUP "));
       Serial.println(F("      temp_off   - restores the Temperature reporting offset from BACKUP "));
-      Serial.println(F("      hum_off    - restores the Humidity reporting offset from BACKUP "));      
+      Serial.println(F("      hum_off    - restores the Humidity reporting offset from BACKUP "));
     }
     else if (strncmp("mac", arg, 3) == 0) {
       Serial.println(F("mac <address>"));
@@ -1391,19 +1400,19 @@ void help_menu(char * arg) {
       Serial.println(F("method <type>"));
       Serial.println(F("   <type> is one of:"));
       Serial.println(F("      direct - use parameters entered in CONFIG mode"));
-      Serial.println(F("      smartconfig - use smart config process"));      
-      warn_could_break_connect();      
+      Serial.println(F("      smartconfig - use smart config process"));
+      warn_could_break_connect();
     }
     else if (strncmp("ssid", arg, 4) == 0) {
       Serial.println(F("ssid <string>"));
       Serial.println(F("   <string> is the SSID of the network the device should connect to."));
-      warn_could_break_connect();      
+      warn_could_break_connect();
     }
     else if (strncmp("pwd", arg, 3) == 0) {
       Serial.println(F("pwd <string>"));
       Serial.println(F("   <string> is the network password for "));
       Serial.println(F("      the SSID that the device should connect to."));
-      warn_could_break_connect();      
+      warn_could_break_connect();
     }
     else if (strncmp("security", arg, 8) == 0) {
       Serial.println(F("security <mode>"));
@@ -1412,46 +1421,46 @@ void help_menu(char * arg) {
       Serial.println(F("      wep  - the network WEP security"));
       Serial.println(F("      wpa  - the network WPA Personal security"));
       Serial.println(F("      wpa2 - the network WPA2 Personal security"));
-      Serial.println(F("      auto - determine during first network successful scan"));      
-      warn_could_break_connect();      
+      Serial.println(F("      auto - determine during first network successful scan"));
+      warn_could_break_connect();
     }
     else if (strncmp("staticip", arg, 8) == 0) {
       Serial.println(F("staticip <config>"));
       Serial.println(F("   <config> is four ip addresses separated by spaces"));
       Serial.println(F("      <param1> static ip address, e.g. 192.168.1.17"));
-      Serial.println(F("      <param2> netmask, e.g. 255.255.255.0"));      
-      Serial.println(F("      <param3> default gateway ip address, e.g. 192.168.1.1"));      
-      Serial.println(F("      <param4> dns server ip address, e.g. 8.8.8.8"));      
+      Serial.println(F("      <param2> netmask, e.g. 255.255.255.0"));
+      Serial.println(F("      <param3> default gateway ip address, e.g. 192.168.1.1"));
+      Serial.println(F("      <param4> dns server ip address, e.g. 8.8.8.8"));
       Serial.println(F("   result: The entered static network parameters will be used by the CC3000"));
       Serial.println(F("   note:   To configure DHCP use command 'use dhcp'"));
-      warn_could_break_connect();      
+      warn_could_break_connect();
     }
     else if (strncmp("use", arg, 3) == 0) {
       Serial.println(F("use <param>"));
       Serial.println(F("   <param> is one of:"));
       Serial.println(F("      dhcp - wipes the Static IP address from the EEPROM"));
-      warn_could_break_connect();      
+      warn_could_break_connect();
     }
     else if (strncmp("list", arg, 4) == 0) {
       Serial.println(F("list <param>"));
       Serial.println(F("   <param> is one of:"));
-      Serial.println(F("      files - lists all files on the sd card (if inserted)"));   
+      Serial.println(F("      files - lists all files on the sd card (if inserted)"));
     }
     else if (strncmp("download", arg, 8) == 0) {
       Serial.println(F("download <filename>"));
       Serial.println(F("   prints the contents of the named file to the console."));
-    }   
+    }
     else if (strncmp("delete", arg, 6) == 0) {
       Serial.println(F("delete <filename>"));
       Serial.println(F("   deletes the named file from the SD card."));
-    }       
+    }
     else if (strncmp("force", arg, 5) == 0) {
       Serial.println(F("force <param>"));
       Serial.println(F("   <param> is one of:"));
       Serial.println(F("      update - invalidates the firmware signature, "));
       Serial.println(F("               configures for normal mode, and exits config mode, "));
       Serial.println(F("               and should initiate firmware update after connecting to wi-fi."));
-    }    
+    }
     else if (strncmp("sampling", arg, 8) == 0) {
       Serial.println(F("sampling <sampling_interval>, <averaging_interval>, <reporting_interval>"));
       Serial.println(F("   <sampling_interval> is the duration between sensor samples, in integer seconds (at least 3)"));
@@ -1463,40 +1472,40 @@ void help_menu(char * arg) {
       Serial.println(F("   <string> is the password the device will use to connect "));
       Serial.println(F("      to the MQTT server."));
       note_know_what_youre_doing();
-      warn_could_break_upload();      
+      warn_could_break_upload();
     }
     else if (strncmp("mqttsrv", arg, 7) == 0) {
       Serial.println(F("mqttsrv <string>"));
       Serial.println(F("   <string> is the DNS name of the MQTT server."));
       note_know_what_youre_doing();
-      warn_could_break_upload();  
+      warn_could_break_upload();
     }
     else if (strncmp("mqttuser", arg, 8) == 0) {
       Serial.println(F("mqttuser <string>"));
       Serial.println(F("   <string> is the username used to connect to the MQTT server."));
       note_know_what_youre_doing();
-      warn_could_break_upload();  
+      warn_could_break_upload();
     }
     else if (strncmp("mqttid", arg, 6) == 0) {
       Serial.println(F("mqttid <string>"));
       Serial.println(F("   <string> is the Client ID used to connect to the MQTT server."));
-      Serial.println(F("            Must be between 1 and 23 characters long per MQTT v3.1 spec."));    
-      // Ref: http://public.dhe.ibm.com/software/dw/webservices/ws-mqtt/mqtt-v3r1.html#connect  
+      Serial.println(F("            Must be between 1 and 23 characters long per MQTT v3.1 spec."));
+      // Ref: http://public.dhe.ibm.com/software/dw/webservices/ws-mqtt/mqtt-v3r1.html#connect
       note_know_what_youre_doing();
-      warn_could_break_upload();  
-    }    
+      warn_could_break_upload();
+    }
     else if (strncmp("mqttauth", arg, 8) == 0) {
       Serial.println(F("mqttauth <string>"));
       Serial.println(F("   <string> is the one of 'enable' or 'disable'"));
       note_know_what_youre_doing();
-      warn_could_break_upload();   
-    }        
+      warn_could_break_upload();
+    }
     else if (strncmp("mqttport", arg, 8) == 0) {
       Serial.println(F("mqttport <number>"));
       Serial.println(F("   <number> is the a number between 1 and 65535 inclusive"));
       note_know_what_youre_doing();
-      warn_could_break_upload();  
-    }            
+      warn_could_break_upload();
+    }
     else if (strncmp("updatesrv", arg, 9) == 0) {
       Serial.println(F("updatesrv <string>"));
       Serial.println(F("   <string> is the DNS name of the Update server."));
@@ -1504,7 +1513,7 @@ void help_menu(char * arg) {
       Serial.println(F("         to re-enable internet firmware updates type 'restore updatesrv'"));
       Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
       Serial.println(F("            from getting firmware updates over the internet."));
-    }   
+    }
     else if (strncmp("updatefile", arg, 10) == 0) {
       Serial.println(F("updatefile <string>"));
       Serial.println(F("   <string> is the filename to load from the Update server, excluding the extension."));
@@ -1512,7 +1521,7 @@ void help_menu(char * arg) {
       Serial.println(F("            probably not be using this command."));
       Serial.println(F("   warning: Using this command incorrectly can prevent your device"));
       Serial.println(F("            from getting firmware updates over the internet."));
-    }    
+    }
     else if (strncmp("backup", arg, 6) == 0) {
       Serial.println(F("backup <param>"));
       Serial.println(F("   <param> is one of:"));
@@ -1522,7 +1531,7 @@ void help_menu(char * arg) {
       Serial.println(F("      no2      - backs up the NO2 calibration parameters"));
       Serial.println(F("      co       - backs up the CO calibration parameters"));
       Serial.println(F("      temp     - backs up the Temperature calibration parameters"));
-      Serial.println(F("      hum      - backs up the Humidity calibration parameters"));      
+      Serial.println(F("      hum      - backs up the Humidity calibration parameters"));
       Serial.println(F("      all      - does all of the above"));
     }
     else if (strncmp("no2_sen", arg, 7) == 0) {
@@ -1541,7 +1550,7 @@ void help_menu(char * arg) {
     else if (strncmp("co_sen", arg, 6) == 0) {
       Serial.println(F("co_sen <number>"));
       Serial.println(F("   <number> is the decimal value of CO sensitivity [nA/ppm]"));
-      Serial.println(F("   note: also sets the CO slope based on the sensitivity"));      
+      Serial.println(F("   note: also sets the CO slope based on the sensitivity"));
     }
     else if (strncmp("co_slope", arg, 8) == 0) {
       Serial.println(F("co_slope <number>"));
@@ -1558,7 +1567,7 @@ void help_menu(char * arg) {
     else if (strncmp("hum_off", arg, 7) == 0) {
       Serial.println(F("hum_off <number>"));
       Serial.println(F("   <number> is the decimal value of Humidity sensor reporting offset [%] (subtracted)"));
-    }    
+    }
     else if (strncmp("key", arg, 3) == 0) {
       Serial.println(F("key <string>"));
       Serial.println(F("   <string> is a 64-character string representing "));
@@ -1570,30 +1579,30 @@ void help_menu(char * arg) {
       Serial.println(F("      normal - publish data to MQTT server over Wi-Fi"));
       Serial.println(F("      offline - this mode writes data to an installed microSD card, creating one file per day, "));
       Serial.println(F("                named by convention YYYYMMDD.csv, intended to be used in conjunction with RTC module"));
-    }    
+    }
     else if (strncmp("tempunit", arg, 8) == 0) {
       Serial.println(F("tempunit <unit>"));
-      Serial.println(F("   <unit> is one of:"));      
+      Serial.println(F("   <unit> is one of:"));
       Serial.println(F("      C - report temperature in Celsius"));
       Serial.println(F("      F - report temperature in Fahrenheit"));
     }
     else if (strncmp("altitude", arg, 8) == 0) {
       Serial.println(F("altitude <number>"));
-      Serial.println(F("   <number> is the height above sea level where the Egg is [meters]"));   
+      Serial.println(F("   <number> is the height above sea level where the Egg is [meters]"));
       Serial.println(F("   Note: -1 is a special value meaning do not apply pressure compensation"));
-    }    
+    }
     else if (strncmp("datetime", arg, 8) == 0) {
       Serial.println(F("datetime <csv-date-time>"));
-      Serial.println(F("   <csv-date-time> is a comma separated date in the order year, month, day, hours, minutes, seconds"));    
+      Serial.println(F("   <csv-date-time> is a comma separated date in the order year, month, day, hours, minutes, seconds"));
     }
-    else if (strncmp("backlight", arg, 9) == 0){
+    else if (strncmp("backlight", arg, 9) == 0) {
       Serial.println(F("backlight <config>"));
-      Serial.println(F("   <config> is one of:"));      
+      Serial.println(F("   <config> is one of:"));
       Serial.println(F("      <seconds> - the whole number interval, in seconds, to keep the backlight on for when engaged"));
-      Serial.println(F("      initoff - makes the backlight off at startup"));      
-      Serial.println(F("      initon - makes the backlight on at startup"));            
-      Serial.println(F("      alwayson - makes the backlight always on"));            
-      Serial.println(F("      alwaysoff - makes the backlight always off"));                  
+      Serial.println(F("      initoff - makes the backlight off at startup"));
+      Serial.println(F("      initon - makes the backlight on at startup"));
+      Serial.println(F("      alwayson - makes the backlight always on"));
+      Serial.println(F("      alwaysoff - makes the backlight always off"));
     }
     else {
       Serial.print(F("Error: There is no help available for command \""));
@@ -1647,11 +1656,11 @@ boolean valid_ssid_config(void) {
   char ssid[32] = {0};
   boolean ssid_contains_only_printables = true;
 
-  uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);    
-  if(connect_method == CONNECT_METHOD_SMARTCONFIG){
+  uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
+  if (connect_method == CONNECT_METHOD_SMARTCONFIG) {
     return true; // doesn't need an SSID
   }
-  
+
   eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
   for (uint8_t ii = 0; ii < 32; ii++) {
     if (ssid[ii] == '\0') {
@@ -1721,48 +1730,48 @@ void print_eeprom_ipmode(void) {
   eeprom_read_block(netmask, (const void *) EEPROM_STATIC_NETMASK, 4);
   eeprom_read_block(gateway, (const void *) EEPROM_STATIC_GATEWAY, 4);
   eeprom_read_block(dns, (const void *) EEPROM_STATIC_DNS, 4);
-  
+
   if (memcmp(ip, noip, 4) == 0) {
     Serial.println(F("Configured for DHCP"));
   }
   else {
     Serial.println(F("Configured for Static IP: "));
-    for(uint8_t param_idx = 0; param_idx < 4; param_idx++){         
+    for (uint8_t param_idx = 0; param_idx < 4; param_idx++) {
       for (uint8_t ii = 0; ii < 4; ii++) {
-        switch(param_idx){
+        switch (param_idx) {
           case 0:
-            if(ii == 0){
+            if (ii == 0) {
               Serial.print(F("   IP Address:      "));
             }
             Serial.print(ip[ii], DEC);
             break;
           case 1:
-            if(ii == 0){
+            if (ii == 0) {
               Serial.print(F("   Netmask:         "));
             }
             Serial.print(netmask[ii], DEC);
             break;
           case 2:
-            if(ii == 0){
+            if (ii == 0) {
               Serial.print(F("   Default Gateway: "));
             }
             Serial.print(gateway[ii], DEC);
             break;
           case 3:
-            if(ii == 0){
+            if (ii == 0) {
               Serial.print(F("   DNS Server:      "));
-            }         
-            Serial.print(dns[ii], DEC); 
+            }
+            Serial.print(dns[ii], DEC);
             break;
-        }   
-        
-        if( ii != 3 ){        
+        }
+
+        if ( ii != 3 ) {
           Serial.print(F("."));
         }
-        else{
-          Serial.println(); 
+        else {
+          Serial.println();
         }
-      }      
+      }
     }
   }
 }
@@ -1785,58 +1794,58 @@ void print_label_with_star_if_not_backed_up(char * label, uint8_t bit_number) {
   Serial.print(label);
 }
 
-void print_eeprom_string(const char * address){
+void print_eeprom_string(const char * address) {
   char tmp[32] = {0};
   eeprom_read_block(tmp, (const void *) address, 31);
   Serial.println(tmp);
 }
 
-void print_eeprom_string(const char * address, const char * unless_it_matches_this, const char * in_which_case_print_this_instead){
+void print_eeprom_string(const char * address, const char * unless_it_matches_this, const char * in_which_case_print_this_instead) {
   char tmp[32] = {0};
   eeprom_read_block(tmp, (const void *) address, 31);
 
-  if(strcmp(tmp, unless_it_matches_this) == 0){
+  if (strcmp(tmp, unless_it_matches_this) == 0) {
     Serial.println(in_which_case_print_this_instead);
   }
-  else{
+  else {
     Serial.println(tmp);
   }
 }
 
-void print_eeprom_update_server(){
+void print_eeprom_update_server() {
   print_eeprom_string((const char *) EEPROM_UPDATE_SERVER_NAME, "", "Disabled");
 }
 
-void print_eeprom_update_filename(){
+void print_eeprom_update_filename() {
   print_eeprom_string((const char *) EEPROM_UPDATE_FILENAME);
-}  
+}
 
-void print_eeprom_mqtt_server(){
+void print_eeprom_mqtt_server() {
   print_eeprom_string((const char *) EEPROM_MQTT_SERVER_NAME);
 }
 
 
-void print_eeprom_mqtt_client_id(){
+void print_eeprom_mqtt_client_id() {
   print_eeprom_string((const char *) EEPROM_MQTT_CLIENT_ID);
 }
 
-void print_eeprom_mqtt_username(){
+void print_eeprom_mqtt_username() {
   print_eeprom_string((const char *) EEPROM_MQTT_USERNAME);
 }
 
-void print_eeprom_mqtt_authentication(){
+void print_eeprom_mqtt_authentication() {
   uint8_t auth = eeprom_read_byte((uint8_t *) EEPROM_MQTT_AUTH);
-  if(auth){
-    Serial.println(F("    MQTT Authentication: Enabled"));    
+  if (auth) {
+    Serial.println(F("    MQTT Authentication: Enabled"));
     Serial.print(F("    MQTT Username: "));
-    print_eeprom_mqtt_username();              
+    print_eeprom_mqtt_username();
   }
-  else{
+  else {
     Serial.println(F("    MQTT Authentication: Disabled"));
   }
 }
 
-void print_eeprom_operational_mode(uint8_t opmode){   
+void print_eeprom_operational_mode(uint8_t opmode) {
   switch (opmode) {
     case SUBMODE_NORMAL:
       Serial.println(F("Normal"));
@@ -1852,10 +1861,10 @@ void print_eeprom_operational_mode(uint8_t opmode){
       Serial.print(opmode, HEX);
       Serial.println(F("]"));
       break;
-  }  
+  }
 }
 
-void print_eeprom_temperature_units(){   
+void print_eeprom_temperature_units() {
   uint8_t tempunit = eeprom_read_byte((uint8_t *) EEPROM_TEMPERATURE_UNITS);
   switch (tempunit) {
     case 'C':
@@ -1872,39 +1881,39 @@ void print_eeprom_temperature_units(){
       Serial.print(tempunit, HEX);
       Serial.println(F("]"));
       break;
-  }  
+  }
 }
 
-void print_altitude_settings(void){
+void print_altitude_settings(void) {
   int16_t l_altitude = (int16_t) eeprom_read_word((uint16_t *) EEPROM_ALTITUDE_METERS);
-  if(l_altitude != -1){
+  if (l_altitude != -1) {
     Serial.print(l_altitude);
-    Serial.println(F(" meters"));  
+    Serial.println(F(" meters"));
   }
-  else{
+  else {
     Serial.println("Not set");
   }
 }
 
-void print_eeprom_backlight(){   
+void print_eeprom_backlight() {
   uint16_t backlight_duration = eeprom_read_word((uint16_t *) EEPROM_BACKLIGHT_DURATION);
   uint8_t backlight_startup = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
   Serial.print(backlight_duration);
   Serial.print(F(" seconds, "));
-  switch(backlight_startup){
+  switch (backlight_startup) {
     case BACKLIGHT_ON_AT_STARTUP:
       Serial.println(F("ON at startup"));
       break;
     case BACKLIGHT_OFF_AT_STARTUP:
-      Serial.println(F("OFF at startup"));    
+      Serial.println(F("OFF at startup"));
       break;
     case BACKLIGHT_ALWAYS_ON:
-      Serial.println(F("always ON"));    
+      Serial.println(F("always ON"));
       break;
     case BACKLIGHT_ALWAYS_OFF:
-      Serial.println(F("always OFF"));        
+      Serial.println(F("always OFF"));
       break;
-  }   
+  }
 }
 
 void print_eeprom_value(char * arg) {
@@ -1946,54 +1955,54 @@ void print_eeprom_value(char * arg) {
   }
   else if (strncmp(arg, "hum_off", 7) == 0) {
     print_eeprom_float((const float *) EEPROM_HUMIDITY_OFFSET);
-  }  
-  else if(strncmp(arg, "mqttsrv", 7) == 0) {
-    print_eeprom_string((const char *) EEPROM_MQTT_SERVER_NAME);    
   }
-  else if(strncmp(arg, "mqttport", 8) == 0) {
-    Serial.println(eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT));      
-  }  
-  else if(strncmp(arg, "mqttuser", 8) == 0) {
-    print_eeprom_string((const char *) EEPROM_MQTT_USERNAME);    
-  }  
-  else if(strncmp(arg, "mqttid", 6) == 0) {
-    print_eeprom_string((const char *) EEPROM_MQTT_CLIENT_ID);    
+  else if (strncmp(arg, "mqttsrv", 7) == 0) {
+    print_eeprom_string((const char *) EEPROM_MQTT_SERVER_NAME);
   }
-  else if(strncmp(arg, "mqttauth", 8) == 0) {
-    Serial.println(eeprom_read_byte((const uint8_t *) EEPROM_MQTT_AUTH));    
+  else if (strncmp(arg, "mqttport", 8) == 0) {
+    Serial.println(eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT));
   }
-  else if(strncmp(arg, "opmode", 6) == 0) {
-     print_eeprom_operational_mode(eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE));
+  else if (strncmp(arg, "mqttuser", 8) == 0) {
+    print_eeprom_string((const char *) EEPROM_MQTT_USERNAME);
   }
-  else if(strncmp(arg, "tempunit", 8) == 0) {
-     print_eeprom_temperature_units();
+  else if (strncmp(arg, "mqttid", 6) == 0) {
+    print_eeprom_string((const char *) EEPROM_MQTT_CLIENT_ID);
   }
-  else if(strncmp(arg, "backlight", 9) == 0) {
+  else if (strncmp(arg, "mqttauth", 8) == 0) {
+    Serial.println(eeprom_read_byte((const uint8_t *) EEPROM_MQTT_AUTH));
+  }
+  else if (strncmp(arg, "opmode", 6) == 0) {
+    print_eeprom_operational_mode(eeprom_read_byte((const uint8_t *) EEPROM_OPERATIONAL_MODE));
+  }
+  else if (strncmp(arg, "tempunit", 8) == 0) {
+    print_eeprom_temperature_units();
+  }
+  else if (strncmp(arg, "backlight", 9) == 0) {
     print_eeprom_backlight();
   }
-  else if(strncmp(arg, "timestamp", 9) == 0) {
+  else if (strncmp(arg, "timestamp", 9) == 0) {
     printCurrentTimestamp(NULL, NULL);
     Serial.println();
-  } 
-  else if(strncmp(arg, "updatesrv", 9) == 0) {
-    print_eeprom_update_server();    
-  }  
-  else if(strncmp(arg, "updatefile", 10) == 0) {
-    print_eeprom_string((const char *) EEPROM_UPDATE_FILENAME);    
-  }  
-  else if(strncmp(arg, "sampleint", 9) == 0) {
-    Serial.println(eeprom_read_word((uint16_t *) EEPROM_SAMPLING_INTERVAL));    
-  }   
-  else if(strncmp(arg, "reportint", 9) == 0) {
-    Serial.println(eeprom_read_word((uint16_t *) EEPROM_REPORTING_INTERVAL));    
-  }     
-  else if(strncmp(arg, "avgint", 6) == 0) {
-    Serial.println(eeprom_read_word((uint16_t *) EEPROM_AVERAGING_INTERVAL));    
-  } 
-  else if(strncmp(arg, "altitude", 8) == 0) {
-    Serial.println((int16_t) eeprom_read_word((uint16_t *) EEPROM_ALTITUDE_METERS));    
-  }         
-  else if(strncmp(arg, "settings", 8) == 0) {
+  }
+  else if (strncmp(arg, "updatesrv", 9) == 0) {
+    print_eeprom_update_server();
+  }
+  else if (strncmp(arg, "updatefile", 10) == 0) {
+    print_eeprom_string((const char *) EEPROM_UPDATE_FILENAME);
+  }
+  else if (strncmp(arg, "sampleint", 9) == 0) {
+    Serial.println(eeprom_read_word((uint16_t *) EEPROM_SAMPLING_INTERVAL));
+  }
+  else if (strncmp(arg, "reportint", 9) == 0) {
+    Serial.println(eeprom_read_word((uint16_t *) EEPROM_REPORTING_INTERVAL));
+  }
+  else if (strncmp(arg, "avgint", 6) == 0) {
+    Serial.println(eeprom_read_word((uint16_t *) EEPROM_AVERAGING_INTERVAL));
+  }
+  else if (strncmp(arg, "altitude", 8) == 0) {
+    Serial.println((int16_t) eeprom_read_word((uint16_t *) EEPROM_ALTITUDE_METERS));
+  }
+  else if (strncmp(arg, "settings", 8) == 0) {
     static char allff[64] = {0};
     memset(allff, 0xff, 64);
 
@@ -2010,24 +2019,24 @@ void print_eeprom_value(char * arg) {
     Serial.print(F("    Backlight Settings: "));
     print_eeprom_backlight();
     Serial.print(F("    Sensor Sampling Interval: "));
-    Serial.print(eeprom_read_word((uint16_t *) EEPROM_SAMPLING_INTERVAL));  
+    Serial.print(eeprom_read_word((uint16_t *) EEPROM_SAMPLING_INTERVAL));
     Serial.println(F(" seconds"));
     Serial.print(F("    Sensor Averaging Interval: "));
-    Serial.print(eeprom_read_word((uint16_t *) EEPROM_AVERAGING_INTERVAL));  
+    Serial.print(eeprom_read_word((uint16_t *) EEPROM_AVERAGING_INTERVAL));
     Serial.println(F(" seconds"));
     Serial.print(F("    Sensor Reporting Interval: "));
-    Serial.print(eeprom_read_word((uint16_t *) EEPROM_REPORTING_INTERVAL));  
+    Serial.print(eeprom_read_word((uint16_t *) EEPROM_REPORTING_INTERVAL));
     Serial.println(F(" seconds"));
-    
+
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | Network Settings:                                           |"));
     Serial.println(F(" +-------------------------------------------------------------+"));
     print_label_with_star_if_not_backed_up("MAC Address: ", BACKUP_STATUS_MAC_ADDRESS_BIT);
     print_eeprom_mac();
     uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
-    Serial.print(F("    Method: "));    
+    Serial.print(F("    Method: "));
     print_eeprom_connect_method();
-    if(connect_method != CONNECT_METHOD_SMARTCONFIG){    
+    if (connect_method != CONNECT_METHOD_SMARTCONFIG) {
       Serial.print(F("    SSID: "));
       print_eeprom_ssid();
       Serial.print(F("    Security Mode: "));
@@ -2036,19 +2045,19 @@ void print_eeprom_value(char * arg) {
     Serial.print(F("    IP Mode: "));
     print_eeprom_ipmode();
     Serial.print(F("    Update Server: "));
-    print_eeprom_update_server();    
+    print_eeprom_update_server();
     Serial.print(F("    Update Filename: "));
-    print_eeprom_update_filename();        
+    print_eeprom_update_filename();
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | MQTT Settings:                                              |"));
-    Serial.println(F(" +-------------------------------------------------------------+"));    
+    Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.print(F("    MQTT Server: "));
-    print_eeprom_mqtt_server();   
+    print_eeprom_mqtt_server();
     Serial.print(F("    MQTT Port: "));
-    Serial.println(eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT)); 
+    Serial.println(eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT));
     Serial.print(F("    MQTT Client ID: "));
-    print_eeprom_mqtt_client_id();       
-    print_eeprom_mqtt_authentication(); 
+    print_eeprom_mqtt_client_id();
+    print_eeprom_mqtt_authentication();
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | Credentials:                                                |"));
     Serial.println(F(" +-------------------------------------------------------------+"));
@@ -2073,22 +2082,22 @@ void print_eeprom_value(char * arg) {
     print_eeprom_float((const float *) EEPROM_CO_CAL_SLOPE);
     print_label_with_star_if_not_backed_up("CO Offset [V]: ", BACKUP_STATUS_CO_CALIBRATION_BIT);
     print_eeprom_float((const float *) EEPROM_CO_CAL_OFFSET);
-    
+
     char temp_reporting_offset_label[64] = {0};
     char temperature_units = (char) eeprom_read_byte((uint8_t *) EEPROM_TEMPERATURE_UNITS);
-    snprintf(temp_reporting_offset_label, 63, "Temperature Reporting Offset [deg%c]: ", temperature_units); 
+    snprintf(temp_reporting_offset_label, 63, "Temperature Reporting Offset [deg%c]: ", temperature_units);
     float temp_reporting_offset_degc = eeprom_read_float((float *) EEPROM_TEMPERATURE_OFFSET);
     float temperature_offset_display = temp_reporting_offset_degc;
-    if(temperature_units == 'F'){
+    if (temperature_units == 'F') {
       temperature_offset_display = toFahrenheit(temp_reporting_offset_degc) - 32.0f;
     }
     print_label_with_star_if_not_backed_up((char * )temp_reporting_offset_label, BACKUP_STATUS_TEMPERATURE_CALIBRATION_BIT);
     Serial.println(temperature_offset_display, 2);
-    
+
     print_label_with_star_if_not_backed_up("Humidity Reporting Offset [%]: ", BACKUP_STATUS_HUMIDITY_CALIBRATION_BIT);
-    Serial.println(eeprom_read_float((float *) EEPROM_HUMIDITY_OFFSET), 2);  
-    
-    
+    Serial.println(eeprom_read_float((float *) EEPROM_HUMIDITY_OFFSET), 2);
+
+
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | note: '*' next to label means the setting is not backed up. |"));
     Serial.println(F(" |     run 'backup all' when you are satisfied                 |"));
@@ -2104,7 +2113,7 @@ void print_eeprom_value(char * arg) {
 // goes into the CC3000 and stores the
 // MAC address from it in the EEPROM
 void initialize_eeprom_value(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
 
@@ -2118,30 +2127,30 @@ void initialize_eeprom_value(char * arg) {
       recomputeAndStoreConfigChecksum();
     }
   }
-  else if(strncmp(arg, "smartconfig", 11) == 0){
+  else if (strncmp(arg, "smartconfig", 11) == 0) {
     Serial.println(F("Info: Waiting for a SmartConfig connection..."));
-    setLCD_P(PSTR("    STARTING    "    
+    setLCD_P(PSTR("    STARTING    "
                   "  SMART CONFIG  "));
     delayForWatchdog();
     petWatchdog();
-    if (!cc3000.startSmartConfig(DEVICE_NAME)){
+    if (!cc3000.startSmartConfig(DEVICE_NAME)) {
       delayForWatchdog();
-      petWatchdog();        
+      petWatchdog();
       Serial.println(F("Error: SmartConfig Create Failed."));
       lcdFrownie(15, 1);
       ERROR_MESSAGE_DELAY();
-    }    
-    else{
+    }
+    else {
       delayForWatchdog();
-      petWatchdog();              
-      Serial.println(F("Info: Saved connection details and connected to AP!"));    
+      petWatchdog();
+      Serial.println(F("Info: Saved connection details and connected to AP!"));
       configInject("method smartconfig\r");
       lcdSmiley(15, 1);
       ERROR_MESSAGE_DELAY();
     }
-    
-    clearLCD();   
-    setLCD_P(PSTR("  CONFIG MODE"));    
+
+    clearLCD();
+    setLCD_P(PSTR("  CONFIG MODE"));
   }
   else {
     Serial.print(F("Error: Unexpected Variable Name \""));
@@ -2151,10 +2160,10 @@ void initialize_eeprom_value(char * arg) {
 }
 
 void restore(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   char blank[32] = {0};
   uint8_t tmp[32] = {0};
   boolean valid = true;
@@ -2174,21 +2183,21 @@ void restore(char * arg) {
     configInject("security auto\r");
     configInject("use dhcp\r");
     configInject("opmode normal\r");
-    configInject("tempunit C\r");    
-    configInject("altitude -1\r");    
+    configInject("tempunit C\r");
+    configInject("altitude -1\r");
     configInject("backlight 60\r");
     configInject("backlight initon\r");
     configInject("mqttsrv opensensors.io\r");
-    configInject("mqttport 1883\r");        
-    configInject("mqttauth enable\r");    
+    configInject("mqttport 1883\r");
+    configInject("mqttauth enable\r");
     configInject("mqttuser wickeddevice\r");
-    configInject("sampling 5, 160, 5\r");   
+    configInject("sampling 5, 160, 5\r");
     configInject("restore temp_off\r");
-    configInject("restore hum_off\r");       
+    configInject("restore hum_off\r");
     configInject("restore mqttpwd\r");
     configInject("restore mqttid\r");
     configInject("restore updatesrv\r");
-    configInject("restore updatefile\r");    
+    configInject("restore updatefile\r");
     configInject("restore key\r");
     configInject("restore no2\r");
     configInject("restore co\r");
@@ -2196,8 +2205,8 @@ void restore(char * arg) {
 
     eeprom_write_block(blank, (void *) EEPROM_SSID, 32); // clear the SSID
     eeprom_write_block(blank, (void *) EEPROM_NETWORK_PWD, 32); // clear the Network Password
-    mirrored_config_erase(); // erase the mirrored configuration, which will be restored next successful network connect                            
-    
+    mirrored_config_erase(); // erase the mirrored configuration, which will be restored next successful network connect
+
     Serial.println();
   }
   else if (strncmp(arg, "mac", 3) == 0) {
@@ -2233,30 +2242,30 @@ void restore(char * arg) {
     eeprom_write_block(tmp, (void *) EEPROM_MQTT_PASSWORD, 32);
   }
   else if (strncmp("mqttid", arg, 6) == 0) {
-    // get the 8-byte unique electronic ID from the SHT25 
+    // get the 8-byte unique electronic ID from the SHT25
     // convert it to a string, and store it to EEPROM
     uint8_t serial_number[8];
     sht25.getSerialNumber(serial_number);
     snprintf((char *) tmp, 31, "egg%02X%02X%02X%02X%02X%02X%02X%02X",
-      serial_number[0],
-      serial_number[1],
-      serial_number[2],
-      serial_number[3],
-      serial_number[4],
-      serial_number[5],
-      serial_number[6],
-      serial_number[7]);
+             serial_number[0],
+             serial_number[1],
+             serial_number[2],
+             serial_number[3],
+             serial_number[4],
+             serial_number[5],
+             serial_number[6],
+             serial_number[7]);
 
     lowercase((char *) tmp); // for consistency with aqe v1 and airqualityegg.com assumptions
-    
+
     eeprom_write_block(tmp, (void *) EEPROM_MQTT_CLIENT_ID, 32);
-  }  
+  }
   else if (strncmp("updatesrv", arg, 9) == 0) {
     eeprom_write_block("update.wickeddevice.com", (void *) EEPROM_UPDATE_SERVER_NAME, 32);
-  }  
+  }
   else if (strncmp("updatefile", arg, 10) == 0) {
     eeprom_write_block("aqev2_no2_co", (void *) EEPROM_UPDATE_FILENAME, 32);
-  }  
+  }
   else if (strncmp("key", arg, 3) == 0) {
     if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_PRIVATE_KEY_BIT)) {
       Serial.println(F("Error: Private key must be backed up  "));
@@ -2299,20 +2308,20 @@ void restore(char * arg) {
     if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_TEMPERATURE_CALIBRATION_BIT)) {
       Serial.println(F("Error: Temperature reporting offset should be backed up  "));
       Serial.println(F("       prior to executing a 'restore'. Setting to 3.5"));
-      eeprom_write_float((float *) EEPROM_TEMPERATURE_OFFSET, 3.5f);  
+      eeprom_write_float((float *) EEPROM_TEMPERATURE_OFFSET, 3.5f);
     }
-    else{
+    else {
       eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_TEMPERATURE_OFFSET, 4);
       eeprom_write_block(tmp, (void *) EEPROM_TEMPERATURE_OFFSET, 4);
     }
   }
-  else if (strncmp("hum_off", arg, 7) == 0) {   
+  else if (strncmp("hum_off", arg, 7) == 0) {
     if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_HUMIDITY_CALIBRATION_BIT)) {
       Serial.println(F("Warning: Humidity reporting offset should be backed up  "));
-      Serial.println(F("         prior to executing a 'restore'. Setting to 0.0."));   
+      Serial.println(F("         prior to executing a 'restore'. Setting to 0.0."));
       eeprom_write_float((float *) EEPROM_HUMIDITY_OFFSET, 0.0f);
     }
-    else{
+    else {
       eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_HUMIDITY_OFFSET, 4);
       eeprom_write_block(tmp, (void *) EEPROM_HUMIDITY_OFFSET, 4);
     }
@@ -2330,85 +2339,85 @@ void restore(char * arg) {
 
 }
 
-void set_backlight_behavior(char * arg){
-  boolean valid = true;  
-  
-  if(!configMemoryUnlocked(__LINE__)){
+void set_backlight_behavior(char * arg) {
+  boolean valid = true;
+
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   lowercase(arg);
-  
-  if(strncmp(arg, "initon", 6) == 0){
+
+  if (strncmp(arg, "initon", 6) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP, BACKLIGHT_ON_AT_STARTUP);
   }
-  else if(strncmp(arg, "initoff", 7) == 0){
+  else if (strncmp(arg, "initoff", 7) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP, BACKLIGHT_OFF_AT_STARTUP);
   }
-  else if(strncmp(arg, "alwayson", 8) == 0){
+  else if (strncmp(arg, "alwayson", 8) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP, BACKLIGHT_ALWAYS_ON);
   }
-  else if(strncmp(arg, "alwaysoff", 9) == 0){
+  else if (strncmp(arg, "alwaysoff", 9) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP, BACKLIGHT_ALWAYS_OFF);
-  }  
-  else{ 
+  }
+  else {
     boolean arg_contains_only_digits = true;
     char * ptr = arg;
-    uint16_t arglen = strlen(arg);    
-    for(uint16_t ii = 0; ii < arglen; ii++){
-      if(!isdigit(arg[ii])){
+    uint16_t arglen = strlen(arg);
+    for (uint16_t ii = 0; ii < arglen; ii++) {
+      if (!isdigit(arg[ii])) {
         arg_contains_only_digits = true;
-        break; 
+        break;
       }
     }
-    
-    if(arg_contains_only_digits){
+
+    if (arg_contains_only_digits) {
       uint32_t duration = (uint32_t) strtoul(arg, NULL, 10);
-      if(duration < 0xFFFF){
+      if (duration < 0xFFFF) {
         eeprom_write_word((uint16_t *) EEPROM_BACKLIGHT_DURATION, (uint16_t) duration);
       }
     }
-    else{
+    else {
       valid = false;
       Serial.print(F("Error: Unexpected paramater name \""));
       Serial.print(arg);
-      Serial.println(F("\""));      
+      Serial.println(F("\""));
     }
   }
-  
+
   if (valid) {
     recomputeAndStoreConfigChecksum();
-  }  
+  }
 }
 
-void altitude_command(char * arg){
-  if(!configMemoryUnlocked(__LINE__)){
+void altitude_command(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
 
   char * endptr = NULL;
   trim_string(arg);
   int16_t l_altitude = (int16_t) strtol(arg, &endptr, 10);
-  if(*endptr == NULL){
+  if (*endptr == NULL) {
     eeprom_write_word((uint16_t *) EEPROM_ALTITUDE_METERS, l_altitude);
     recomputeAndStoreConfigChecksum();
   }
-  else{
+  else {
     Serial.println(F("Error: altitude must be a numeric"));
   }
 }
 
-void sampling_command(char * arg){
-  if(!configMemoryUnlocked(__LINE__)){
+void sampling_command(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
-  } 
+  }
 
   uint16_t len = strlen(arg);
-  uint8_t num_commas = 0;  
-  
-  for(uint16_t ii = 0; ii < len; ii++){
+  uint8_t num_commas = 0;
+
+  for (uint16_t ii = 0; ii < len; ii++) {
     // if any character is not a space, comma, or digit it's unparseable
-    if((!isdigit(arg[ii])) && (arg[ii] != ' ') && (arg[ii] != ',')){
+    if ((!isdigit(arg[ii])) && (arg[ii] != ' ') && (arg[ii] != ',')) {
       Serial.print(F("Error: Found invalid character '"));
       Serial.print((char) arg[ii]);
       Serial.print(F("'"));
@@ -2416,146 +2425,146 @@ void sampling_command(char * arg){
       return;
     }
 
-    if(arg[ii] == ','){
+    if (arg[ii] == ',') {
       num_commas++;
     }
-  }    
-    
-  if(num_commas != 2){
+  }
+
+  if (num_commas != 2) {
     Serial.print(F("Error: sampling expects exactly 3 values separated by commas, but received "));
     Serial.print(num_commas - 1);
     Serial.println();
-    return; 
-  }  
-  
+    return;
+  }
+
   // ok we have 3 numeric arguments separated by commas, parse them
   // ok we have six numeric arguments separated by commas, parse them
-  char tmp[32] = {0};  
+  char tmp[32] = {0};
   strncpy(tmp, arg, 31); // copy the string so you don't mutilate the argument
   char * token = strtok(tmp, ",");
-  uint8_t token_number = 0;  
+  uint8_t token_number = 0;
   uint16_t l_sample_interval = 0;
   uint16_t l_averaging_interval = 0;
   uint16_t l_reporting_interval = 0;
-  
+
   while (token != NULL) {
-    switch(token_number++){
+    switch (token_number++) {
       case 0:
         l_sample_interval = (uint16_t) strtoul(token, NULL, 10);
-        if(l_sample_interval < 3){
-          Serial.print(F("Error: Sampling interval must be greater than 2 [was ")); 
+        if (l_sample_interval < 3) {
+          Serial.print(F("Error: Sampling interval must be greater than 2 [was "));
           Serial.print(l_sample_interval);
           Serial.print(F("]"));
           Serial.println();
           return;
         }
-        break;      
+        break;
       case 1:
         l_averaging_interval = (uint16_t) strtoul(token, NULL, 10);
-        if(l_averaging_interval < 1){
-          Serial.print(F("Error: Averaging interval must be greater than 0 [was ")); 
+        if (l_averaging_interval < 1) {
+          Serial.print(F("Error: Averaging interval must be greater than 0 [was "));
           Serial.print(l_averaging_interval);
           Serial.print(F("]"));
           Serial.println();
           return;
         }
-        else if((l_averaging_interval % l_sample_interval) != 0){
+        else if ((l_averaging_interval % l_sample_interval) != 0) {
           Serial.print(F("Error: Averaging interval must be an integer multiple of the Sampling interval"));
           Serial.println();
-          return;          
+          return;
         }
-        else if((l_averaging_interval / l_sample_interval) > MAX_SAMPLE_BUFFER_DEPTH){
+        else if ((l_averaging_interval / l_sample_interval) > MAX_SAMPLE_BUFFER_DEPTH) {
           Serial.print(F("Error: Insufficient memory available for averaging interval @ sampling interval."));
-          Serial.print(F("       Must require no more than "));          
+          Serial.print(F("       Must require no more than "));
           Serial.print(MAX_SAMPLE_BUFFER_DEPTH);
           Serial.print(F(" samples, but requires"));
           Serial.print(l_averaging_interval / l_sample_interval);
           Serial.println(F(" samples"));
           Serial.println();
-          return;                    
+          return;
         }
         break;
       case 2:
         l_reporting_interval = (uint16_t) strtoul(token, NULL, 10);
-        if(l_reporting_interval < 1){
-          Serial.print(F("Error: Reporting interval must be greater than 0 [was ")); 
+        if (l_reporting_interval < 1) {
+          Serial.print(F("Error: Reporting interval must be greater than 0 [was "));
           Serial.print(l_reporting_interval);
           Serial.print(F("]"));
           Serial.println();
           return;
         }
-        else if((l_reporting_interval % l_sample_interval) != 0){
+        else if ((l_reporting_interval % l_sample_interval) != 0) {
           Serial.print(F("Error: Reporting interval must be an integer multiple of the Sampling interval"));
           Serial.println();
-          return;          
-        }        
+          return;
+        }
         break;
-    }    
-    
+    }
+
     token = strtok(NULL, ",");
-  } 
-  
+  }
+
   // we got through all the checks! save these parameters to config memory
   eeprom_write_word((uint16_t *) EEPROM_SAMPLING_INTERVAL, l_sample_interval);
   eeprom_write_word((uint16_t *) EEPROM_REPORTING_INTERVAL, l_reporting_interval);
   eeprom_write_word((uint16_t *) EEPROM_AVERAGING_INTERVAL, l_averaging_interval);
-  recomputeAndStoreConfigChecksum();  
+  recomputeAndStoreConfigChecksum();
 }
 
-void AQE_set_datetime(char * arg){
-  if(!configMemoryUnlocked(__LINE__)){
+void AQE_set_datetime(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
-  } 
-  
+  }
+
   uint16_t len = strlen(arg);
-  uint8_t num_commas = 0;  
-  
-  for(uint16_t ii = 0; ii < len; ii++){
+  uint8_t num_commas = 0;
+
+  for (uint16_t ii = 0; ii < len; ii++) {
     // if any character is not a space, comma, or digit it's unparseable
-    if((!isdigit(arg[ii])) && (arg[ii] != ' ') && (arg[ii] != ',')){
+    if ((!isdigit(arg[ii])) && (arg[ii] != ' ') && (arg[ii] != ',')) {
       Serial.print(F("Error: Found invalid character '"));
       Serial.print((char) arg[ii]);
       Serial.print(F("'"));
       Serial.println();
       return;
     }
-    
-    if(arg[ii] == ','){
+
+    if (arg[ii] == ',') {
       num_commas++;
     }
   }
- 
-  if(num_commas != 5){
+
+  if (num_commas != 5) {
     Serial.print(F("Error: datetime expects exactly 6 values separated by commas, but received "));
     Serial.print(num_commas - 1);
     Serial.println();
-    return; 
+    return;
   }
-  
+
   // ok we have six numeric arguments separated by commas, parse them
-  char tmp[32] = {0};  
+  char tmp[32] = {0};
   strncpy(tmp, arg, 31); // copy the string so you don't mutilate the argument
   char * token = strtok(tmp, ",");
-  uint8_t token_number = 0;  
+  uint8_t token_number = 0;
   uint8_t mo = 0, dy = 0, hr = 0, mn = 0, sc = 0;
   uint16_t yr = 0;
-  
+
   while (token != NULL) {
-    switch(token_number++){
+    switch (token_number++) {
       case 0:
         yr = (uint16_t) strtoul(token, NULL, 10);
-        if(yr < 2015){
-          Serial.print(F("Error: Year must be no earlier than 2015 [was ")); 
+        if (yr < 2015) {
+          Serial.print(F("Error: Year must be no earlier than 2015 [was "));
           Serial.print(yr);
           Serial.print(F("]"));
           Serial.println();
           return;
         }
-        break;      
+        break;
       case 1:
         mo = (uint8_t) strtoul(token, NULL, 10);
-        if(mo < 1 || mo > 12){
-          Serial.print(F("Error: Month must be between 1 and 12 [was ")); 
+        if (mo < 1 || mo > 12) {
+          Serial.print(F("Error: Month must be between 1 and 12 [was "));
           Serial.print(mo);
           Serial.print(F("]"));
           Serial.println();
@@ -2564,88 +2573,90 @@ void AQE_set_datetime(char * arg){
         break;
       case 2:
         dy = (uint8_t) strtoul(token, NULL, 10);
-        if(dy < 1 || dy > 31){
-          Serial.print(F("Error: Day must be between 1 and 31 [was ")); 
+        if (dy < 1 || dy > 31) {
+          Serial.print(F("Error: Day must be between 1 and 31 [was "));
           Serial.print(dy);
           Serial.print(F("]"));
           Serial.println();
           return;
-        }        
+        }
         break;
       case 3:
-        hr = (uint8_t) strtoul(token, NULL, 10);    
-        if(hr > 23){
-          Serial.print(F("Error: Hour must be between 0 and 23 [was ")); 
+        hr = (uint8_t) strtoul(token, NULL, 10);
+        if (hr > 23) {
+          Serial.print(F("Error: Hour must be between 0 and 23 [was "));
           Serial.print(hr);
           Serial.print(F("]"));
           Serial.println();
           return;
-        }        
+        }
         break;
       case 4:
-        mn = (uint8_t) strtoul(token, NULL, 10);  
-        if(mn > 59){
-          Serial.print(F("Error: Minute must be between 0 and 59 [was ")); 
+        mn = (uint8_t) strtoul(token, NULL, 10);
+        if (mn > 59) {
+          Serial.print(F("Error: Minute must be between 0 and 59 [was "));
           Serial.print(mn);
           Serial.print(F("]"));
           Serial.println();
           return;
-        }        
+        }
         break;
       case 5:
-        sc = (uint8_t) strtoul(token, NULL, 10);      
-        if(mn > 59){
-          Serial.print(F("Error: Second must be between 0 and 59 [was ")); 
+        sc = (uint8_t) strtoul(token, NULL, 10);
+        if (mn > 59) {
+          Serial.print(F("Error: Second must be between 0 and 59 [was "));
           Serial.print(sc);
           Serial.print(F("]"));
           Serial.println();
           return;
-        }          
-        break;        
+        }
+        break;
     }
     token = strtok(NULL, ",");
   }
-  
+
+  /*
+
   // if we have an RTC set the time in the RTC
-  DateTime datetime(yr,mo,dy,hr,mn,sc);
-  
+  DateTime datetime(yr, mo, dy, hr, mn, sc);
+
   // it's not harmful to do this
   // even if the RTC is not present
   selectSlot3();
   rtc.adjust(datetime);
-  
+
   // also clear the Oscillator Stop Flag
   // this should really be folded into the RTCLib code
   rtcClearOscillatorStopFlag();
-  
-      
+
+
   // at any rate sync the time to this
   setTime(datetime.unixtime());
-  
+  */
 }
 
 void set_mac_address(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
-  }  
-  
+  }
+
   uint8_t _mac_address[6] = {0};
   char tmp[32] = {0};
-  
+
   strncpy(tmp, arg, 31); // copy the string so you don't mutilate the argument
   char * token = strtok(tmp, ":");
   uint8_t num_tokens = 0;
 
   // parse the argument string, expected to be of the form ab:01:33:51:c8:77
   while (token != NULL) {
-    if(num_tokens > 5){
+    if (num_tokens > 5) {
       Serial.println(F("Error: Too many octets passed to setmac: "));
       Serial.print(F("       "));
       Serial.println(arg);
       Serial.println();
       return;
-    }    
-    
+    }
+
     if ((strlen(token) == 2) && isxdigit(token[0]) && isxdigit(token[1]) && (num_tokens < 6)) {
       _mac_address[num_tokens++] = (uint8_t) strtoul(token, NULL, 16);
     }
@@ -2656,7 +2667,7 @@ void set_mac_address(char * arg) {
       return; // return early
     }
 
-    
+
     token = strtok(NULL, ":");
   }
 
@@ -2675,20 +2686,20 @@ void set_mac_address(char * arg) {
 }
 
 void set_connection_method(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
-  }  
-  
+  }
+
   lowercase(arg);
   boolean valid = true;
   if (strncmp(arg, "direct", 6) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_CONNECT_METHOD, CONNECT_METHOD_DIRECT);
     Serial.print(F("Info: Deleteing stored profiles..."));
-    if(cc3000.deleteProfiles()){
-      Serial.println(F("OK.")); 
+    if (cc3000.deleteProfiles()) {
+      Serial.println(F("OK."));
     }
-    else{
-      Serial.println(F("Failed.")); 
+    else {
+      Serial.println(F("Failed."));
     }
   }
   else if (strncmp(arg, "smartconfig", 11) == 0) {
@@ -2708,10 +2719,10 @@ void set_connection_method(char * arg) {
 }
 
 void set_ssid(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   // we've reserved 32-bytes of EEPROM for an SSID
   // so the argument's length must be <= 31
   char ssid[32] = {0};
@@ -2727,10 +2738,10 @@ void set_ssid(char * arg) {
 }
 
 void set_network_password(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   // we've reserved 32-bytes of EEPROM for a network password
   // so the argument's length must be <= 31
   char password[32] = {0};
@@ -2746,10 +2757,10 @@ void set_network_password(char * arg) {
 }
 
 void set_network_security_mode(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   boolean valid = true;
   if (strncmp("open", arg, 4) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_SECURITY_MODE, WLAN_SEC_UNSEC);
@@ -2763,7 +2774,7 @@ void set_network_security_mode(char * arg) {
   else if (strncmp("wpa", arg, 3) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_SECURITY_MODE, WLAN_SEC_WPA);
   }
-  else if(strncmp("auto", arg, 4) == 0) {
+  else if (strncmp("auto", arg, 4) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_SECURITY_MODE, WLAN_SEC_AUTO);
   }
   else {
@@ -2780,10 +2791,10 @@ void set_network_security_mode(char * arg) {
 }
 
 void set_operational_mode(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   boolean valid = true;
   if (strncmp("normal", arg, 6) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_OPERATIONAL_MODE, SUBMODE_NORMAL);
@@ -2799,48 +2810,48 @@ void set_operational_mode(char * arg) {
     valid = false;
   }
 
-  if(valid) {
+  if (valid) {
     recomputeAndStoreConfigChecksum();
   }
 }
 
-void set_temperature_units(char * arg){
-  if(!configMemoryUnlocked(__LINE__)){
+void set_temperature_units(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
-  }  
-  
-  if((strlen(arg) != 1) || ((arg[0] != 'C') && (arg[0] != 'F'))){
+  }
+
+  if ((strlen(arg) != 1) || ((arg[0] != 'C') && (arg[0] != 'F'))) {
     Serial.print(F("Error: temperature unit must be 'C' or 'F', but received '"));
     Serial.print(arg);
     Serial.println(F("'"));
     return;
-  }  
-  
+  }
+
   eeprom_write_byte((uint8_t *) EEPROM_TEMPERATURE_UNITS, arg[0]);
   recomputeAndStoreConfigChecksum();
 }
 
 void set_static_ip_address(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
-  }  
-  
+  }
+
   uint8_t _ip_address[4] = {0};
   uint8_t _gateway_ip[4] = {0};
-  uint8_t _dns_ip[4] = {0}; 
+  uint8_t _dns_ip[4] = {0};
   uint8_t _netmask[4] = {0};
-  
+
   char tmp[128] = {0};
   strncpy(tmp, arg, 127); // copy the string so you don't mutilate the argument
   char * params[4] = {0};
   uint8_t param_idx = 0;
-  
-  // first tokenize on spaces, you should end up with four strings     
+
+  // first tokenize on spaces, you should end up with four strings
   char * token = strtok(tmp, " ");
   uint8_t num_tokens = 0;
 
   while (token != NULL) {
-    if(param_idx > 3){
+    if (param_idx > 3) {
       Serial.println(F("Error: Too many parameters passed to staticip"));
       Serial.print(F("       "));
       Serial.println(arg);
@@ -2848,23 +2859,23 @@ void set_static_ip_address(char * arg) {
       Serial.println();
       return;
     }
-    params[param_idx++] = token;   
-    token = strtok(NULL, " "); 
-  }
-  
-  if(param_idx != 4){
-     Serial.println(F("Error: Too few parameters passed to staticip"));
-     Serial.print(F("       "));
-     Serial.println(arg);
-     configInject("help staticip\r");   
-     Serial.println();     
-     return;
+    params[param_idx++] = token;
+    token = strtok(NULL, " ");
   }
 
-  for(param_idx = 0; param_idx < 4; param_idx++){
+  if (param_idx != 4) {
+    Serial.println(F("Error: Too few parameters passed to staticip"));
+    Serial.print(F("       "));
+    Serial.println(arg);
+    configInject("help staticip\r");
+    Serial.println();
+    return;
+  }
+
+  for (param_idx = 0; param_idx < 4; param_idx++) {
     token = strtok(params[param_idx], ".");
-    num_tokens = 0;    
-    
+    num_tokens = 0;
+
     // parse the parameter string, expected to be of the form 192.168.1.52
     while (token != NULL) {
       uint8_t tokenlen = strlen(token);
@@ -2879,7 +2890,7 @@ void set_static_ip_address(char * arg) {
         }
         uint32_t octet = (uint8_t) strtoul(token, NULL, 10);
         if (octet < 256) {
-          switch(param_idx){
+          switch (param_idx) {
             case 0:
               _ip_address[num_tokens++] = octet;
               break;
@@ -2891,9 +2902,9 @@ void set_static_ip_address(char * arg) {
               break;
             case 3:
               _dns_ip[num_tokens++] = octet;
-              break; 
+              break;
             default:
-              break;            
+              break;
           }
         }
         else {
@@ -2907,13 +2918,13 @@ void set_static_ip_address(char * arg) {
         Serial.print(F("Error: IP address parse error on input \""));
         Serial.print(token);
         Serial.println(F("\""));
-        return; 
+        return;
       }
-      
+
       token = strtok(NULL, ".");
-    }    
-      
-    if (num_tokens != 4){
+    }
+
+    if (num_tokens != 4) {
       Serial.print(F("Error: IP Address must contain 4 valid octets separated by '.' [@param "));
       Serial.print(param_idx + 1);
       Serial.println(F("]"));
@@ -2923,24 +2934,24 @@ void set_static_ip_address(char * arg) {
   }
 
   // if we got this far, it means we got 4 valid IP addresses, and they
-  // are stored in their respective local variables    
+  // are stored in their respective local variables
   uint32_t ipAddress = cc3000.IP2U32(_ip_address[0], _ip_address[1], _ip_address[2], _ip_address[3]);
   uint32_t netMask = cc3000.IP2U32(_netmask[0], _netmask[1], _netmask[2], _netmask[3]);
   uint32_t defaultGateway = cc3000.IP2U32(_gateway_ip[0], _gateway_ip[1], _gateway_ip[2], _gateway_ip[3]);
-  uint32_t dns = cc3000.IP2U32(_dns_ip[0], _dns_ip[1], _dns_ip[2], _dns_ip[3]);  
-  
+  uint32_t dns = cc3000.IP2U32(_dns_ip[0], _dns_ip[1], _dns_ip[2], _dns_ip[3]);
+
   //   Note that the setStaticIPAddress function will save its state
   //   in the CC3000's internal non-volatile memory and the details
   //   will be used the next time the CC3000 connects to a network.
   //   This means you only need to call the function once and the
-  //   CC3000 will remember the connection details.   
-  
+  //   CC3000 will remember the connection details.
+
   if (!cc3000.setStaticIPAddress(ipAddress, netMask, defaultGateway, dns)) {
     Serial.println(F("Error: setStaticIPAddress Failed on CC3000"));
-    return;          
-  }  
-  else{
-    eeprom_write_block(_ip_address, (void *) EEPROM_STATIC_IP_ADDRESS, 4);  
+    return;
+  }
+  else {
+    eeprom_write_block(_ip_address, (void *) EEPROM_STATIC_IP_ADDRESS, 4);
     eeprom_write_block(_netmask, (void *) EEPROM_STATIC_NETMASK, 4);
     eeprom_write_block(_gateway_ip, (void *) EEPROM_STATIC_GATEWAY, 4);
     eeprom_write_block(_dns_ip, (void *) EEPROM_STATIC_DNS, 4);
@@ -2949,19 +2960,19 @@ void set_static_ip_address(char * arg) {
 }
 
 void use_command(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   const uint8_t noip[4] = {0};
   if (strncmp("dhcp", arg, 3) == 0) {
-    //  To switch back to using DHCP, call the setDHCP() function 
+    //  To switch back to using DHCP, call the setDHCP() function
     //  Like setStaticIp, only needs to be called once.
-    if (!cc3000.setDHCP()){
+    if (!cc3000.setDHCP()) {
       Serial.println(F("Error: setDCHP Failed on CC3000"));
-      return;      
+      return;
     }
-    else{
+    else {
       eeprom_write_block(noip, (void *) EEPROM_STATIC_IP_ADDRESS, 4);
       recomputeAndStoreConfigChecksum();
     }
@@ -2974,15 +2985,15 @@ void use_command(char * arg) {
   }
 }
 
-void force_command(char * arg){
-  if(!configMemoryUnlocked(__LINE__)){
+void force_command(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
-  if (strncmp("update", arg, 6) == 0) {    
+
+  if (strncmp("update", arg, 6) == 0) {
     Serial.println(F("Info: Erasing last flash page"));
-    SUCCESS_MESSAGE_DELAY();                      
-    invalidateSignature();    
+    SUCCESS_MESSAGE_DELAY();
+    invalidateSignature();
     configInject("opmode normal\r");
     mode = SUBMODE_NORMAL;
     configInject("exit\r");
@@ -2992,73 +3003,73 @@ void force_command(char * arg){
     Serial.print(arg);
     Serial.println(F("\""));
     return;
-  }  
+  }
 }
 
 void printDirectory(File dir, int numTabs) {
-   for(;;){     
-     File entry =  dir.openNextFile();
-     if (! entry) {
-       // no more files
-       break;
-     }
-     for (uint8_t i=0; i<numTabs; i++) {
-       Serial.print(F("\t"));
-     }
-     char tmp[16] = {0};
-     entry.getName(tmp, 16);
-     Serial.print(tmp);
-     if (entry.isDirectory()) {
-       Serial.println(F("/"));
-       printDirectory(entry, numTabs+1);
-     } else {
-       // files have sizes, directories do not
-       Serial.print(F("\t"));
-       Serial.print(F("\t"));       
-       Serial.println(entry.size(), DEC);
-     }
-     entry.close();
-   }
+  for (;;) {
+    File entry =  dir.openNextFile();
+    if (! entry) {
+      // no more files
+      break;
+    }
+    for (uint8_t i = 0; i < numTabs; i++) {
+      Serial.print(F("\t"));
+    }
+    char tmp[16] = {0};
+    entry.getName(tmp, 16);
+    Serial.print(tmp);
+    if (entry.isDirectory()) {
+      Serial.println(F("/"));
+      printDirectory(entry, numTabs + 1);
+    } else {
+      // files have sizes, directories do not
+      Serial.print(F("\t"));
+      Serial.print(F("\t"));
+      Serial.println(entry.size(), DEC);
+    }
+    entry.close();
+  }
 }
 
-void list_command(char * arg){
-  if (strncmp("files", arg, 5) == 0){
-    if(init_sdcard_ok){
+void list_command(char * arg) {
+  if (strncmp("files", arg, 5) == 0) {
+    if (init_sdcard_ok) {
       File root = SD.open("/", FILE_READ);
-      printDirectory(root, 0);   
-      root.close();       
+      printDirectory(root, 0);
+      root.close();
     }
-    else{
+    else {
       Serial.println(F("Error: SD Card is not initialized, can't list files."));
-    }    
+    }
   }
-  else{
+  else {
     Serial.print(F("Error: Invalid parameter provided to 'list' command - \""));
     Serial.print(arg);
     Serial.println(F("\""));
-  }  
+  }
 }
 
-void download_command(char * arg){
-  if(arg != NULL && init_sdcard_ok){
+void download_command(char * arg) {
+  if (arg != NULL && init_sdcard_ok) {
     File dataFile = SD.open(arg, FILE_READ);
     if (dataFile) {
       while (dataFile.available()) {
         Serial.write(dataFile.read());
       }
-      dataFile.close();      
+      dataFile.close();
     }
     else {
       Serial.print("Error: Failed to open file named \"");
       Serial.print(arg);
       Serial.print(F("\""));
-    }    
+    }
   }
-  Serial.println();  
+  Serial.println();
 }
 
-void delete_command(char * arg){
-  if(arg != NULL && init_sdcard_ok){
+void delete_command(char * arg) {
+  if (arg != NULL && init_sdcard_ok) {
     if (SD.remove(arg)) {
       Serial.print("Info: Removed file named \"");
       Serial.print(arg);
@@ -3068,15 +3079,15 @@ void delete_command(char * arg){
       Serial.print("Error: Failed to delete file named \"");
       Serial.print(arg);
       Serial.println(F("\""));
-    }    
+    }
   }
 }
 
 void set_mqtt_password(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   // we've reserved 32-bytes of EEPROM for a MQTT password
   // so the argument's length must be <= 31
   char password[32] = {0};
@@ -3091,11 +3102,11 @@ void set_mqtt_password(char * arg) {
   }
 }
 
-void set_mqtt_server(char * arg){
-  if(!configMemoryUnlocked(__LINE__)){
+void set_mqtt_server(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   // we've reserved 32-bytes of EEPROM for an MQTT server name
   // so the argument's length must be <= 31
   char server[32] = {0};
@@ -3107,14 +3118,14 @@ void set_mqtt_server(char * arg){
   }
   else {
     Serial.println(F("Error: MQTT server name must be less than 32 characters in length"));
-  }  
+  }
 }
 
-void set_mqtt_username(char * arg){
-  if(!configMemoryUnlocked(__LINE__)){
+void set_mqtt_username(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   // we've reserved 32-bytes of EEPROM for an MQTT username
   // so the argument's length must be <= 31
   char username[32] = {0};
@@ -3126,23 +3137,23 @@ void set_mqtt_username(char * arg){
   }
   else {
     Serial.println(F("Error: MQTT username must be less than 32 characters in length"));
-  }    
+  }
 }
-void set_mqtt_client_id(char * arg){
-  if(!configMemoryUnlocked(__LINE__)){
+void set_mqtt_client_id(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   // we've reserved 32-bytes of EEPROM for an MQTT client ID
   // but in fact an MQTT client ID must be between 1 and 23 characters
   // and must start with an letter
-  char client_id[32] = {0};  
-  
-  if(!isalpha(arg[0])){
+  char client_id[32] = {0};
+
+  if (!isalpha(arg[0])) {
     Serial.println(F("Error: MQTT client ID must begin with a letter"));
     return;
   }
-  
+
   uint16_t len = strlen(arg);
   if ((len >= 1) && (len <= 23)) {
     strncpy(client_id, arg, len);
@@ -3154,18 +3165,18 @@ void set_mqtt_client_id(char * arg){
   }
 }
 
-void set_mqtt_authentication(char * arg) {   
-  if(!configMemoryUnlocked(__LINE__)){
+void set_mqtt_authentication(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
-  if (strncmp("enable", arg, 6) == 0) { 
+
+  if (strncmp("enable", arg, 6) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_MQTT_AUTH, 1);
     recomputeAndStoreConfigChecksum();
   }
-  else if(strncmp("disable", arg, 7) == 0) { 
+  else if (strncmp("disable", arg, 7) == 0) {
     eeprom_write_byte((uint8_t *) EEPROM_MQTT_AUTH, 0);
-    recomputeAndStoreConfigChecksum();    
+    recomputeAndStoreConfigChecksum();
   }
   else {
     Serial.print(F("Error: Invalid parameter provided to 'mqttauth' command - \""));
@@ -3175,28 +3186,28 @@ void set_mqtt_authentication(char * arg) {
   }
 }
 
-void set_mqtt_port(char * arg) {  
-  if(!configMemoryUnlocked(__LINE__)){
+void set_mqtt_port(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   uint16_t len = strlen(arg);
   boolean valid = true;
-  
-  for(uint16_t ii = 0; ii < len; ii++){
-    if(!isdigit(arg[ii])){
+
+  for (uint16_t ii = 0; ii < len; ii++) {
+    if (!isdigit(arg[ii])) {
       valid = false;
-    } 
+    }
   }
-  
+
   uint32_t port = 0xFFFFFFFF;
-  if(valid){
+  if (valid) {
     port = (uint32_t) strtoul(arg, NULL, 10);
   }
-  
-  if(valid && (port < 0x10000) && (port > 0)){
+
+  if (valid && (port < 0x10000) && (port > 0)) {
     eeprom_write_dword((uint32_t *) EEPROM_MQTT_PORT, port);
-    recomputeAndStoreConfigChecksum();        
+    recomputeAndStoreConfigChecksum();
   }
   else {
     Serial.print(F("Error: Invalid parameter provided to 'mqttport' command - \""));
@@ -3206,28 +3217,28 @@ void set_mqtt_port(char * arg) {
   }
 }
 
-void set_update_server_name(char * arg){
+void set_update_server_name(char * arg) {
 
   static char server[32] = {0};
   memset(server, 0, 32);
-  
-  if(!configMemoryUnlocked(__LINE__)){
+
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
-  trim_string(arg); // leading and trailing spaces are not relevant 
-  uint16_t len = strlen(arg);   
-  
+
+  trim_string(arg); // leading and trailing spaces are not relevant
+  uint16_t len = strlen(arg);
+
   // we've reserved 32-bytes of EEPROM for an update server name
-  // so the argument's length must be <= 31      
-  if (len < 32) {        
+  // so the argument's length must be <= 31
+  if (len < 32) {
     strncpy(server, arg, 31); // copy the argument as a case-sensitive server name
     lowercase(arg);           // in case it's the "disable" special case, make arg case insensitive
-    
-    if(strncmp(arg, "disable", 7) == 0){      
-      memset(server, 0, 32); // wipe out the update server name 
+
+    if (strncmp(arg, "disable", 7) == 0) {
+      memset(server, 0, 32); // wipe out the update server name
     }
-    
+
     eeprom_write_block(server, (void *) EEPROM_UPDATE_SERVER_NAME, 32);
     recomputeAndStoreConfigChecksum();
   }
@@ -3236,11 +3247,11 @@ void set_update_server_name(char * arg){
   }
 }
 
-void set_update_filename(char * arg){
-  if(!configMemoryUnlocked(__LINE__)){
+void set_update_filename(char * arg) {
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   // we've reserved 32-bytes of EEPROM for an update server name
   // so the argument's length must be <= 31
   char filename[32] = {0};
@@ -3252,14 +3263,14 @@ void set_update_filename(char * arg){
   }
   else {
     Serial.println(F("Error: Update filename must be less than 32 characters in length"));
-  }  
+  }
 }
 
 void backup(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   boolean valid = true;
   char tmp[32] = {0};
   uint16_t backup_check = eeprom_read_word((const uint16_t *) EEPROM_BACKUP_CHECK);
@@ -3327,7 +3338,7 @@ void backup(char * arg) {
       CLEAR_BIT(backup_check, BACKUP_STATUS_TEMPERATURE_CALIBRATION_BIT);
       eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);
     }
-  }  
+  }
   else if (strncmp("hum", arg, 3) == 0) {
     eeprom_read_block(tmp, (const void *) EEPROM_HUMIDITY_OFFSET, 4);
     eeprom_write_block(tmp, (void *) EEPROM_BACKUP_HUMIDITY_OFFSET, 4);
@@ -3336,7 +3347,7 @@ void backup(char * arg) {
       CLEAR_BIT(backup_check, BACKUP_STATUS_HUMIDITY_CALIBRATION_BIT);
       eeprom_write_word((uint16_t *) EEPROM_BACKUP_CHECK, backup_check);
     }
-  }  
+  }
   else if (strncmp("all", arg, 3) == 0) {
     valid = false;
     configInject("backup mqttpwd\r");
@@ -3344,7 +3355,7 @@ void backup(char * arg) {
     configInject("backup no2\r");
     configInject("backup co\r");
     configInject("backup temp\r");
-    configInject("backup hum\r");    
+    configInject("backup hum\r");
     configInject("backup mac\r");
     Serial.println();
   }
@@ -3370,20 +3381,20 @@ boolean convertStringToFloat(char * str_to_convert, float * target) {
 }
 
 void set_float_param(char * arg, float * eeprom_address, float (*conversion)(float)) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
 
   // read the value at that address from eeprom
-  float current_value = eeprom_read_float((const float *) eeprom_address);  
-  
+  float current_value = eeprom_read_float((const float *) eeprom_address);
+
   float value = 0.0;
   if (convertStringToFloat(arg, &value)) {
     if (conversion) {
       value = conversion(value);
     }
 
-    if(current_value != value){
+    if (current_value != value) {
       eeprom_write_float(eeprom_address, value);
       recomputeAndStoreConfigChecksum();
     }
@@ -3455,10 +3466,10 @@ void set_co_offset(char * arg) {
 }
 
 void set_private_key(char * arg) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   // we've reserved 32-bytes of EEPROM for a private key
   // only exact 64-character hex representation is accepted
   uint8_t key[32] = {0};
@@ -3492,10 +3503,10 @@ void set_private_key(char * arg) {
 }
 
 void recomputeAndStoreConfigChecksum(void) {
-  if(!configMemoryUnlocked(__LINE__)){
+  if (!configMemoryUnlocked(__LINE__)) {
     return;
   }
-  
+
   uint16_t crc = computeEepromChecksum();
   eeprom_write_word((uint16_t *) EEPROM_CRC_CHECKSUM, crc);
 }
@@ -3513,15 +3524,15 @@ uint16_t computeEepromChecksum(void) {
   return crc;
 }
 
-uint16_t getStoredEepromChecksum(void){
-  return eeprom_read_word((const uint16_t *) EEPROM_CRC_CHECKSUM);  
+uint16_t getStoredEepromChecksum(void) {
+  return eeprom_read_word((const uint16_t *) EEPROM_CRC_CHECKSUM);
 }
 
 uint16_t computeFlashChecksum(void) {
   uint16_t crc = 0;
   // there are EEPROM_CONFIG_MEMORY_SIZE - 2 bytes to compute the CRC16 over
   // the first byte is located at SECOND_TO_LAST_4K_PAGE_ADDRESS + 2
-  // the last byte is located at EEPROM_CONFIG_MEMORY_SIZE - 1  
+  // the last byte is located at EEPROM_CONFIG_MEMORY_SIZE - 1
   for (uint16_t ii = 0; ii < EEPROM_CONFIG_MEMORY_SIZE - 2; ii++) {
     uint8_t value = flash.readByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + 2UL + ((uint32_t) ii));
     crc = _crc16_update(crc, value);
@@ -3529,7 +3540,7 @@ uint16_t computeFlashChecksum(void) {
   return crc;
 }
 
-uint16_t getStoredFlashChecksum(void){
+uint16_t getStoredFlashChecksum(void) {
   uint16_t stored_crc = flash.readByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + 1UL);
   stored_crc <<= 8;
   stored_crc |= flash.readByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + 0UL);
@@ -3554,66 +3565,66 @@ void selectSlot2(void) {
   digitalWrite(9, HIGH);
 }
 
-void selectSlot3(void){
+void selectSlot3(void) {
   selectNoSlot();
-  digitalWrite(7, HIGH); 
+  digitalWrite(7, HIGH);
 }
 /****** LCD SUPPORT FUNCTIONS ******/
-void safe_dtostrf(float value, signed char width, unsigned char precision, char * target_buffer, uint16_t target_buffer_length){
+void safe_dtostrf(float value, signed char width, unsigned char precision, char * target_buffer, uint16_t target_buffer_length) {
   char meta_format_string[16] = "%%.%df";
   char format_string[16] = {0};
 
-  if((target_buffer != NULL) && (target_buffer_length > 0)){  
+  if ((target_buffer != NULL) && (target_buffer_length > 0)) {
     snprintf(format_string, 15, meta_format_string, precision); // format string should come out to something like "%.2f"
     snprintf(target_buffer, target_buffer_length - 1, format_string, value);
   }
 
-    
+
 }
 
 void backlightOn(void) {
   uint8_t backlight_behavior = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
-  if(backlight_behavior != BACKLIGHT_ALWAYS_OFF){
+  if (backlight_behavior != BACKLIGHT_ALWAYS_OFF) {
     digitalWrite(A6, HIGH);
   }
 }
 
 void backlightOff(void) {
   uint8_t backlight_behavior = eeprom_read_byte((uint8_t *) EEPROM_BACKLIGHT_STARTUP);
-  if(backlight_behavior != BACKLIGHT_ALWAYS_ON){
+  if (backlight_behavior != BACKLIGHT_ALWAYS_ON) {
     digitalWrite(A6, LOW);
   }
 }
 
-void lcdFrownie(uint8_t pos_x, uint8_t pos_y){
-  if((pos_x < 16) && (pos_y < 2)){
+void lcdFrownie(uint8_t pos_x, uint8_t pos_y) {
+  if ((pos_x < 16) && (pos_y < 2)) {
     lcd.setCursor(pos_x, pos_y);
-    lcd.write((byte) 1); 
+    lcd.write((byte) 1);
   }
 }
 
-void lcdSmiley(uint8_t pos_x, uint8_t pos_y){
-  if((pos_x < 16) && (pos_y < 2)){
+void lcdSmiley(uint8_t pos_x, uint8_t pos_y) {
+  if ((pos_x < 16) && (pos_y < 2)) {
     lcd.setCursor(pos_x, pos_y);
-    lcd.write((byte) 0); 
+    lcd.write((byte) 0);
   }
 }
 
-void lcdBars(uint8_t numBars){  
-  for(uint8_t ii = 0; ii < numBars && ii < 5; ii++){
-    lcd.setCursor(5+ii, 1);
+void lcdBars(uint8_t numBars) {
+  for (uint8_t ii = 0; ii < numBars && ii < 5; ii++) {
+    lcd.setCursor(5 + ii, 1);
     lcd.write(3); // full bar
   }
-  
-  if(numBars < 5){
-    for(uint8_t ii = 0; ii <  5 - numBars; ii++){
-      lcd.setCursor(5 + numBars + ii, 1); 
+
+  if (numBars < 5) {
+    for (uint8_t ii = 0; ii <  5 - numBars; ii++) {
+      lcd.setCursor(5 + numBars + ii, 1);
       lcd.write((byte) 2); // empty bar
     }
   }
 }
 
-void setLCD_P(const char * str PROGMEM){  
+void setLCD_P(const char * str PROGMEM) {
   char tmp[33] = {0};
   strncpy_P(tmp, str, 32);
   setLCD(tmp);
@@ -3627,7 +3638,7 @@ void setLCD_P(const char * str PROGMEM){
 //    if(ii != 16){
 //      Serial.print(F(","));
 //    }
-//  } 
+//  }
 //  Serial.println();
 //  Serial.print(F("Debug: Line 2: "));
 //  for(uint8_t ii = 0; ii < 17; ii++){
@@ -3637,171 +3648,171 @@ void setLCD_P(const char * str PROGMEM){
 //      Serial.print(F(","));
 //    }
 //  }
-//  Serial.println();  
+//  Serial.println();
 //}
 
-void repaintLCD(void){
+void repaintLCD(void) {
   static char last_painted[2][17] = {
     "                ",
     "                "
   };
-  
-  //dumpDisplayBuffer();      
+
+  //dumpDisplayBuffer();
   //  if(strlen((char *) &(g_lcd_buffer[0])) <= 16){
-  //    lcd.setCursor(0,0);    
+  //    lcd.setCursor(0,0);
   //    lcd.print((char *) &(g_lcd_buffer[0]));
   //  }
-  //  
+  //
   //  if(strlen((char *) &(g_lcd_buffer[1])) <= 16){
-  //    lcd.setCursor(0,1);    
-  //    lcd.print((char *) &(g_lcd_buffer[1])); 
-  //  }    
+  //    lcd.setCursor(0,1);
+  //    lcd.print((char *) &(g_lcd_buffer[1]));
+  //  }
 
   char tmp[2] = " ";
-  for(uint8_t line = 0; line < 2; line++){
-    for(uint8_t column = 0; column < 16; column++){
-      if(last_painted[line][column] != g_lcd_buffer[line][column]){
+  for (uint8_t line = 0; line < 2; line++) {
+    for (uint8_t column = 0; column < 16; column++) {
+      if (last_painted[line][column] != g_lcd_buffer[line][column]) {
         tmp[0] = g_lcd_buffer[line][column];
         lcd.setCursor(column, line);
         lcd.print(tmp);
       }
       last_painted[line][column] = g_lcd_buffer[line][column];
-    } 
-  }  
-  
+    }
+  }
+
   g_lcd_buffer[0][16] = '\0'; // ensure null termination
-  g_lcd_buffer[1][16] = '\0'; // ensure null termination  
+  g_lcd_buffer[1][16] = '\0'; // ensure null termination
 }
 
-void setLCD(const char * str){
+void setLCD(const char * str) {
   clearLCD();
-  uint16_t original_length = strlen(str);  
-  strncpy((char *) &(g_lcd_buffer[0]), str, 16);  
-  if(original_length > 16){   
-    strncpy((char *) &(g_lcd_buffer[1]), str + 16, 16);    
-  }   
+  uint16_t original_length = strlen(str);
+  strncpy((char *) & (g_lcd_buffer[0]), str, 16);
+  if (original_length > 16) {
+    strncpy((char *) & (g_lcd_buffer[1]), str + 16, 16);
+  }
   repaintLCD();
 }
 
-void updateLCD(const char * str, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
+void updateLCD(const char * str, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars) {
   uint16_t len = strlen(str);
   char * ptr = 0;
-  if((pos_y == 0) || (pos_y == 1)){
-    ptr = (char *) &(g_lcd_buffer[pos_y]);   
+  if ((pos_y == 0) || (pos_y == 1)) {
+    ptr = (char *) & (g_lcd_buffer[pos_y]);
   }
-  
+
   uint8_t x = 0;  // display buffer index
   uint8_t ii = 0; // input string index
-  for(x = pos_x, ii = 0;  (x < 16) && (ii < len) && (ii < num_chars); x++, ii++){
+  for (x = pos_x, ii = 0;  (x < 16) && (ii < len) && (ii < num_chars); x++, ii++) {
     // don't allow the injection of non-printable characters into the display buffer
-    if(isprint(str[ii])){    
+    if (isprint(str[ii])) {
       ptr[x] = str[ii];
     }
-    else{
+    else {
       ptr[x] = ' ';
     }
   }
-  
+
   repaintLCD();
 }
 
-void clearLCD(){
-  memset((uint8_t *) &(g_lcd_buffer[0]), ' ', 16);
-  memset((uint8_t *) &(g_lcd_buffer[1]), ' ', 16);
+void clearLCD() {
+  memset((uint8_t *) & (g_lcd_buffer[0]), ' ', 16);
+  memset((uint8_t *) & (g_lcd_buffer[1]), ' ', 16);
   g_lcd_buffer[0][16] = '\0';
-  g_lcd_buffer[1][16] = '\0';  
+  g_lcd_buffer[1][16] = '\0';
   lcd.clear();
   repaintLCD();
 }
 
-boolean index_of(char ch, char * str, uint16_t * index){
+boolean index_of(char ch, char * str, uint16_t * index) {
   uint16_t len = strlen(str);
-  for(uint16_t ii = 0; ii < len; ii++){
-    if(str[ii] == ch){
+  for (uint16_t ii = 0; ii < len; ii++) {
+    if (str[ii] == ch) {
       *index = ii;
-      return true;     
+      return true;
     }
   }
-  
+
   return false;
 }
 
-void ltrim_string(char * str){
+void ltrim_string(char * str) {
   uint16_t num_leading_spaces = 0;
   uint16_t len = strlen(str);
-  for(uint16_t ii = 0; ii < len; ii++){
-    if(str[ii] != ' '){
-      break;      
-    }     
+  for (uint16_t ii = 0; ii < len; ii++) {
+    if (str[ii] != ' ') {
+      break;
+    }
     num_leading_spaces++;
   }
-  
-  if(num_leading_spaces > 0){
+
+  if (num_leading_spaces > 0) {
     // copy the string left, including the null terminator
     // which is why this loop is <= len
-    for(uint16_t ii = 0; ii <= len; ii++){
+    for (uint16_t ii = 0; ii <= len; ii++) {
       str[ii] = str[ii + num_leading_spaces];
     }
   }
 }
 
-void rtrim_string(char * str){
+void rtrim_string(char * str) {
   char * pstr = str;
   uint16_t space_index = 0;
 
   // find the first non-space character
-  while(*pstr == ' '){
+  while (*pstr == ' ') {
     pstr++;
   }
-  
-  if(index_of(' ', pstr, &space_index)){
+
+  if (index_of(' ', pstr, &space_index)) {
     // if there's a space, null it
     str[space_index] = '\0';
   }
 }
 
-void trim_string(char * str){
+void trim_string(char * str) {
   ltrim_string(str);
-  
+
   //Serial.print(F("ltrim: "));
   //Serial.println(str);
-  
+
   rtrim_string(str);
-  
+
   //Serial.print(F("rtrim: "));
-  //Serial.println(str);  
+  //Serial.println(str);
 }
 
 // returns false if truncating the string to the field width
 // would result in alter the whole number part of the represented value
 // otherwise truncates the string to the field_width and returns true
-boolean truncate_float_string(char * str, uint8_t field_width){
+boolean truncate_float_string(char * str, uint8_t field_width) {
   // if there is a decimal point in the string after the field_width character
   // the value doesn't fit on a line at all, let alone after truncation
   // examples for field_width := 3
   //             v-- field boundardy (for field_width := 3)
   // Case 0:  0.3|4  is ok (and will be truncated to 0.3)
-  // Case 0b: 0. |   is ok (and will be truncated to 0)    
-  // Case 0c: -0.|3  is ok (and will be truncated to 0)            
+  // Case 0b: 0. |   is ok (and will be truncated to 0)
+  // Case 0c: -0.|3  is ok (and will be truncated to 0)
   // Case 1:  1.2|4  is ok (and will be truncated to 1.2)
   // Case 1b: 1. |   is ok (and will be truncated to 1)
   // Case 1c: 1  |   is ok (and will be truncated to 1)
-  // Case 2b: 12.|5  is ok (and will be truncated to 13)  
+  // Case 2b: 12.|5  is ok (and will be truncated to 13)
   // Cas3 2c: 12.|   is ok (and will be truncated to 12)
-  // Cas3 2d: 12 |   is ok (and will be truncated to 12)  
+  // Cas3 2d: 12 |   is ok (and will be truncated to 12)
   // Case 3:  123|.4 is ok (and will be truncated to 123)
   // Case 3b: 123|.  is ok (and will be truncated to 123)
   // Case 3c: 123|   is ok (and will be truncated to 123)
-  // Case 3d: -12|3  is not ok (because it would be truncated to -12)  
-  // Case 3f: -12|3. is not ok (because it would be truncated to -12)  
+  // Case 3d: -12|3  is not ok (because it would be truncated to -12)
+  // Case 3f: -12|3. is not ok (because it would be truncated to -12)
   // Case 4:  123|4  is not ok (because it would be truncated to 123)
   // Case 4b: 123|4. is not ok (because it would be truncated to 123)
   //          012|345678901234567 (index for reference)
-  
+
   uint16_t period_index = 0;
 
   // first trim the string to remove leading and trailing ' ' characters
-  trim_string(str);  
+  trim_string(str);
 
   uint16_t len = strlen(str);
   boolean string_contains_decimal_point = index_of('.', str, &period_index);
@@ -3814,313 +3825,313 @@ boolean truncate_float_string(char * str, uint8_t field_width){
   //Serial.print(string_contains_decimal_point);
   //Serial.print(F(", period_index = "));
   //Serial.println(period_index);
-  
-  if(len > field_width){   
-    if(string_contains_decimal_point){
+
+  if (len > field_width) {
+    if (string_contains_decimal_point) {
       // there's a decimal point in the string somewhere
       // and the string is longer than the field width
-      if(period_index > field_width){
-        // the decimal point occurs at least 
+      if (period_index > field_width) {
+        // the decimal point occurs at least
         // two characters past the field boundary
         return false;
       }
     }
-    else{
+    else {
       // it's a pure whole number
       // and there's not enough room in the field to hold it
       return false;
-    }            
-  } 
-  
+    }
+  }
+
   // first truncate the string to the field width if it's longer than the field width
-  if(len > field_width){
+  if (len > field_width) {
     str[field_width] = '\0';
     //Serial.print(F("truncated step 1: "));
     //Serial.println(str);
   }
-  
+
   len = strlen(str);
   // if the last character in the string is a decimal point, lop it off
-  if((len > 0) && (str[len-1] == '.')){
-     str[len-1] = '\0';
-     //Serial.print(F("truncated step 2:"));
-     //Serial.println(str);
-  }    
-      
+  if ((len > 0) && (str[len - 1] == '.')) {
+    str[len - 1] = '\0';
+    //Serial.print(F("truncated step 2:"));
+    //Serial.println(str);
+  }
+
   // it's already adequately truncated if len <= field_width
   return true;
 }
 
 // the caller must ensure that there is adequate memory
-// allocated to str, so that it can be safely padded 
+// allocated to str, so that it can be safely padded
 // to target length
-void leftpad_string(char * str, uint16_t target_length){
-  uint16_t len = strlen(str);  
-  if(len < target_length){
+void leftpad_string(char * str, uint16_t target_length) {
+  uint16_t len = strlen(str);
+  if (len < target_length) {
     uint16_t pad_amount = target_length - len;
 
     // shift the string (including the null temrinator) right by the pad amount
     // by walking backwards from the end to the start
     // and copying characters over (copying the null terminator is why it starts at len)
-    for(int16_t ii = len; ii >= 0; ii--){
+    for (int16_t ii = len; ii >= 0; ii--) {
       str[ii + pad_amount] = str[ii];
-    } 
-    
-    // then put spaces in the front 
-    for(uint16_t ii = 0; ii < pad_amount; ii++){
+    }
+
+    // then put spaces in the front
+    for (uint16_t ii = 0; ii < pad_amount; ii++) {
       str[ii] = ' ';
     }
   }
 }
 
-void updateLCD(float value, uint8_t pos_x, uint8_t pos_y, uint8_t field_width){
+void updateLCD(float value, uint8_t pos_x, uint8_t pos_y, uint8_t field_width) {
   static char tmp[64] = {0};
   static char asterisks_field[17] = {0};
   memset(tmp, 0, 64);
   memset(asterisks_field, 0, 17);
-  
-  for(uint8_t ii = 0; (ii < field_width) && (ii < 16); ii++){
-     asterisks_field[ii] = '*'; 
-  }  
-  
+
+  for (uint8_t ii = 0; (ii < field_width) && (ii < 16); ii++) {
+    asterisks_field[ii] = '*';
+  }
+
   //Serial.print(F("value: "));
-  //Serial.println(value,8);  
-  
+  //Serial.println(value,8);
+
   safe_dtostrf(value, -16, 6, tmp, 16);
-  
+
   //Serial.print(F("dtostrf: "));
   //Serial.println(tmp);
-  
-  if(!truncate_float_string(tmp, field_width)){
+
+  if (!truncate_float_string(tmp, field_width)) {
     updateLCD(asterisks_field, pos_x, pos_y, field_width);
     return;
   }
-  
+
   //Serial.print(F("truncate: "));
   //Serial.println(tmp);
-  
-  leftpad_string(tmp, field_width); 
+
+  leftpad_string(tmp, field_width);
   //Serial.print(F("leftpad_string: "));
   //Serial.println(tmp);
-      
-  updateLCD(tmp, pos_x, pos_y, field_width);  
+
+  updateLCD(tmp, pos_x, pos_y, field_width);
 }
 
-void updateLCD(uint32_t ip, uint8_t line_number){
+void updateLCD(uint32_t ip, uint8_t line_number) {
   char tmp[17] = {0};
-  snprintf(tmp, 16, "%d.%d.%d.%d", 
-    (uint8_t)(ip >> 24),
-    (uint8_t)(ip >> 16),
-    (uint8_t)(ip >> 8),       
-    (uint8_t)(ip >> 0));    
-  
+  snprintf(tmp, 16, "%d.%d.%d.%d",
+           (uint8_t)(ip >> 24),
+           (uint8_t)(ip >> 16),
+           (uint8_t)(ip >> 8),
+           (uint8_t)(ip >> 0));
+
   updateLCD(tmp, line_number);
 }
 
-void updateLCD(const char * str, uint8_t line_number){
+void updateLCD(const char * str, uint8_t line_number) {
   // center the string on the line
-  char tmp[17] = {0};  
+  char tmp[17] = {0};
   uint16_t original_len = strlen(str);
-  if(original_len < 16){
+  if (original_len < 16) {
     uint8_t num_empty_chars_on_line = 16 - original_len;
     // pad the front of the string with spaces
     uint8_t half_num_empty_chars_on_line = num_empty_chars_on_line / 2;
-    for(uint8_t ii = 0; ii < half_num_empty_chars_on_line; ii++){
-      tmp[ii] = ' '; 
-    }    
+    for (uint8_t ii = 0; ii < half_num_empty_chars_on_line; ii++) {
+      tmp[ii] = ' ';
+    }
   }
-  uint16_t len = strlen(tmp);  // length of the front padding    
-  if((original_len + len) <= 16){
+  uint16_t len = strlen(tmp);  // length of the front padding
+  if ((original_len + len) <= 16) {
     strcat(tmp, str); // concatenate the string into the front padding-
   }
-  
+
   len = strlen(tmp);
-  if(len < 16){
+  if (len < 16) {
     // pad the tail of the string with spaces
     uint8_t num_trailing_spaces = 16 - len;
-    for(uint8_t ii = 0; ii < num_trailing_spaces; ii++){
+    for (uint8_t ii = 0; ii < num_trailing_spaces; ii++) {
       tmp[len + ii] = ' ';
     }
   }
-  
-  if(line_number < 2){
+
+  if (line_number < 2) {
     updateLCD(tmp, 0, line_number, 16);
   }
 }
 
-void updateLCD(int32_t value, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
+void updateLCD(int32_t value, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars) {
   char tmp[17] = {0};
   snprintf(tmp, num_chars, "%ld", value);
   updateLCD(tmp, pos_x, pos_y, num_chars);
 }
 
-void updateLCD(char value, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars){
+void updateLCD(char value, uint8_t pos_x, uint8_t pos_y, uint8_t num_chars) {
   char tmp[17] = {0};
   tmp[0] = value;
   updateLCD(tmp, pos_x, pos_y, num_chars);
 }
 
-void updateCornerDot(void){
+void updateCornerDot(void) {
   static uint8_t on = 0;
   on = 1 - on;
-  if(on == 1){
+  if (on == 1) {
     updateLCD('.', 15, 1, 1);
-  } 
-  else{
-    updateLCD(' ', 15, 1, 1); 
+  }
+  else {
+    updateLCD(' ', 15, 1, 1);
   }
 }
 
-void updateLcdProgressDots(void){
+void updateLcdProgressDots(void) {
   static uint8_t cnt = 0;
   cnt++;
   uint8_t num_dots = cnt % 4;
-  switch(num_dots){
-    case 0: 
-      updateLCD("   ", 1); 
+  switch (num_dots) {
+    case 0:
+      updateLCD("   ", 1);
       break;
     case 1:
-      updateLCD(".  ", 1); 
+      updateLCD(".  ", 1);
       break;
     case 2:
-      updateLCD(".. ", 1); 
+      updateLCD(".. ", 1);
       break;
     case 3:
-      updateLCD("...", 1); 
-      break;          
-  } 
+      updateLCD("...", 1);
+      break;
+  }
 }
 
 /****** WIFI SUPPORT FUNCTIONS ******/
-void displayRSSI(void){
+void displayRSSI(void) {
   char ssid[32] = {0};
   uint32_t index;
   uint8_t valid, rssi, sec;
   uint8_t max_rssi = 0;
   boolean found_ssid = false;
   uint8_t target_network_secMode = 0;
-  char ssidname[33]; 
-  uint8_t network_security_mode = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);   
+  char ssidname[33];
+  uint8_t network_security_mode = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);
   eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
-  
+
   setLCD_P(PSTR(" SCANNING WI-FI "
                 "                "));
-  Serial.println(F("Info: Beginning Network Scan..."));                
+  Serial.println(F("Info: Beginning Network Scan..."));
   SUCCESS_MESSAGE_DELAY();
   if (!cc3000.startSSIDscan(&index)) {
     Serial.println(F("Error: Network Scan Failed"));
     return;
   }
-  
+
   Serial.print(F("Info: Network Scan found "));
   Serial.print(index);
   Serial.println(F(" networks"));
-  
+
   while (index) {
     index--;
 
     valid = cc3000.getNextSSID(&rssi, &sec, ssidname);
-    if(strncmp(ssidname, ssid, 16) == 0){      
+    if (strncmp(ssidname, ssid, 16) == 0) {
       Serial.print(F("Info: Found Access Point \""));
       Serial.print(ssid);
       Serial.print(F("\", "));
       Serial.print(F("RSSI = "));
       Serial.println(rssi);
       found_ssid = true;
-      if(rssi > max_rssi){
-        max_rssi = rssi; 
+      if (rssi > max_rssi) {
+        max_rssi = rssi;
         target_network_secMode = sec;
       }
     }
   }
-  
+
   cc3000.stopSSIDscan();
-  
-  if(found_ssid){
+
+  if (found_ssid) {
     int8_t rssi_dbm = max_rssi - 128;
     lcdBars(rssi_to_bars(rssi_dbm));
     lcdSmiley(15, 1); // lower right corner
-    
-    if(network_security_mode == WLAN_SEC_AUTO){
+
+    if (network_security_mode == WLAN_SEC_AUTO) {
       allowed_to_write_config_eeprom = true;
-      if(target_network_secMode == WLAN_SEC_UNSEC){
+      if (target_network_secMode == WLAN_SEC_UNSEC) {
         set_network_security_mode("open");
       }
-      else if(target_network_secMode == WLAN_SEC_WEP){
+      else if (target_network_secMode == WLAN_SEC_WEP) {
         set_network_security_mode("wep");
       }
-      else if(target_network_secMode == WLAN_SEC_WPA){
+      else if (target_network_secMode == WLAN_SEC_WPA) {
         set_network_security_mode("wpa");
       }
-      else if(target_network_secMode == WLAN_SEC_WPA2){
+      else if (target_network_secMode == WLAN_SEC_WPA2) {
         set_network_security_mode("wpa2");
       }
-      allowed_to_write_config_eeprom = false;      
+      allowed_to_write_config_eeprom = false;
     }
-    
+
     ERROR_MESSAGE_DELAY(); // ERROR is intentional here, to get a longer delay
   }
-  else{
+  else {
     updateLCD("NOT FOUND", 1);
     lcdFrownie(15, 1); // lower right corner
     ERROR_MESSAGE_DELAY();
   }
 }
 
-uint8_t rssi_to_bars(int8_t rssi_dbm){
+uint8_t rssi_to_bars(int8_t rssi_dbm) {
   uint8_t num_bars = 0;
-  if (rssi_dbm < -87){
+  if (rssi_dbm < -87) {
     num_bars = 0;
   }
-  else if (rssi_dbm < -82){
+  else if (rssi_dbm < -82) {
     num_bars = 1;
   }
-  else if (rssi_dbm < -77){
+  else if (rssi_dbm < -77) {
     num_bars = 2;
   }
-  else if (rssi_dbm < -72){
+  else if (rssi_dbm < -72) {
     num_bars = 3;
   }
-  else if (rssi_dbm < -67){
+  else if (rssi_dbm < -67) {
     num_bars = 4;
   }
-  else{
+  else {
     num_bars = 5;
-  }  
-  
+  }
+
   return num_bars;
 }
 
-boolean restartWifi(){    
-  if(!connectedToNetwork()){        
+boolean restartWifi() {
+  if (!connectedToNetwork()) {
     delayForWatchdog();
     petWatchdog();
     current_millis = millis();
     reconnectToAccessPoint();
     current_millis = millis();
     delayForWatchdog();
-    petWatchdog();    
-    acquireIpAddress(); 
+    petWatchdog();
+    acquireIpAddress();
     current_millis = millis();
     delayForWatchdog();
-    petWatchdog();    
+    petWatchdog();
     displayConnectionDetails();
 
     // if (!mdns.begin("airqualityegg", cc3000)) {
     //   Serial.println(F("Error setting up MDNS responder!"));
-    //   while(1);     
-    // }    
-    
+    //   while(1);
+    // }
+
     clearLCD();
   }
-  
+
   return connectedToNetwork();
 }
 
-bool displayConnectionDetails(void){
+bool displayConnectionDetails(void) {
   uint32_t ipAddress, netmask, gateway, dhcpserv, dnsserv;
-  
-  if(!cc3000.getIPAddress(&ipAddress, &netmask, &gateway, &dhcpserv, &dnsserv))
+
+  if (!cc3000.getIPAddress(&ipAddress, &netmask, &gateway, &dhcpserv, &dnsserv))
   {
     Serial.println(F("Error: Unable to retrieve the IP Address!"));
     return false;
@@ -4132,31 +4143,31 @@ bool displayConnectionDetails(void){
     Serial.print(F("Info: Gateway: ")); cc3000.printIPdotsRev(gateway); Serial.println();
     Serial.print(F("Info: DHCPsrv: ")); cc3000.printIPdotsRev(dhcpserv); Serial.println();
     Serial.print(F("Info: DNSserv: ")); cc3000.printIPdotsRev(dnsserv); Serial.println();
-    
+
     updateLCD(ipAddress, 1);
     lcdSmiley(15, 1); // lower right corner
-    SUCCESS_MESSAGE_DELAY();  
-  
+    SUCCESS_MESSAGE_DELAY();
+
     return true;
   }
 }
 
-void reconnectToAccessPoint(void){
+void reconnectToAccessPoint(void) {
   static char ssid[32] = {0};
   static char network_password[32] = {0};
   static uint8_t connect_method = 0;
   static uint8_t network_security_mode = 0;
   static boolean first_access = true;
-  
-  if(first_access){
+
+  if (first_access) {
     first_access = false;
     connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
-    network_security_mode = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);  
+    network_security_mode = eeprom_read_byte((const uint8_t *) EEPROM_SECURITY_MODE);
     eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
-    eeprom_read_block(network_password, (const void *) EEPROM_NETWORK_PWD, 31); 
+    eeprom_read_block(network_password, (const void *) EEPROM_NETWORK_PWD, 31);
   }
-  
-  switch(connect_method){
+
+  switch (connect_method) {
     case CONNECT_METHOD_DIRECT:
       Serial.print(F("Info: Connecting to Access Point with SSID \""));
       Serial.print(ssid);
@@ -4165,7 +4176,7 @@ void reconnectToAccessPoint(void){
       updateLCD(ssid, 1);
       delayForWatchdog();
       petWatchdog();
-      if(!cc3000.connectToAP(ssid, network_password, network_security_mode)) {
+      if (!cc3000.connectToAP(ssid, network_password, network_security_mode)) {
         Serial.print(F("Error: Failed to connect to Access Point with SSID: "));
         Serial.println(ssid);
         Serial.flush();
@@ -4181,131 +4192,131 @@ void reconnectToAccessPoint(void){
       break;
     case CONNECT_METHOD_SMARTCONFIG:
       Serial.print(F("Info: Waiting for SmartConfig to Reconnect..."));
-      while(!connectedToNetwork()){
+      while (!connectedToNetwork()) {
         ; //TODO: implement timeout, though the watchdog is an implied timeout...
       }
       Serial.println(F("OK."));
-      break;    
+      break;
     default:
       Serial.println(F("Error: Connection method not currently supported"));
       break;
-  }  
+  }
 }
 
-void acquireIpAddress(void){
+void acquireIpAddress(void) {
   static boolean first_access = true;
   static uint8_t static_ip_address[4] = {0};
   uint8_t noip[4] = {0};
 
-  if(first_access){
+  if (first_access) {
     first_access = false;
     eeprom_read_block(static_ip_address, (const void *) EEPROM_STATIC_IP_ADDRESS, 4);
   }
-  
+
   // if it's DHCP we're configured for, engage DHCP process
-  if (memcmp(static_ip_address, noip, 4) == 0){
+  if (memcmp(static_ip_address, noip, 4) == 0) {
     /* Wait for DHCP to complete */
     Serial.print(F("Info: Request DHCP..."));
-    setLCD_P(PSTR(" REQUESTING IP  "));   
-    
+    setLCD_P(PSTR(" REQUESTING IP  "));
+
     const long dhcp_timeout_duration_ms = 60000L;
     unsigned long previous_dhcp_timeout_millis = current_millis;
     uint32_t ii = 0;
-    while (!cc3000.checkDHCP()){      
-      // if this goes on for longer than a minute, 
+    while (!cc3000.checkDHCP()) {
+      // if this goes on for longer than a minute,
       // tiny watchdog should automatically kick in
       // and reset the unit. If we don't want that to happen
       // we would need to pet the tiny watchdog every so often
       // in this loop.
-      
-      current_millis = millis();
-      if(current_millis - previous_touch_sampling_millis >= touch_sampling_interval){
-        previous_touch_sampling_millis = current_millis;    
-        collectTouch();    
-        processTouchQuietly();  
-        ii++;
-        if((ii % 5) == 0){    
-          petWatchdog();
-        }        
-      }      
 
-      if(current_millis - previous_progress_dots_millis >= progress_dots_interval){
+      current_millis = millis();
+      if (current_millis - previous_touch_sampling_millis >= touch_sampling_interval) {
+        previous_touch_sampling_millis = current_millis;
+        collectTouch();
+        processTouchQuietly();
+        ii++;
+        if ((ii % 5) == 0) {
+          petWatchdog();
+        }
+      }
+
+      if (current_millis - previous_progress_dots_millis >= progress_dots_interval) {
         previous_progress_dots_millis = current_millis;
         updateLcdProgressDots();
-      }     
-     
-      if(current_millis - previous_dhcp_timeout_millis >= dhcp_timeout_duration_ms){
+      }
+
+      if (current_millis - previous_dhcp_timeout_millis >= dhcp_timeout_duration_ms) {
         Serial.println(F("Error: Failed to acquire IP address via DHCP. Rebooting."));
         Serial.flush();
         updateLCD("FAILED", 1);
         lcdFrownie(15, 1);
-        ERROR_MESSAGE_DELAY();    
+        ERROR_MESSAGE_DELAY();
         watchdogForceReset();
-      }      
-    }   
-    Serial.println(F("OK.")); 
+      }
+    }
+    Serial.println(F("OK."));
   }
 }
 
-boolean connectedToNetwork(void){
+boolean connectedToNetwork(void) {
   return (cc3000.getStatus() == STATUS_CONNECTED);
 }
 
-void cc3000IpToArray(uint32_t ip, uint8_t * ip_array){
-  for(uint8_t ii = 0; ii < 4; ii++){
+void cc3000IpToArray(uint32_t ip, uint8_t * ip_array) {
+  for (uint8_t ii = 0; ii < 4; ii++) {
     ip_array[ii] = ip & 0xff;
     ip >>= 8;
   }
 }
 
-uint32_t arrayToCC3000Ip(uint8_t * ip_array){
+uint32_t arrayToCC3000Ip(uint8_t * ip_array) {
   uint32_t ip = 0;
-  for(int8_t ii = 3; ii > 0; ii++){
-    ip |= ip_array[ii];    
+  for (int8_t ii = 3; ii > 0; ii++) {
+    ip |= ip_array[ii];
     ip <<= 8;
-  }  
+  }
   return ip;
 }
 
 /****** ADC SUPPORT FUNCTIONS ******/
 // returns the measured voltage in Volts
 // 62.5 microvolts resolution in 16-bit mode
-boolean burstSampleADC(float * result){
-  #define NUM_SAMPLES_PER_BURST (8)
+boolean burstSampleADC(float * result) {
+#define NUM_SAMPLES_PER_BURST (8)
 
   // autoprobe to find out which address the ADC is at in this slot
   static uint8_t viable_addresses[8] = {0};
   static boolean first_access = true;
-  if(first_access){
+  if (first_access) {
     first_access = false;
     // viable addresses for MCP3421 are 0x68...0x6F
-    for(uint8_t ii = 0; ii < 8; ii++){
+    for (uint8_t ii = 0; ii < 8; ii++) {
       viable_addresses[ii] = 0x68 + ii;
     }
   }
 
   adc.autoprobe(viable_addresses, 8);
-  
+
   MCP342x::Config status;
   int32_t burst_sample_total = 0;
   uint8_t num_samples = 0;
   int32_t value = 0;
-  for(uint8_t ii = 0; ii < NUM_SAMPLES_PER_BURST; ii++){    
-    uint8_t err = adc.convertAndRead(MCP342x::channel1, MCP342x::oneShot, 
-      MCP342x::resolution16, MCP342x::gain1, 75000, value, status);          
-    if(err == 0){
+  for (uint8_t ii = 0; ii < NUM_SAMPLES_PER_BURST; ii++) {
+    uint8_t err = adc.convertAndRead(MCP342x::channel1, MCP342x::oneShot,
+                                     MCP342x::resolution16, MCP342x::gain1, 75000, value, status);
+    if (err == 0) {
       burst_sample_total += value;
       num_samples++;
     }
-    else{  
-      Serial.print(F("Error: ADC Read Error ["));    
-      Serial.print((uint32_t) err, HEX); 
+    else {
+      Serial.print(F("Error: ADC Read Error ["));
+      Serial.print((uint32_t) err, HEX);
       Serial.println(F("]"));
     }
   }
-  
-  if(num_samples > 0){
-    *result = (62.5e-6f * burst_sample_total) / num_samples;  
+
+  if (num_samples > 0) {
+    *result = (62.5e-6f * burst_sample_total) / num_samples;
     return true;
   }
 
@@ -4313,166 +4324,166 @@ boolean burstSampleADC(float * result){
 }
 
 /****** MQTT SUPPORT FUNCTIONS ******/
-void clearTempBuffers(void){
+void clearTempBuffers(void) {
   memset(converted_value_string, 0, 64);
   memset(compensated_value_string, 0, 64);
   memset(raw_value_string, 0, 64);
   memset(scratch, 0, 512);
 }
 
-boolean mqttResolve(void){
+boolean mqttResolve(void) {
   uint32_t ip = 0;
   static boolean resolved = false;
-  
+
   char mqtt_server_name[32] = {0};
-  if(!resolved){
+  if (!resolved) {
     eeprom_read_block(mqtt_server_name, (const void *) EEPROM_MQTT_SERVER_NAME, 31);
     setLCD_P(PSTR("   RESOLVING"));
     updateLCD("MQTT SERVER", 1);
     SUCCESS_MESSAGE_DELAY();
-    
+
     if  (!cc3000.getHostByName(mqtt_server_name, &ip) || (ip == 0))  {
       Serial.print(F("Error: Couldn't resolve '"));
       Serial.print(mqtt_server_name);
       Serial.println(F("'"));
-      
+
       updateLCD("FAILED", 1);
       lcdFrownie(15, 1);
       ERROR_MESSAGE_DELAY();
       return false;
-    }  
-    else{
+    }
+    else {
       resolved = true;
-      cc3000IpToArray(ip, mqtt_server_ip);      
+      cc3000IpToArray(ip, mqtt_server_ip);
       Serial.print(F("Info: Resolved \""));
       Serial.print(mqtt_server_name);
       Serial.print(F("\" to IP address "));
       cc3000.printIPdotsRev(ip);
-      
-      updateLCD(ip, 1);      
+
+      updateLCD(ip, 1);
       lcdSmiley(15, 1);
-      SUCCESS_MESSAGE_DELAY();          
-      Serial.println();    
+      SUCCESS_MESSAGE_DELAY();
+      Serial.println();
     }
   }
-    
+
   return true;
 }
 
-boolean mqttReconnect(void){
-   static boolean first_access = true;
-   static char mqtt_username[32] = {0};
-   static char mqtt_password[32] = {0};
-   static uint8_t mqtt_auth_enabled = 0;
-   static uint32_t mqtt_port = 0;
-   
-   boolean loop_return_flag = true;
-   
-   if(!mqttResolve()){
-     return false;
-   }
-     
-   if(first_access){
-     first_access = false;
-     loop_return_flag = false;
-     eeprom_read_block(mqtt_username, (const void *) EEPROM_MQTT_USERNAME, 31);
-     eeprom_read_block(mqtt_client_id, (const void *) EEPROM_MQTT_CLIENT_ID, 31);
-     eeprom_read_block(mqtt_password, (const void *) EEPROM_MQTT_PASSWORD, 31);
-     mqtt_auth_enabled = eeprom_read_byte((const uint8_t *) EEPROM_MQTT_AUTH);
-     mqtt_port = eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT);
+boolean mqttReconnect(void) {
+  static boolean first_access = true;
+  static char mqtt_username[32] = {0};
+  static char mqtt_password[32] = {0};
+  static uint8_t mqtt_auth_enabled = 0;
+  static uint32_t mqtt_port = 0;
 
-     mqtt_client.setBrokerIP(mqtt_server_ip);
-     mqtt_client.setPort(mqtt_port);
-     mqtt_client.setClient(wifiClient);          
-   }
-   else{
-     loop_return_flag = mqtt_client.loop();
-   }           
-   
-   if(!loop_return_flag){
-     Serial.print(F("Info: Connecting to MQTT Broker with Client ID \""));
-     Serial.print(mqtt_client_id);
-     Serial.print(F("\" "));
-     boolean connect_status = false;
-     if(mqtt_auth_enabled){
-       Serial.print(F("using Authentication..."));
-       connect_status = mqtt_client.connect(mqtt_client_id, mqtt_username, mqtt_password);
-     }
-     else{
-       Serial.print(F("Without Authentication..."));
-       connect_status = mqtt_client.connect(mqtt_client_id);
-     }
+  boolean loop_return_flag = true;
 
-     clearLCD();         
-     if (connect_status) {
-       Serial.println(F("OK."));
-       return true;
-     }
-     else{
-       Serial.println(F("Failed.")); 
-       return false;       
-     }    
-   }  
+  if (!mqttResolve()) {
+    return false;
+  }
+
+  if (first_access) {
+    first_access = false;
+    loop_return_flag = false;
+    eeprom_read_block(mqtt_username, (const void *) EEPROM_MQTT_USERNAME, 31);
+    eeprom_read_block(mqtt_client_id, (const void *) EEPROM_MQTT_CLIENT_ID, 31);
+    eeprom_read_block(mqtt_password, (const void *) EEPROM_MQTT_PASSWORD, 31);
+    mqtt_auth_enabled = eeprom_read_byte((const uint8_t *) EEPROM_MQTT_AUTH);
+    mqtt_port = eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT);
+
+    mqtt_client.setBrokerIP(mqtt_server_ip);
+    mqtt_client.setPort(mqtt_port);
+    mqtt_client.setClient(wifiClient);
+  }
+  else {
+    loop_return_flag = mqtt_client.loop();
+  }
+
+  if (!loop_return_flag) {
+    Serial.print(F("Info: Connecting to MQTT Broker with Client ID \""));
+    Serial.print(mqtt_client_id);
+    Serial.print(F("\" "));
+    boolean connect_status = false;
+    if (mqtt_auth_enabled) {
+      Serial.print(F("using Authentication..."));
+      connect_status = mqtt_client.connect(mqtt_client_id, mqtt_username, mqtt_password);
+    }
+    else {
+      Serial.print(F("Without Authentication..."));
+      connect_status = mqtt_client.connect(mqtt_client_id);
+    }
+
+    clearLCD();
+    if (connect_status) {
+      Serial.println(F("OK."));
+      return true;
+    }
+    else {
+      Serial.println(F("Failed."));
+      return false;
+    }
+  }
 }
 
-boolean mqttPublish(char * topic, char *str){
+boolean mqttPublish(char * topic, char *str) {
   boolean response_status = true;
-  
+
   Serial.print(F("Info: MQTT publishing to topic "));
   Serial.print(topic);
   Serial.print(F("..."));
-  
+
   uint32_t space_required = 5;
   space_required += strlen(topic);
   space_required += strlen(str);
-  if(space_required >= 511){
+  if (space_required >= 511) {
     Serial.println(F("Aborted."));
     response_status = false;
-  } 
-  else if(mqtt_client.publish(topic, str)){
+  }
+  else if (mqtt_client.publish(topic, str)) {
     Serial.println(F("OK."));
     response_status = true;
-  } 
+  }
   else {
     Serial.println(F("Failed."));
     response_status = false;
   }
-  
+
   return response_status;
 }
 
 
-boolean publishHeartbeat(){
-  static uint32_t post_counter = 0;  
+boolean publishHeartbeat() {
+  static uint32_t post_counter = 0;
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
   memset(scratch, 0, 512);
-  snprintf(scratch, 511, 
-  "{"
-  "\"serial-number\":\"%s\","
-  "\"converted-value\":%d,"
-  "\"firmware-version\":\"%s\","
-  "\"publishes\":[\"no2\",\"co\",\"temperature\",\"humidity\"],"
-  "\"counter\":%lu"
-  "}", mqtt_client_id, sample, firmware_version, post_counter++);  
-  
-  if(heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES){
-     heartbeat_waveform_index = 0;
+  snprintf(scratch, 511,
+           "{"
+           "\"serial-number\":\"%s\","
+           "\"converted-value\":%d,"
+           "\"firmware-version\":\"%s\","
+           "\"publishes\":[\"no2\",\"co\",\"temperature\",\"humidity\"],"
+           "\"counter\":%lu"
+           "}", mqtt_client_id, sample, firmware_version, post_counter++);
+
+  if (heartbeat_waveform_index >= NUM_HEARTBEAT_WAVEFORM_SAMPLES) {
+    heartbeat_waveform_index = 0;
   }
-  
-  return mqttPublish(MQTT_TOPIC_PREFIX "heartbeat", scratch); 
+
+  return mqttPublish(MQTT_TOPIC_PREFIX "heartbeat", scratch);
 }
 
-float toFahrenheit(float degC){
+float toFahrenheit(float degC) {
   return  (degC * 9.0f / 5.0f) + 32.0f;
 }
 
-boolean publishTemperature(){
+boolean publishTemperature() {
   clearTempBuffers();
   float temperature_moving_average = calculateAverage(&(sample_buffer[TEMPERATURE_SAMPLE_BUFFER][0]), sample_buffer_depth);
   temperature_degc = temperature_moving_average;
   float raw_temperature = temperature_degc;
   float reported_temperature = temperature_degc - reported_temperature_offset_degC;
-  if(temperature_units == 'F'){
+  if (temperature_units == 'F') {
     reported_temperature = toFahrenheit(reported_temperature);
     raw_temperature = toFahrenheit(raw_temperature);
   }
@@ -4481,59 +4492,59 @@ boolean publishTemperature(){
   trim_string(converted_value_string);
   trim_string(raw_value_string);
   snprintf(scratch, 511,
-    "{"
-    "\"serial-number\":\"%s\","
-    "\"converted-value\":%s,"
-    "\"converted-units\":\"deg%c\","
-    "\"raw-value\":%s,"
-    "\"raw-units\":\"deg%c\","
-    "\"sensor-part-number\":\"SHT25\""
-    "}", mqtt_client_id, converted_value_string, temperature_units, raw_value_string, temperature_units);
-    
+           "{"
+           "\"serial-number\":\"%s\","
+           "\"converted-value\":%s,"
+           "\"converted-units\":\"deg%c\","
+           "\"raw-value\":%s,"
+           "\"raw-units\":\"deg%c\","
+           "\"sensor-part-number\":\"SHT25\""
+           "}", mqtt_client_id, converted_value_string, temperature_units, raw_value_string, temperature_units);
+
   return mqttPublish(MQTT_TOPIC_PREFIX "temperature", scratch);
 }
 
-boolean publishHumidity(){
+boolean publishHumidity() {
   clearTempBuffers();
   float humidity_moving_average = calculateAverage(&(sample_buffer[HUMIDITY_SAMPLE_BUFFER][0]), sample_buffer_depth);
   relative_humidity_percent = humidity_moving_average;
   float raw_humidity = constrain(relative_humidity_percent, 0.0f, 100.0f);
   float reported_humidity = constrain(relative_humidity_percent - reported_humidity_offset_percent, 0.0f, 100.0f);
-  
+
   safe_dtostrf(reported_humidity, -6, 2, converted_value_string, 16);
   safe_dtostrf(raw_humidity, -6, 2, raw_value_string, 16);
   trim_string(converted_value_string);
   trim_string(raw_value_string);
-  snprintf(scratch, 511, 
-    "{"
-    "\"serial-number\":\"%s\","    
-    "\"converted-value\":%s,"
-    "\"converted-units\":\"percent\","
-    "\"raw-value\":%s,"
-    "\"raw-units\":\"percent\","  
-    "\"sensor-part-number\":\"SHT25\""
-    "}", mqtt_client_id, converted_value_string, raw_value_string);  
+  snprintf(scratch, 511,
+           "{"
+           "\"serial-number\":\"%s\","
+           "\"converted-value\":%s,"
+           "\"converted-units\":\"percent\","
+           "\"raw-value\":%s,"
+           "\"raw-units\":\"percent\","
+           "\"sensor-part-number\":\"SHT25\""
+           "}", mqtt_client_id, converted_value_string, raw_value_string);
   return mqttPublish(MQTT_TOPIC_PREFIX "humidity", scratch);
 }
 
-void collectTemperature(void){
+void collectTemperature(void) {
   float raw_value = 0.0f;
-  if(init_sht25_ok){
-    if(sht25.getTemperature(&raw_value)){
-      addSample(TEMPERATURE_SAMPLE_BUFFER, raw_value);       
-      if(sample_buffer_idx == (sample_buffer_depth - 1)){
+  if (init_sht25_ok) {
+    if (sht25.getTemperature(&raw_value)) {
+      addSample(TEMPERATURE_SAMPLE_BUFFER, raw_value);
+      if (sample_buffer_idx == (sample_buffer_depth - 1)) {
         temperature_ready = true;
       }
     }
   }
 }
 
-void collectHumidity(void){
+void collectHumidity(void) {
   float raw_value = 0.0f;
-  if(init_sht25_ok){
-    if(sht25.getRelativeHumidity(&raw_value)){
-      addSample(HUMIDITY_SAMPLE_BUFFER, raw_value);       
-      if(sample_buffer_idx == (sample_buffer_depth - 1)){
+  if (init_sht25_ok) {
+    if (sht25.getRelativeHumidity(&raw_value)) {
+      addSample(HUMIDITY_SAMPLE_BUFFER, raw_value);
+      if (sample_buffer_idx == (sample_buffer_depth - 1)) {
         humidity_ready = true;
       }
     }
@@ -4543,141 +4554,141 @@ void collectHumidity(void){
 // TODO: create a vector to collect a touch sample every half second or so
 //       and move all calls to collectTouch out of main processing into vector
 
-void collectTouch(void){
+void collectTouch(void) {
   static uint8_t sample_write_index = 0;
   touch_sample_buffer[sample_write_index++] = touch.capacitiveSensor(30);
-  
-  if(sample_write_index == TOUCH_SAMPLE_BUFFER_DEPTH){
-    sample_write_index = 0; 
+
+  if (sample_write_index == TOUCH_SAMPLE_BUFFER_DEPTH) {
+    sample_write_index = 0;
   }
 }
 
-void processTouchVerbose(boolean verbose_output){
-  const uint32_t touch_event_threshold = 85UL;  
+void processTouchVerbose(boolean verbose_output) {
+  const uint32_t touch_event_threshold = 85UL;
   static boolean first_time = true;
   static unsigned long touch_start_millis = 0UL;
-  long backlight_interval = 60000L; 
+  long backlight_interval = 60000L;
   static boolean backlight_is_on = false;
- 
-  if(first_time){
+
+  if (first_time) {
     first_time = false;
-    backlight_interval = ((long) eeprom_read_word((uint16_t *) EEPROM_BACKLIGHT_DURATION)) * 1000;    
+    backlight_interval = ((long) eeprom_read_word((uint16_t *) EEPROM_BACKLIGHT_DURATION)) * 1000;
   }
-  
-  float touch_moving_average = calculateAverage(touch_sample_buffer, TOUCH_SAMPLE_BUFFER_DEPTH); 
-  if(verbose_output){
+
+  float touch_moving_average = calculateAverage(touch_sample_buffer, TOUCH_SAMPLE_BUFFER_DEPTH);
+  if (verbose_output) {
     Serial.print(F("Info: Average Touch Reading: "));
     Serial.println(touch_moving_average);
   }
-  
-  if(touch_moving_average > touch_event_threshold){
+
+  if (touch_moving_average > touch_event_threshold) {
     backlightOn();
     backlight_is_on = true;
-    if(verbose_output){
+    if (verbose_output) {
       Serial.println(F("Info: Turning backlight on."));
     }
     touch_start_millis = current_millis;
-  } 
-  
-  if((current_millis - touch_start_millis) >= backlight_interval) {        
-    if(backlight_is_on){      
-      if(verbose_output){
-        Serial.println(F("Info: Turning backlight off (timer expired)."));   
+  }
+
+  if ((current_millis - touch_start_millis) >= backlight_interval) {
+    if (backlight_is_on) {
+      if (verbose_output) {
+        Serial.println(F("Info: Turning backlight off (timer expired)."));
       }
-      backlightOff();      
-      backlight_is_on = false;      
+      backlightOff();
+      backlight_is_on = false;
     }
-  }  
+  }
 }
 
-void processTouch(void){
+void processTouch(void) {
   processTouchVerbose(true);
 }
 
-void processTouchQuietly(void){
+void processTouchQuietly(void) {
   processTouchVerbose(false);
 }
 
-void advanceSampleBufferIndex(void){
+void advanceSampleBufferIndex(void) {
   sample_buffer_idx++;
-  if((sample_buffer_idx >= sample_buffer_depth) || (sample_buffer_idx >= MAX_SAMPLE_BUFFER_DEPTH)){
+  if ((sample_buffer_idx >= sample_buffer_depth) || (sample_buffer_idx >= MAX_SAMPLE_BUFFER_DEPTH)) {
     sample_buffer_idx = 0;
   }
 }
 
-void addSample(uint8_t sample_type, float value){
-  if((sample_type < 4) && (sample_buffer_idx < MAX_SAMPLE_BUFFER_DEPTH)){
-    sample_buffer[sample_type][sample_buffer_idx] = value;    
+void addSample(uint8_t sample_type, float value) {
+  if ((sample_type < 4) && (sample_buffer_idx < MAX_SAMPLE_BUFFER_DEPTH)) {
+    sample_buffer[sample_type][sample_buffer_idx] = value;
   }
 }
 
-void collectNO2(void){
+void collectNO2(void) {
   float raw_value = 0.0f;
-  
-  if(init_no2_afe_ok && init_no2_adc_ok){
-    selectSlot2();  
-    if(burstSampleADC(&raw_value)){      
+
+  if (init_no2_afe_ok && init_no2_adc_ok) {
+    selectSlot2();
+    if (burstSampleADC(&raw_value)) {
       addSample(NO2_SAMPLE_BUFFER, raw_value);
-      if(sample_buffer_idx == (sample_buffer_depth - 1)){
+      if (sample_buffer_idx == (sample_buffer_depth - 1)) {
         no2_ready = true;
       }
     }
   }
-    
-  selectNoSlot(); 
+
+  selectNoSlot();
 }
 
-void collectCO(void ){  
+void collectCO(void ) {
   float raw_value = 0.0f;
-  
-  if(init_co_afe_ok && init_co_adc_ok){
-    selectSlot1();  
-    if(burstSampleADC(&raw_value)){   
-      addSample(CO_SAMPLE_BUFFER, raw_value);      
-      if(sample_buffer_idx == (sample_buffer_depth - 1)){
+
+  if (init_co_afe_ok && init_co_adc_ok) {
+    selectSlot1();
+    if (burstSampleADC(&raw_value)) {
+      addSample(CO_SAMPLE_BUFFER, raw_value);
+      if (sample_buffer_idx == (sample_buffer_depth - 1)) {
         co_ready = true;
-      }      
+      }
     }
   }
-    
-  selectNoSlot();     
+
+  selectNoSlot();
 }
 
-float pressure_scale_factor(void){
+float pressure_scale_factor(void) {
   float ret = 1.0f;
-  
+
   static boolean first_access = true;
   static int16_t altitude_meters = 0.0f;
-  
-  if(first_access){
+
+  if (first_access) {
     first_access = false;
     altitude_meters = (int16_t) eeprom_read_word((uint16_t *) EEPROM_ALTITUDE_METERS);
   }
 
-  if(altitude_meters != -1){
+  if (altitude_meters != -1) {
     // calculate scale factor of altitude and temperature
     const float kelvin_offset = 273.15f;
     const float lapse_rate_kelvin_per_meter = -0.0065f;
     const float pressure_exponentiation_constant = 5.2558774324f;
-    
+
     float outside_temperature_kelvin = kelvin_offset + (temperature_degc - reported_temperature_offset_degC);
     float outside_temperature_kelvin_at_sea_level = outside_temperature_kelvin - lapse_rate_kelvin_per_meter * altitude_meters; // lapse rate is negative
     float pow_arg = 1.0f + ((lapse_rate_kelvin_per_meter * altitude_meters) / outside_temperature_kelvin_at_sea_level);
     ret = powf(pow_arg, pressure_exponentiation_constant);
   }
-  
+
   return ret;
 }
 
-void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float * temperature_compensated_value){
+void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float * temperature_compensated_value) {
   static boolean first_access = true;
   static float no2_zero_volts = 0.0f;
   static float no2_slope_ppb_per_volt = 0.0f;
   float temperature_coefficient_of_span = 0.0f;
   float temperature_compensated_slope = 0.0f;
-  if(first_access){
+  if (first_access) {
     // NO2 has negative slope in circuit, more negative voltages correspond to higher levels of NO2
-    no2_slope_ppb_per_volt = eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE); 
+    no2_slope_ppb_per_volt = eeprom_read_float((const float *) EEPROM_NO2_CAL_SLOPE);
     no2_zero_volts = eeprom_read_float((const float *) EEPROM_NO2_CAL_OFFSET);
     first_access = false;
   }
@@ -4685,105 +4696,105 @@ void no2_convert_from_volts_to_ppb(float volts, float * converted_value, float *
   // apply piecewise linear regressions
   // to signal scaling effect curve
   float scaling_slope = 0.0f;
-  float scaling_intercept = 0.0f;  
-  if(temperature_degc < 0.0f){                 // < 0C  
+  float scaling_intercept = 0.0f;
+  if (temperature_degc < 0.0f) {               // < 0C
     scaling_slope = -0.0355739076f;
     scaling_intercept = 97.9865525718f;
   }
-  else if(temperature_degc < 20.0f){           // 0C .. 20C   
+  else if (temperature_degc < 20.0f) {         // 0C .. 20C
     scaling_slope = 0.1702484721f;
-    scaling_intercept = 97.9953985672f; 
+    scaling_intercept = 97.9953985672f;
   }
-  else{                                        // > 20C   
+  else {                                       // > 20C
     scaling_slope = 0.3385634354f;
     scaling_intercept = 94.6638669473f;
   }
-  float signal_scaling_factor_at_temperature = ((scaling_slope * temperature_degc) + scaling_intercept)/100.0f;
+  float signal_scaling_factor_at_temperature = ((scaling_slope * temperature_degc) + scaling_intercept) / 100.0f;
   // divide by 100 becauset the slope/intercept graphs have scaling factors in value
 
   // apply piecewise linear regressions
   // to baseline offset effect curve
   float baseline_offset_ppm_slope = 0.0f;
   float baseline_offset_ppm_intercept = 0.0f;
-                                                                     
-  if(temperature_degc < 33.0f){                          // < 33C
+
+  if (temperature_degc < 33.0f) {                        // < 33C
     baseline_offset_ppm_slope = -0.0007019288f;
     baseline_offset_ppm_intercept = 0.0177058403f;
   }
-  else if(temperature_degc < 38.0f){                     // 33C .. 38C
+  else if (temperature_degc < 38.0f) {                   // 33C .. 38C
     baseline_offset_ppm_slope = -0.0085978946f;
     baseline_offset_ppm_intercept = 0.2777254052f;
   }
-  else if(temperature_degc < 42.0f){                     // 38C .. 42C
+  else if (temperature_degc < 42.0f) {                   // 38C .. 42C
     baseline_offset_ppm_slope = -0.0196092331f;
-    baseline_offset_ppm_intercept = 0.6994563331f;    
+    baseline_offset_ppm_intercept = 0.6994563331f;
   }
-  else if(temperature_degc < 46.0f){                     // 42C .. 46C
+  else if (temperature_degc < 46.0f) {                   // 42C .. 46C
     baseline_offset_ppm_slope = -0.0351416006f;
-    baseline_offset_ppm_intercept = 1.3566041809f;          
+    baseline_offset_ppm_intercept = 1.3566041809f;
   }
-  else{                                                  // > 46C
+  else {                                                 // > 46C
     baseline_offset_ppm_slope = -0.0531894279f;
-    baseline_offset_ppm_intercept =  2.1948987152f;        
-  }  
-  float baseline_offset_ppm_at_temperature = ((baseline_offset_ppm_slope * temperature_degc) + baseline_offset_ppm_intercept); 
+    baseline_offset_ppm_intercept =  2.1948987152f;
+  }
+  float baseline_offset_ppm_at_temperature = ((baseline_offset_ppm_slope * temperature_degc) + baseline_offset_ppm_intercept);
   float baseline_offset_ppb_at_temperature = baseline_offset_ppm_at_temperature * 1000.0f;
-  // multiply by 1000 because baseline offset graph shows NO2 in ppm  
+  // multiply by 1000 because baseline offset graph shows NO2 in ppm
   float baseline_offset_voltage_at_temperature = -1.0f * baseline_offset_ppb_at_temperature / no2_slope_ppb_per_volt;
   // multiply by -1 because the ppm curve goes negative but the voltage actually *increases*
-  
+
   float signal_scaling_factor_at_altitude = pressure_scale_factor();
-  
+
   *converted_value = (no2_zero_volts - volts) * no2_slope_ppb_per_volt;
-  if(*converted_value <= 0.0f){
+  if (*converted_value <= 0.0f) {
     *converted_value = 0.0f;
   }
-  
-  *temperature_compensated_value = (no2_zero_volts - volts - baseline_offset_voltage_at_temperature) * no2_slope_ppb_per_volt 
-                                   / signal_scaling_factor_at_temperature 
+
+  *temperature_compensated_value = (no2_zero_volts - volts - baseline_offset_voltage_at_temperature) * no2_slope_ppb_per_volt
+                                   / signal_scaling_factor_at_temperature
                                    / signal_scaling_factor_at_altitude;
-                                   
-  if(*temperature_compensated_value <= 0.0f){
+
+  if (*temperature_compensated_value <= 0.0f) {
     *temperature_compensated_value = 0.0f;
   }
 }
 
-boolean publishNO2(){
+boolean publishNO2() {
   clearTempBuffers();
-  float converted_value = 0.0f, compensated_value = 0.0f;    
+  float converted_value = 0.0f, compensated_value = 0.0f;
   float no2_moving_average = calculateAverage(&(sample_buffer[NO2_SAMPLE_BUFFER][0]), sample_buffer_depth);
   no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
-  no2_ppb = compensated_value;  
+  no2_ppb = compensated_value;
   safe_dtostrf(no2_moving_average, -8, 5, raw_value_string, 16);
   safe_dtostrf(converted_value, -4, 2, converted_value_string, 16);
-  safe_dtostrf(compensated_value, -4, 2, compensated_value_string, 16); 
+  safe_dtostrf(compensated_value, -4, 2, compensated_value_string, 16);
   trim_string(raw_value_string);
   trim_string(converted_value_string);
-  trim_string(compensated_value_string);  
-  snprintf(scratch, 511, 
-    "{"
-    "\"serial-number\":\"%s\","       
-    "\"raw-value\":%s,"
-    "\"raw-units\":\"volt\","
-    "\"converted-value\":%s,"
-    "\"converted-units\":\"ppb\","
-    "\"compensated-value\":%s,"
-    "\"sensor-part-number\":\"3SP-NO2-20-PCB\""
-    "}",
-    mqtt_client_id,
-    raw_value_string, 
-    converted_value_string, 
-    compensated_value_string);  
-  return mqttPublish(MQTT_TOPIC_PREFIX "no2", scratch);     
+  trim_string(compensated_value_string);
+  snprintf(scratch, 511,
+           "{"
+           "\"serial-number\":\"%s\","
+           "\"raw-value\":%s,"
+           "\"raw-units\":\"volt\","
+           "\"converted-value\":%s,"
+           "\"converted-units\":\"ppb\","
+           "\"compensated-value\":%s,"
+           "\"sensor-part-number\":\"3SP-NO2-20-PCB\""
+           "}",
+           mqtt_client_id,
+           raw_value_string,
+           converted_value_string,
+           compensated_value_string);
+  return mqttPublish(MQTT_TOPIC_PREFIX "no2", scratch);
 }
 
-void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * temperature_compensated_value){
+void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * temperature_compensated_value) {
   static boolean first_access = true;
   static float co_zero_volts = 0.0f;
   static float co_slope_ppm_per_volt = 0.0f;
   float temperature_coefficient_of_span = 0.0f;
-  float temperature_compensated_slope = 0.0f;  
-  if(first_access){
+  float temperature_compensated_slope = 0.0f;
+  if (first_access) {
     // CO has positive slope in circuit, more positive voltages correspond to higher levels of CO
     co_slope_ppm_per_volt = eeprom_read_float((const float *) EEPROM_CO_CAL_SLOPE);
     co_zero_volts = eeprom_read_float((const float *) EEPROM_CO_CAL_OFFSET);
@@ -4793,420 +4804,420 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
   // apply piecewise linear regressions
   // to signal scaling effect curve
   float scaling_slope = 0.0f;
-  float scaling_intercept = 0.0f;  
-  if(temperature_degc < 0.0f){       // < 0C
+  float scaling_intercept = 0.0f;
+  if (temperature_degc < 0.0f) {     // < 0C
     scaling_slope = 0.926586438f;
     scaling_intercept = 88.2942019565f;
   }
-  else if(temperature_degc < 20.0f){ // 0C .. 20C
+  else if (temperature_degc < 20.0f) { // 0C .. 20C
     scaling_slope = 0.6072408915f;
-    scaling_intercept = 87.9176593244f; 
+    scaling_intercept = 87.9176593244f;
   }
-  else{                              // > 20C
+  else {                             // > 20C
     scaling_slope = 0.2600853674f;
     scaling_intercept = 95.6168149016f;
   }
-  float signal_scaling_factor_at_temperature = ((scaling_slope * temperature_degc) + scaling_intercept)/100.0f;
+  float signal_scaling_factor_at_temperature = ((scaling_slope * temperature_degc) + scaling_intercept) / 100.0f;
   // divide by 100 becauset the slope/intercept graphs have scaling factors in value
-  
+
   // apply piecewise linear regressions
   // to baseline offset effect curve
   float baseline_offset_ppm_slope = 0.0f;
   float baseline_offset_ppm_intercept = 0.0f;
-                
-  if(temperature_degc < 15.5f){                          // no correction for < 15.5C
+
+  if (temperature_degc < 15.5f) {                        // no correction for < 15.5C
     baseline_offset_ppm_slope = 0.0f;
     baseline_offset_ppm_intercept = 0.0f;
   }
-  else if(temperature_degc < 25.0f){                      // 15.5C .. 25C
+  else if (temperature_degc < 25.0f) {                    // 15.5C .. 25C
     baseline_offset_ppm_slope = 0.2590260005f;
     baseline_offset_ppm_intercept = -4.0290395187f;
   }
-  else if(temperature_degc < 32.0f){                      // 25C .. 32C
+  else if (temperature_degc < 32.0f) {                    // 25C .. 32C
     baseline_offset_ppm_slope = 0.5387700048f;
     baseline_offset_ppm_intercept = -11.0899532317f;
   }
-  else{                                                   // > 32C
+  else {                                                  // > 32C
     baseline_offset_ppm_slope = 0.824964228f;
-    baseline_offset_ppm_intercept = -20.3665881995f;        
-  }  
-  float baseline_offset_ppm_at_temperature = (baseline_offset_ppm_slope * temperature_degc) + baseline_offset_ppm_intercept;  
+    baseline_offset_ppm_intercept = -20.3665881995f;
+  }
+  float baseline_offset_ppm_at_temperature = (baseline_offset_ppm_slope * temperature_degc) + baseline_offset_ppm_intercept;
   float baseline_offset_voltage_at_temperature = baseline_offset_ppm_at_temperature / co_slope_ppm_per_volt;
 
   float signal_scaling_factor_at_altitude = pressure_scale_factor();
-    
+
   *converted_value = (volts - co_zero_volts) * co_slope_ppm_per_volt;
-  if(*converted_value <= 0.0f){
-    *converted_value = 0.0f; 
+  if (*converted_value <= 0.0f) {
+    *converted_value = 0.0f;
   }
-  
-  *temperature_compensated_value = (volts - co_zero_volts - baseline_offset_voltage_at_temperature) * co_slope_ppm_per_volt 
+
+  *temperature_compensated_value = (volts - co_zero_volts - baseline_offset_voltage_at_temperature) * co_slope_ppm_per_volt
                                    / signal_scaling_factor_at_temperature
                                    / signal_scaling_factor_at_altitude;
-  if(*temperature_compensated_value <= 0.0f){
+  if (*temperature_compensated_value <= 0.0f) {
     *temperature_compensated_value = 0.0f;
   }
 }
 
-boolean publishCO(){
-  clearTempBuffers();  
-  float converted_value = 0.0f, compensated_value = 0.0f;   
+boolean publishCO() {
+  clearTempBuffers();
+  float converted_value = 0.0f, compensated_value = 0.0f;
   float co_moving_average = calculateAverage(&(sample_buffer[CO_SAMPLE_BUFFER][0]), sample_buffer_depth);
   co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
-  co_ppm = compensated_value;  
+  co_ppm = compensated_value;
   safe_dtostrf(co_moving_average, -8, 5, raw_value_string, 16);
   safe_dtostrf(converted_value, -4, 2, converted_value_string, 16);
-  safe_dtostrf(compensated_value, -4, 2, compensated_value_string, 16);    
+  safe_dtostrf(compensated_value, -4, 2, compensated_value_string, 16);
   trim_string(raw_value_string);
   trim_string(converted_value_string);
-  trim_string(compensated_value_string);    
-  snprintf(scratch, 511, 
-    "{"
-    "\"serial-number\":\"%s\","      
-    "\"raw-value\":%s,"
-    "\"raw-units\":\"volt\","
-    "\"converted-value\":%s,"
-    "\"converted-units\":\"ppm\","
-    "\"compensated-value\":%s,"
-    "\"sensor-part-number\":\"3SP-CO-1000-PCB\""
-    "}",
-    mqtt_client_id,
-    raw_value_string, 
-    converted_value_string, 
-    compensated_value_string);  
+  trim_string(compensated_value_string);
+  snprintf(scratch, 511,
+           "{"
+           "\"serial-number\":\"%s\","
+           "\"raw-value\":%s,"
+           "\"raw-units\":\"volt\","
+           "\"converted-value\":%s,"
+           "\"converted-units\":\"ppm\","
+           "\"compensated-value\":%s,"
+           "\"sensor-part-number\":\"3SP-CO-1000-PCB\""
+           "}",
+           mqtt_client_id,
+           raw_value_string,
+           converted_value_string,
+           compensated_value_string);
   return mqttPublish(MQTT_TOPIC_PREFIX "co", scratch);
 }
 
-void petWatchdog(void){
-  tinywdt.pet(); 
+void petWatchdog(void) {
+  tinywdt.pet();
 }
 
-void delayForWatchdog(void){
-  delay(120); 
+void delayForWatchdog(void) {
+  delay(120);
 }
 
-void watchdogForceReset(void){
-  tinywdt.force_reset(); 
+void watchdogForceReset(void) {
+  tinywdt.force_reset();
   Serial.println(F("Error: Watchdog Force Restart failed. Manual reset is required."));
   setLCD_P(PSTR("AUTORESET FAILED"
-                " RESET REQUIRED "));                
-  backlightOn();                
+                " RESET REQUIRED "));
+  backlightOn();
   ERROR_MESSAGE_DELAY();
-  for(;;){
+  for (;;) {
     delay(1000);
   }
 }
 
-void watchdogInitialize(void){
-  tinywdt.begin(100, 65000); 
+void watchdogInitialize(void) {
+  tinywdt.begin(100, 65000);
 }
 
 // modal operation loop functions
-void loop_wifi_mqtt_mode(void){
+void loop_wifi_mqtt_mode(void) {
   static uint8_t num_mqtt_connect_retries = 0;
-  static uint8_t num_mqtt_intervals_without_wifi = 0; 
-  
+  static uint8_t num_mqtt_intervals_without_wifi = 0;
+
   // mqtt publish timer intervals
   static unsigned long previous_mqtt_publish_millis = 0;
-  
-  if(current_millis - previous_mqtt_publish_millis >= reporting_interval){   
-    previous_mqtt_publish_millis = current_millis;      
-    
+
+  if (current_millis - previous_mqtt_publish_millis >= reporting_interval) {
+    previous_mqtt_publish_millis = current_millis;
+
     printCsvDataLine(NULL);
-    
-    if(connectedToNetwork()){
+
+    if (connectedToNetwork()) {
       num_mqtt_intervals_without_wifi = 0;
-      
-      if(mqttReconnect()){         
+
+      if (mqttReconnect()) {
         updateLCD("TEMP ", 0, 0, 5);
-        updateLCD("RH ", 10, 0, 3);         
+        updateLCD("RH ", 10, 0, 3);
         updateLCD("NO2 ", 0, 1, 4);
         updateLCD("CO ", 10, 1, 3);
-                      
-        //connected to MQTT server and connected to Wi-Fi network        
-        num_mqtt_connect_retries = 0;   
-        if(!publishHeartbeat()){
-          Serial.println(F("Error: Failed to publish Heartbeat."));  
+
+        //connected to MQTT server and connected to Wi-Fi network
+        num_mqtt_connect_retries = 0;
+        if (!publishHeartbeat()) {
+          Serial.println(F("Error: Failed to publish Heartbeat."));
         }
-        
-        if(init_sht25_ok){
-          if(temperature_ready){
-            if(!publishTemperature()){          
-              Serial.println(F("Error: Failed to publish Temperature."));          
+
+        if (init_sht25_ok) {
+          if (temperature_ready) {
+            if (!publishTemperature()) {
+              Serial.println(F("Error: Failed to publish Temperature."));
             }
-            else{
+            else {
               float reported_temperature = temperature_degc - reported_temperature_offset_degC;
-              if(temperature_units == 'F'){
+              if (temperature_units == 'F') {
                 reported_temperature = toFahrenheit(reported_temperature);
               }
-              updateLCD(reported_temperature, 5, 0, 3);             
+              updateLCD(reported_temperature, 5, 0, 3);
             }
           }
-          else{
+          else {
             updateLCD("---", 5, 0, 3);
-          }        
+          }
         }
-        else{
+        else {
           // sht25 is not ok
           updateLCD("XXX", 5, 0, 3);
         }
-        
-        if(init_sht25_ok){
-          if(humidity_ready){
-            if(!publishHumidity()){
-              Serial.println(F("Error: Failed to publish Humidity."));         
+
+        if (init_sht25_ok) {
+          if (humidity_ready) {
+            if (!publishHumidity()) {
+              Serial.println(F("Error: Failed to publish Humidity."));
             }
-            else{
+            else {
               float reported_relative_humidity_percent = relative_humidity_percent - reported_humidity_offset_percent;
-              updateLCD(reported_relative_humidity_percent, 13, 0, 3);  
+              updateLCD(reported_relative_humidity_percent, 13, 0, 3);
             }
           }
-          else{
+          else {
             updateLCD("---", 13, 0, 3);
           }
         }
-        else{
+        else {
           updateLCD("XXX", 13, 0, 3);
         }
-        
-        if(init_no2_afe_ok && init_no2_adc_ok){
-          if(no2_ready){
-            if(!publishNO2()){
-              Serial.println(F("Error: Failed to publish NO2."));          
+
+        if (init_no2_afe_ok && init_no2_adc_ok) {
+          if (no2_ready) {
+            if (!publishNO2()) {
+              Serial.println(F("Error: Failed to publish NO2."));
             }
-            else{
-              updateLCD(no2_ppb, 5, 1, 3);  
-            }
-          }
-          else{
-            updateLCD("---", 5, 1, 3); 
-          }
-        }
-        else{
-          updateLCD("XXX", 5, 1, 3); 
-        }
-        
-        if(init_co_afe_ok && init_co_adc_ok){
-          if(co_ready){
-            if(!publishCO()){
-              Serial.println(F("Error: Failed to publish CO."));         
-            }
-            else{
-              updateLCD(co_ppm, 13, 1, 3); 
+            else {
+              updateLCD(no2_ppb, 5, 1, 3);
             }
           }
-          else{
-            updateLCD("---", 13, 1, 3);  
+          else {
+            updateLCD("---", 5, 1, 3);
           }
         }
-        else{
+        else {
+          updateLCD("XXX", 5, 1, 3);
+        }
+
+        if (init_co_afe_ok && init_co_adc_ok) {
+          if (co_ready) {
+            if (!publishCO()) {
+              Serial.println(F("Error: Failed to publish CO."));
+            }
+            else {
+              updateLCD(co_ppm, 13, 1, 3);
+            }
+          }
+          else {
+            updateLCD("---", 13, 1, 3);
+          }
+        }
+        else {
           updateLCD("XXX", 13, 1, 3);
         }
-    
+
       }
-      else{
+      else {
         // not connected to MQTT server
         num_mqtt_connect_retries++;
         Serial.print(F("Warn: Failed to connect to MQTT server "));
         Serial.print(num_mqtt_connect_retries);
         Serial.print(F(" consecutive time"));
-        if(num_mqtt_connect_retries > 1){
-          Serial.print(F("s"));           
+        if (num_mqtt_connect_retries > 1) {
+          Serial.print(F("s"));
         }
         Serial.println();
-        
-        if(num_mqtt_connect_retries >= 5){
+
+        if (num_mqtt_connect_retries >= 5) {
           Serial.println(F("Error: MQTT Connect Failed 5 consecutive times. Forcing reboot."));
           Serial.flush();
           setLCD_P(PSTR("  MQTT SERVER   "
                         "    FAILURE     "));
           lcdFrownie(15, 1);
-          ERROR_MESSAGE_DELAY();            
-          watchdogForceReset();  
+          ERROR_MESSAGE_DELAY();
+          watchdogForceReset();
         }
       }
     }
-    else{
+    else {
       // not connected to Wi-Fi network
       num_mqtt_intervals_without_wifi++;
       Serial.print(F("Warn: Failed to connect to Wi-Fi network "));
       Serial.print(num_mqtt_intervals_without_wifi);
       Serial.print(F(" consecutive time"));
-      if(num_mqtt_intervals_without_wifi > 1){
+      if (num_mqtt_intervals_without_wifi > 1) {
         Serial.print(F("s"));
       }
-      Serial.println();      
-      if(num_mqtt_intervals_without_wifi >= 5){
+      Serial.println();
+      if (num_mqtt_intervals_without_wifi >= 5) {
         Serial.println(F("Error: Wi-Fi Re-connect Failed 5 consecutive times. Forcing reboot."));
         Serial.flush();
         setLCD_P(PSTR(" WI-FI NETWORK  "
                       "    FAILURE     "));
         lcdFrownie(15, 1);
-        ERROR_MESSAGE_DELAY();         
-        watchdogForceReset();  
+        ERROR_MESSAGE_DELAY();
+        watchdogForceReset();
       }
-      
+
       restartWifi();
     }
-  }    
+  }
 }
 
-void loop_offline_mode(void){
-  
+void loop_offline_mode(void) {
+
   // write record timer intervals
   static unsigned long previous_write_record_millis = 0;
 
-  if(current_millis - previous_write_record_millis >= reporting_interval){   
+  if (current_millis - previous_write_record_millis >= reporting_interval) {
     previous_write_record_millis = current_millis;
     printCsvDataLine(NULL);
-  }  
+  }
 }
 
 /****** SIGNAL PROCESSING MATH SUPPORT FUNCTIONS ******/
 
-float calculateAverage(float * buf, uint16_t num_samples){
+float calculateAverage(float * buf, uint16_t num_samples) {
   float average = 0.0f;
-  for(uint16_t ii = 0; ii < num_samples; ii++){
+  for (uint16_t ii = 0; ii < num_samples; ii++) {
     average += buf[ii];
-  } 
-  
+  }
+
   return average / num_samples;
 }
 
 // if the caller passes an augmented_header to printCsvDataLine
 // it's the caller's responsibility to terminate the line
 // otherwise printCsvDataLine will terminate the line implicitly
-void printCsvDataLine(const char * augmented_header){
+void printCsvDataLine(const char * augmented_header) {
   static boolean first = true;
-  static char dataString[512] = {0};  
+  static char dataString[512] = {0};
   memset(dataString, 0, 512);
-  
+
   uint16_t len = 0;
   uint16_t dataStringRemaining = 511;
-  
-  if(first){
+
+  if (first) {
     char * header_row = "Timestamp,"
-                   "Temperature[degC],"
-                   "Humidity[percent],"                   
-                   "NO2[ppb],"                    
-                   "CO[ppm],"      
-                   "NO2[V]," 
-                   "CO[V]";        
-    first = false;      
-    Serial.print(F("csv: "));    
+                        "Temperature[degC],"
+                        "Humidity[percent],"
+                        "NO2[ppb],"
+                        "CO[ppm],"
+                        "NO2[V],"
+                        "CO[V]";
+    first = false;
+    Serial.print(F("csv: "));
     Serial.print(header_row);
     appendToString(header_row, dataString, &dataStringRemaining);
-          
-    if(augmented_header != 0){
+
+    if (augmented_header != 0) {
       Serial.print(F(","));
       appendToString(",", dataString, &dataStringRemaining);
 
-      Serial.print(augmented_header);     
-      appendToString((char *) augmented_header, dataString, &dataStringRemaining);     
+      Serial.print(augmented_header);
+      appendToString((char *) augmented_header, dataString, &dataStringRemaining);
     }
-    
+
     Serial.println();
-    appendToString("\n", dataString, &dataStringRemaining);  
-  }  
-  
+    appendToString("\n", dataString, &dataStringRemaining);
+  }
+
   Serial.print(F("csv: "));
   printCurrentTimestamp(dataString, &dataStringRemaining);
   Serial.print(F(","));
   appendToString("," , dataString, &dataStringRemaining);
-  
-  if(temperature_ready){
+
+  if (temperature_ready) {
     temperature_degc = calculateAverage(&(sample_buffer[TEMPERATURE_SAMPLE_BUFFER][0]), sample_buffer_depth);
     float reported_temperature = temperature_degc - reported_temperature_offset_degC;
-    if(temperature_units == 'F'){
+    if (temperature_units == 'F') {
       reported_temperature = toFahrenheit(reported_temperature);
     }
     Serial.print(reported_temperature, 2);
     appendToString(reported_temperature, 2, dataString, &dataStringRemaining);
   }
-  else{
+  else {
     Serial.print(F("---"));
     appendToString("---", dataString, &dataStringRemaining);
   }
-  
+
   Serial.print(F(","));
   appendToString("," , dataString, &dataStringRemaining);
-  
-  if(humidity_ready){
+
+  if (humidity_ready) {
     relative_humidity_percent = calculateAverage(&(sample_buffer[HUMIDITY_SAMPLE_BUFFER][0]), sample_buffer_depth);
-    float reported_relative_humidity = relative_humidity_percent - reported_humidity_offset_percent;        
+    float reported_relative_humidity = relative_humidity_percent - reported_humidity_offset_percent;
     Serial.print(reported_relative_humidity, 2);
     appendToString(reported_relative_humidity, 2, dataString, &dataStringRemaining);
   }
-  else{
+  else {
     Serial.print(F("---"));
     appendToString("---", dataString, &dataStringRemaining);
-  }    
-  
+  }
+
   Serial.print(F(","));
   appendToString("," , dataString, &dataStringRemaining);
-  
+
   float no2_moving_average = 0.0f;
-  if(no2_ready){
-    float converted_value = 0.0f, compensated_value = 0.0f;    
+  if (no2_ready) {
+    float converted_value = 0.0f, compensated_value = 0.0f;
     no2_moving_average = calculateAverage(&(sample_buffer[NO2_SAMPLE_BUFFER][0]), sample_buffer_depth);
     no2_convert_from_volts_to_ppb(no2_moving_average, &converted_value, &compensated_value);
-    no2_ppb = compensated_value;      
+    no2_ppb = compensated_value;
     Serial.print(no2_ppb, 2);
     appendToString(no2_ppb, 2, dataString, &dataStringRemaining);
   }
-  else{
+  else {
     Serial.print(F("---"));
     appendToString("---", dataString, &dataStringRemaining);
   }
-  
+
   Serial.print(F(","));
   appendToString("," , dataString, &dataStringRemaining);
-  
+
   float co_moving_average = 0.0f;
-  if(co_ready){    
-    float converted_value = 0.0f, compensated_value = 0.0f;   
+  if (co_ready) {
+    float converted_value = 0.0f, compensated_value = 0.0f;
     co_moving_average = calculateAverage(&(sample_buffer[CO_SAMPLE_BUFFER][0]), sample_buffer_depth);
     co_convert_from_volts_to_ppm(co_moving_average, &converted_value, &compensated_value);
-    co_ppm = compensated_value;     
+    co_ppm = compensated_value;
     Serial.print(co_ppm, 2);
     appendToString(co_ppm, 2, dataString, &dataStringRemaining);
   }
-  else{
+  else {
     Serial.print(F("---"));
     appendToString("---", dataString, &dataStringRemaining);
-  }   
-  
+  }
+
   Serial.print(F(","));
   appendToString("," , dataString, &dataStringRemaining);
-  
+
   Serial.print(no2_moving_average, 6);
   appendToString(no2_moving_average, 6, dataString, &dataStringRemaining);
-  
+
   Serial.print(F(","));
   appendToString("," , dataString, &dataStringRemaining);
-  
-  
+
+
   Serial.print(co_moving_average, 6);
   appendToString(co_moving_average, 6, dataString, &dataStringRemaining);
-  
-  if(augmented_header != 0){
+
+  if (augmented_header != 0) {
     Serial.print(F(","));
     appendToString("," , dataString, &dataStringRemaining);
   }
-  else{
+  else {
     Serial.println();
-    appendToString("\n", dataString, &dataStringRemaining);  
+    appendToString("\n", dataString, &dataStringRemaining);
   }
-  
-  if((mode == SUBMODE_OFFLINE) && init_sdcard_ok){
+
+  if ((mode == SUBMODE_OFFLINE) && init_sdcard_ok) {
     char filename[16] = {0};
-    getNowFilename(filename, 15);     
+    getNowFilename(filename, 15);
     File dataFile = SD.open(filename, FILE_WRITE);
     if (dataFile) {
       dataFile.print(dataString);
       dataFile.close();
       setLCD_P(PSTR("  LOGGING DATA  "
-                    "   TO SD CARD   "));   
+                    "   TO SD CARD   "));
     }
     else {
       Serial.print("Error: Failed to open SD card file named \"");
@@ -5214,22 +5225,22 @@ void printCsvDataLine(const char * augmented_header){
       Serial.println(F("\""));
       setLCD_P(PSTR("  SD CARD FILE  "
                     "  OPEN FAILED   "));
-      lcdFrownie(15, 1);      
+      lcdFrownie(15, 1);
     }
   }
-  else if((mode == SUBMODE_OFFLINE) && !init_sdcard_ok){
+  else if ((mode == SUBMODE_OFFLINE) && !init_sdcard_ok) {
     setLCD_P(PSTR("  LOGGING DATA  "
                   "  TO USB-SERIAL "));
   }
 }
 
-boolean mode_requires_wifi(uint8_t opmode){
+boolean mode_requires_wifi(uint8_t opmode) {
   boolean requires_wifi = false;
-  
-  if(opmode == SUBMODE_NORMAL){
+
+  if (opmode == SUBMODE_NORMAL) {
     requires_wifi = true;
-  } 
-  
+  }
+
   return requires_wifi;
 }
 
@@ -5238,30 +5249,34 @@ boolean mode_requires_wifi(uint8_t opmode){
 // the following defines are what goes in the SPI flash where to signal to the bootloader
 #define LAST_4K_PAGE_ADDRESS      0x7F000     // the start address of the last 4k page
 #define MAGIC_NUMBER              0x00ddba11  // this word at the end of SPI flash
-                                              // is a signal to the bootloader to 
-                                              // think about loading it
+// is a signal to the bootloader to
+// think about loading it
 #define MAGIC_NUMBER_ADDRESS      0x7FFFC     // the last 4 bytes are the magic number
 #define CRC16_CHECKSUM_ADDRESS    0x7FFFA     // the two bytes before the magic number
-                                              // are the expected checksum of the file
+// are the expected checksum of the file
 #define FILESIZE_ADDRESS          0x7FFF6     // the four bytes before the checksum
-                                              // are the stored file size
+// are the stored file size
 
 #define IDLE_TIMEOUT_MS  10000     // Amount of time to wait (in milliseconds) with no data 
-                                   // received before closing the connection.  If you know the server
-                                   // you're accessing is quick to respond, you can reduce this value.
+// received before closing the connection.  If you know the server
+// you're accessing is quick to respond, you can reduce this value.
 
-void invalidateSignature(void){
+void invalidateSignature(void) {
   flash_file_size = 0;
-  flash_signature = 0;  
-  while(flash.busy()){;}   
+  flash_signature = 0;
+  while (flash.busy()) {
+    ;
+  }
   flash.blockErase4K(LAST_4K_PAGE_ADDRESS);
-  while(flash.busy()){;}   
+  while (flash.busy()) {
+    ;
+  }
 }
 
 // returns the number of header bytes in the server response
 // if the file was downloaded in one chunk, this means that
 // mybuffer[ret] is the first byte of the response body
-uint16_t downloadFile(char * filename, void (*responseBodyProcessor)(uint8_t, boolean, unsigned long, uint16_t)){    
+uint16_t downloadFile(char * filename, void (*responseBodyProcessor)(uint8_t, boolean, unsigned long, uint16_t)) {
   uint16_t ret = 0;
 
   // re-initialize the globals
@@ -5269,7 +5284,7 @@ uint16_t downloadFile(char * filename, void (*responseBodyProcessor)(uint8_t, bo
   unsigned long body_bytes_read = 0;
   uint16_t crc16_checksum = 0;
   uint8_t mybuffer[512] = {0};
-  
+
   /* Try connecting to the website.
      Note: HTTP/1.1 protocol is used to keep the server from closing the connection before all data is read.
   */
@@ -5282,95 +5297,95 @@ uint16_t downloadFile(char * filename, void (*responseBodyProcessor)(uint8_t, bo
     www.fastrprint(F("\r\n"));
     www.println();
   } else {
-    Serial.println(F("Error: Update Server Connection failed"));    
+    Serial.println(F("Error: Update Server Connection failed"));
     return 0;
   }
 
   Serial.println(F("Info: -------------------------------------"));
-  
-  /* Read data until either the connection is closed, or the idle timeout is reached. */ 
+
+  /* Read data until either the connection is closed, or the idle timeout is reached. */
   unsigned long lastRead = millis();
   unsigned long num_chunks = 0;
   unsigned long num_bytes_read = 0;
   unsigned long num_header_bytes = 0;
   unsigned long start_time = millis();
-  
-  #define PARSING_WAITING_FOR_CR       0
-  #define PARSING_WAITING_FOR_CRNL     1
-  #define PARSING_WAITING_FOR_CRNLCR   2
-  #define PARSING_WAITING_FOR_CRNLCRNL 3  
-  #define PARSING_FOUND_CRNLCRNL       4
+
+#define PARSING_WAITING_FOR_CR       0
+#define PARSING_WAITING_FOR_CRNL     1
+#define PARSING_WAITING_FOR_CRNLCR   2
+#define PARSING_WAITING_FOR_CRNLCRNL 3
+#define PARSING_FOUND_CRNLCRNL       4
   uint8_t parsing_state = PARSING_WAITING_FOR_CR;
-  // get past the response headers    
-  while (www.connected() && (millis() - lastRead < IDLE_TIMEOUT_MS)) {   
+  // get past the response headers
+  while (www.connected() && (millis() - lastRead < IDLE_TIMEOUT_MS)) {
     while (www.available()) {
       //char c = www.read();
       num_bytes_read = www.read(mybuffer, 255);
       num_chunks++;
-      
-      if((num_chunks % 20) == 0){
+
+      if ((num_chunks % 20) == 0) {
         petWatchdog();
         updateCornerDot();
       }
-      
-      for(uint32_t ii = 0 ; ii < num_bytes_read; ii++){
-         if(parsing_state != PARSING_FOUND_CRNLCRNL){
-           num_header_bytes++;
-         }
-         
-         switch(parsing_state){
-         case PARSING_WAITING_FOR_CR:
-           if(mybuffer[ii] == '\r'){
-             parsing_state = PARSING_WAITING_FOR_CRNL;
-           }
-           break;
-         case PARSING_WAITING_FOR_CRNL:
-           if(mybuffer[ii] == '\n'){
-             parsing_state = PARSING_WAITING_FOR_CRNLCR;
-           }         
-           else{
-             parsing_state = PARSING_WAITING_FOR_CR;
-           }
-           break;
-         case PARSING_WAITING_FOR_CRNLCR:
-           if(mybuffer[ii] == '\r'){
-             parsing_state = PARSING_WAITING_FOR_CRNLCRNL;
-           }         
-           else{
-             parsing_state = PARSING_WAITING_FOR_CR;
-           }         
-           break;
-         case PARSING_WAITING_FOR_CRNLCRNL:
-           if(mybuffer[ii] == '\n'){
-             parsing_state = PARSING_FOUND_CRNLCRNL;
-           }         
-           else{
-             parsing_state = PARSING_WAITING_FOR_CR;
-           }         
-           break;             
-         default:           
-           crc16_checksum = _crc16_update(crc16_checksum, mybuffer[ii]);
-           if(responseBodyProcessor != 0){
-             responseBodyProcessor(mybuffer[ii], false, body_bytes_read, crc16_checksum);
-             body_bytes_read++;
-           }
-           break;
-         }               
+
+      for (uint32_t ii = 0 ; ii < num_bytes_read; ii++) {
+        if (parsing_state != PARSING_FOUND_CRNLCRNL) {
+          num_header_bytes++;
+        }
+
+        switch (parsing_state) {
+          case PARSING_WAITING_FOR_CR:
+            if (mybuffer[ii] == '\r') {
+              parsing_state = PARSING_WAITING_FOR_CRNL;
+            }
+            break;
+          case PARSING_WAITING_FOR_CRNL:
+            if (mybuffer[ii] == '\n') {
+              parsing_state = PARSING_WAITING_FOR_CRNLCR;
+            }
+            else {
+              parsing_state = PARSING_WAITING_FOR_CR;
+            }
+            break;
+          case PARSING_WAITING_FOR_CRNLCR:
+            if (mybuffer[ii] == '\r') {
+              parsing_state = PARSING_WAITING_FOR_CRNLCRNL;
+            }
+            else {
+              parsing_state = PARSING_WAITING_FOR_CR;
+            }
+            break;
+          case PARSING_WAITING_FOR_CRNLCRNL:
+            if (mybuffer[ii] == '\n') {
+              parsing_state = PARSING_FOUND_CRNLCRNL;
+            }
+            else {
+              parsing_state = PARSING_WAITING_FOR_CR;
+            }
+            break;
+          default:
+            crc16_checksum = _crc16_update(crc16_checksum, mybuffer[ii]);
+            if (responseBodyProcessor != 0) {
+              responseBodyProcessor(mybuffer[ii], false, body_bytes_read, crc16_checksum);
+              body_bytes_read++;
+            }
+            break;
+        }
       }
       //Serial.println(num_bytes_read);
       total_bytes_read += num_bytes_read;
       uint16_t address = 0;
-      uint8_t data_byte = 0;       
+      uint8_t data_byte = 0;
       lastRead = millis();
     }
   }
-  
+
   www.close();
-  
-  if(responseBodyProcessor != 0){
+
+  if (responseBodyProcessor != 0) {
     responseBodyProcessor(0, true, body_bytes_read, crc16_checksum); // signal end of stream
-  }  
-  
+  }
+
   unsigned long end_time = millis();
   Serial.println(F("Info: -------------------------------------"));
   Serial.print("Info: # Bytes Read: ");
@@ -5382,171 +5397,173 @@ uint16_t downloadFile(char * filename, void (*responseBodyProcessor)(uint8_t, bo
   Serial.print("Info: CRC16 Checksum: ");
   Serial.println(crc16_checksum);
   Serial.print("Info: Download Time: ");
-  Serial.println(end_time - start_time); 
-  
+  Serial.println(end_time - start_time);
+
   return num_header_bytes;
 }
 
-void checkForFirmwareUpdates(){ 
+void checkForFirmwareUpdates() {
   static char filename[64] = {0};
   memset(filename, 0, 64);
-  
-  if(updateServerResolve()){
-    // try and download the integrity check file up to three times    
+
+  if (updateServerResolve()) {
+    // try and download the integrity check file up to three times
     setLCD_P(PSTR("  CHECKING FOR  "
                   "    UPDATES     "));
     eeprom_read_block(filename, (const void *) EEPROM_UPDATE_FILENAME, 31);
-    strncat_P(filename, PSTR(".chk"), 4);    
+    strncat_P(filename, PSTR(".chk"), 4);
     uint16_t num_hdr_bytes = 0;
-    for(uint8_t ii = 0; ii < 3; ii++){
+    for (uint8_t ii = 0; ii < 3; ii++) {
       Serial.print(F("Info: Attempt #"));
-      Serial.print(ii+1);
+      Serial.print(ii + 1);
       Serial.print(F(" downloading \""));
       Serial.print(filename);
       Serial.print(F("\""));
       Serial.println();
-      
-      num_hdr_bytes = downloadFile(filename, processIntegrityCheckBody);   
-      if(downloaded_integrity_file){
+
+      num_hdr_bytes = downloadFile(filename, processIntegrityCheckBody);
+      if (downloaded_integrity_file) {
         lcdSmiley(15, 1);
         SUCCESS_MESSAGE_DELAY();
-        delayForWatchdog();        
-        petWatchdog();        
-        break; 
+        delayForWatchdog();
+        petWatchdog();
+        break;
       }
     }
 
-    if(downloaded_integrity_file){
-      // compare the just-retrieved signature file contents 
+    if (downloaded_integrity_file) {
+      // compare the just-retrieved signature file contents
       // to the signature already stored in flash
-      if((flash_file_size != integrity_num_bytes_total) || 
-        (flash_signature != integrity_crc16_checksum)){                 
-        
+      if ((flash_file_size != integrity_num_bytes_total) ||
+          (flash_signature != integrity_crc16_checksum)) {
+
         setLCD_P(PSTR("UPDATE AVAILABLE"
-                      "  DOWNLOADING   "));       
-        SUCCESS_MESSAGE_DELAY(); 
-        delayForWatchdog();        
+                      "  DOWNLOADING   "));
+        SUCCESS_MESSAGE_DELAY();
+        delayForWatchdog();
         petWatchdog();
-       
-        
+
+
         memset(filename, 0, 64); // switch to the hex extension
         eeprom_read_block(filename, (const void *) EEPROM_UPDATE_FILENAME, 31);
-        strncat_P(filename, PSTR(".hex"), 4); 
-        
+        strncat_P(filename, PSTR(".hex"), 4);
+
         setLCD_P(PSTR("     PLEASE     "
-                      "      WAIT      "));  
-                      
+                      "      WAIT      "));
+
         Serial.print(F("Info: Downloading \""));
         Serial.print(filename);
         Serial.print(F("\""));
         Serial.println();
-        
-        downloadFile(filename, processUpdateHexBody);    
-        while(flash.busy()){;}           
-        if(integrity_check_succeeded){ 
+
+        downloadFile(filename, processUpdateHexBody);
+        while (flash.busy()) {
+          ;
+        }
+        if (integrity_check_succeeded) {
           // also write these parameters to their rightful place in the SPI flash
           // for consumption by the bootloader
-          invalidateSignature();                                 
-          
+          invalidateSignature();
+
           flash.writeByte(CRC16_CHECKSUM_ADDRESS + 0, (integrity_crc16_checksum >> 8) & 0xff);
           flash.writeByte(CRC16_CHECKSUM_ADDRESS + 1, (integrity_crc16_checksum >> 0) & 0xff);
-          
+
           flash.writeByte(FILESIZE_ADDRESS + 0, (integrity_num_bytes_total >> 24) & 0xff);
-          flash.writeByte(FILESIZE_ADDRESS + 1, (integrity_num_bytes_total >> 16) & 0xff);    
+          flash.writeByte(FILESIZE_ADDRESS + 1, (integrity_num_bytes_total >> 16) & 0xff);
           flash.writeByte(FILESIZE_ADDRESS + 2, (integrity_num_bytes_total >> 8)  & 0xff);
-          flash.writeByte(FILESIZE_ADDRESS + 3, (integrity_num_bytes_total >> 0)  & 0xff);                
-          
-          flash.writeByte(MAGIC_NUMBER_ADDRESS + 0, MAGIC_NUMBER >> 24); 
-          flash.writeByte(MAGIC_NUMBER_ADDRESS + 1, MAGIC_NUMBER >> 16); 
-          flash.writeByte(MAGIC_NUMBER_ADDRESS + 2, MAGIC_NUMBER >> 8); 
-          flash.writeByte(MAGIC_NUMBER_ADDRESS + 3, MAGIC_NUMBER >> 0); 
-          Serial.println(F("Info: Wrote Magic Number"));          
-          
+          flash.writeByte(FILESIZE_ADDRESS + 3, (integrity_num_bytes_total >> 0)  & 0xff);
+
+          flash.writeByte(MAGIC_NUMBER_ADDRESS + 0, MAGIC_NUMBER >> 24);
+          flash.writeByte(MAGIC_NUMBER_ADDRESS + 1, MAGIC_NUMBER >> 16);
+          flash.writeByte(MAGIC_NUMBER_ADDRESS + 2, MAGIC_NUMBER >> 8);
+          flash.writeByte(MAGIC_NUMBER_ADDRESS + 3, MAGIC_NUMBER >> 0);
+          Serial.println(F("Info: Wrote Magic Number"));
+
           Serial.println(F("Info: Firmware Update Complete. Reseting to apply changes."));
           setLCD_P(PSTR("APPLYING UPDATES"
-                        "WAIT ONE MINUTE "));          
+                        "WAIT ONE MINUTE "));
           lcdSmiley(15, 1);
           SUCCESS_MESSAGE_DELAY();
-          watchdogForceReset();        
+          watchdogForceReset();
         }
-        else{
+        else {
           Serial.println(F("Error: Firmware Update Failed. Try again later by resetting."));
           setLCD_P(PSTR(" UPDATE FAILED  "
                         "  RETRY LATER   "));
           lcdFrownie(15, 1);
-          ERROR_MESSAGE_DELAY();         
+          ERROR_MESSAGE_DELAY();
         }
       }
-      else{
+      else {
         Serial.println("Info: Signature matches, skipping HEX download.");
         setLCD_P(PSTR("SOFTWARE ALREADY"
-                      "   UP TO DATE   "));       
-        SUCCESS_MESSAGE_DELAY();   
-        delayForWatchdog();        
-        petWatchdog();        
+                      "   UP TO DATE   "));
+        SUCCESS_MESSAGE_DELAY();
+        delayForWatchdog();
+        petWatchdog();
       }
     }
-    else{
+    else {
       Serial.println("Error: Failed to download integrity check file, skipping Hex file download");
-    }    
-  }  
+    }
+  }
 }
 
-boolean updateServerResolve(void){
+boolean updateServerResolve(void) {
   static boolean resolved = false;
-  
-  if(connectedToNetwork()){ 
-    if(!resolved){
-      eeprom_read_block(update_server_name, (const void *) EEPROM_UPDATE_SERVER_NAME, 31);      
 
-      if(strlen(update_server_name) == 0){
+  if (connectedToNetwork()) {
+    if (!resolved) {
+      eeprom_read_block(update_server_name, (const void *) EEPROM_UPDATE_SERVER_NAME, 31);
+
+      if (strlen(update_server_name) == 0) {
         return false; // this is as indication that OTA updates are disabled
       }
-      
+
       setLCD_P(PSTR("   RESOLVING"));
       updateLCD("UPDATE SERVER", 1);
       SUCCESS_MESSAGE_DELAY();
-      
-      if  (!cc3000.getHostByName(update_server_name, &update_server_ip32) || (update_server_ip32 == 0)){
+
+      if  (!cc3000.getHostByName(update_server_name, &update_server_ip32) || (update_server_ip32 == 0)) {
         Serial.print(F("Error: Couldn't resolve '"));
         Serial.print(update_server_name);
         Serial.println(F("'"));
-        
+
         updateLCD("FAILED", 1);
         lcdFrownie(15, 1);
         ERROR_MESSAGE_DELAY();
         return false;
       }
-      else{
-        resolved = true;    
+      else {
+        resolved = true;
         Serial.print(F("Info: Resolved \""));
         Serial.print(update_server_name);
         Serial.print(F("\" to IP address "));
         cc3000.printIPdotsRev(update_server_ip32);
-        
-        updateLCD(update_server_ip32, 1);      
+
+        updateLCD(update_server_ip32, 1);
         lcdSmiley(15, 1);
-        SUCCESS_MESSAGE_DELAY();          
-        Serial.println();    
+        SUCCESS_MESSAGE_DELAY();
+        Serial.println();
       }
     }
-     
-    // connected to network and resolution succeeded 
+
+    // connected to network and resolution succeeded
     return true;
   }
-  
+
   // not connected to network
   return false;
 }
 
-void processIntegrityCheckBody(uint8_t dataByte, boolean end_of_stream, unsigned long body_bytes_read, uint16_t crc16_checksum){
+void processIntegrityCheckBody(uint8_t dataByte, boolean end_of_stream, unsigned long body_bytes_read, uint16_t crc16_checksum) {
   char * endPtr;
   static char buff[64] = {0};
-  static uint8_t buff_idx = 0;  
-  
-  if(end_of_stream){
+  static uint8_t buff_idx = 0;
+
+  if (end_of_stream) {
     integrity_num_bytes_total = strtoul(buff, &endPtr, 10);
-    if(endPtr != 0){
+    if (endPtr != 0) {
       integrity_crc16_checksum = strtoul(endPtr, 0, 10);
       downloaded_integrity_file = true;
     }
@@ -5554,55 +5571,59 @@ void processIntegrityCheckBody(uint8_t dataByte, boolean end_of_stream, unsigned
     Serial.print(  "Info:    File Size: ");
     Serial.println(integrity_num_bytes_total);
     Serial.print(  "Info:    CRC16 Checksum: ");
-    Serial.println(integrity_crc16_checksum);                
+    Serial.println(integrity_crc16_checksum);
   }
-  else{
-    if(buff_idx < 63){
+  else {
+    if (buff_idx < 63) {
       buff[buff_idx++] = dataByte;
     }
   }
 }
 
-void processUpdateHexBody(uint8_t dataByte, boolean end_of_stream, unsigned long body_bytes_read, uint16_t crc16_checksum){
+void processUpdateHexBody(uint8_t dataByte, boolean end_of_stream, unsigned long body_bytes_read, uint16_t crc16_checksum) {
   static uint8_t page[256] = {0};
   static uint16_t page_idx = 0;
   static uint32_t page_address = 0;
-  
-  if(page_idx < 256){
-    page[page_idx++] = dataByte;  
-    if(page_idx >= 256){
-       page_idx = 0;
+
+  if (page_idx < 256) {
+    page[page_idx++] = dataByte;
+    if (page_idx >= 256) {
+      page_idx = 0;
     }
   }
-  
-  if(end_of_stream || (page_idx == 0)){
-    if((page_address % 4096) == 0){
-      while(flash.busy()){;}    
-      flash.blockErase4K(page_address); 
-      while(flash.busy()){;}   
-    }    
-    
+
+  if (end_of_stream || (page_idx == 0)) {
+    if ((page_address % 4096) == 0) {
+      while (flash.busy()) {
+        ;
+      }
+      flash.blockErase4K(page_address);
+      while (flash.busy()) {
+        ;
+      }
+    }
+
     uint16_t top_bound = 256;
-    if(page_idx != 0){
+    if (page_idx != 0) {
       top_bound = page_idx;
     }
     flash.writeBytes(page_address, page, top_bound);
-    
-    
+
+
     // clear the page
     memset(page, 0, 256);
-    
+
     // advance the page address
     page_address += 256;
-    
+
   }
-  
-  if(end_of_stream){
-    if((body_bytes_read == integrity_num_bytes_total) && (crc16_checksum == integrity_crc16_checksum)){
+
+  if (end_of_stream) {
+    if ((body_bytes_read == integrity_num_bytes_total) && (crc16_checksum == integrity_crc16_checksum)) {
       integrity_check_succeeded = true;
       Serial.println(F("Info: Integrity Check Succeeded!"));
     }
-    else{
+    else {
       Serial.println(F("Error: Integrity Check Failed!"));
       Serial.print(F("Error: Expected Checksum: "));
       Serial.print(integrity_crc16_checksum);
@@ -5616,84 +5637,84 @@ void processUpdateHexBody(uint8_t dataByte, boolean end_of_stream, unsigned long
   }
 }
 
-void getCurrentFirmwareSignature(void){  
-  // retrieve the current signature parameters  
+void getCurrentFirmwareSignature(void) {
+  // retrieve the current signature parameters
   flash_file_size = flash.readByte(FILESIZE_ADDRESS);
   flash_file_size <<= 8;
-  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+1);
+  flash_file_size |= flash.readByte(FILESIZE_ADDRESS + 1);
   flash_file_size <<= 8;
-  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+2);  
+  flash_file_size |= flash.readByte(FILESIZE_ADDRESS + 2);
   flash_file_size <<= 8;
-  flash_file_size |= flash.readByte(FILESIZE_ADDRESS+3);  
+  flash_file_size |= flash.readByte(FILESIZE_ADDRESS + 3);
 
   flash_signature = flash.readByte(CRC16_CHECKSUM_ADDRESS);
   flash_signature <<= 8;
-  flash_signature |= flash.readByte(CRC16_CHECKSUM_ADDRESS+1);
+  flash_signature |= flash.readByte(CRC16_CHECKSUM_ADDRESS + 1);
 
   Serial.print(F("Info: Current firmware signature: "));
   Serial.print(flash_file_size);
   Serial.print(F(" "));
   Serial.print(flash_signature);
-  Serial.println();   
+  Serial.println();
 }
 
 /****** CONFIGURATION MIRRORING SUPPORT FUNCTIONS ******/
-void commitConfigToMirroredConfig(void){
-  if(!mirrored_config_matches_eeprom_config()){      
-    mirrored_config_copy_from_eeprom(); // create a valid mirrored config from the current settings             
-    if(!mirrored_config_integrity_check()){
-      Serial.println(F("Error: Mirrored configuration commit failed to validate.")); 
+void commitConfigToMirroredConfig(void) {
+  if (!mirrored_config_matches_eeprom_config()) {
+    mirrored_config_copy_from_eeprom(); // create a valid mirrored config from the current settings
+    if (!mirrored_config_integrity_check()) {
+      Serial.println(F("Error: Mirrored configuration commit failed to validate."));
       //TODO: should something be written to the LCD here?
     }
   }
-  else{
-    Serial.println(F("Info: Mirrored configuration already matches current configuration.")); 
-  } 
+  else {
+    Serial.println(F("Info: Mirrored configuration already matches current configuration."));
+  }
 }
 
-boolean mirrored_config_matches_eeprom_config(void){
+boolean mirrored_config_matches_eeprom_config(void) {
   boolean ret = true;
 
   // compare each corresponding byte of the Flash into the EEPROM
   for (uint16_t ii = 0; ii < EEPROM_CONFIG_MEMORY_SIZE; ii++) {
     uint8_t flash_value = flash.readByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + ((uint32_t) ii));
     uint8_t eeprom_value = eeprom_read_byte((uint8_t *) (EEPROM_CRC_CHECKSUM + ii));
-    if(flash_value != eeprom_value){
+    if (flash_value != eeprom_value) {
       ret = false;
       break;
     }
   }
-  
-  return ret;
-} 
 
-boolean configMemoryUnlocked(uint16_t call_id){
-  if(!allowed_to_write_config_eeprom){
+  return ret;
+}
+
+boolean configMemoryUnlocked(uint16_t call_id) {
+  if (!allowed_to_write_config_eeprom) {
     Serial.print(F("Error: Config Memory is not unlocked, called from line number "));
     Serial.println(call_id);
-    return false; 
+    return false;
   }
-  
+
   return allowed_to_write_config_eeprom;
 }
 
-boolean mirrored_config_integrity_check(){
+boolean mirrored_config_integrity_check() {
   boolean ret = false;
   uint16_t computed_crc = computeFlashChecksum();
-  
+
   // interpret the CRC, little endian
   uint16_t stored_crc = getStoredFlashChecksum();
-  
-  if(stored_crc == computed_crc){
-    ret = true; 
+
+  if (stored_crc == computed_crc) {
+    ret = true;
   }
-  
-  return ret;  
+
+  return ret;
 }
 
 
-void mirrored_config_restore(void){  
-  if(!allowed_to_write_config_eeprom){
+void mirrored_config_restore(void) {
+  if (!allowed_to_write_config_eeprom) {
     return;
   }
 
@@ -5704,134 +5725,190 @@ void mirrored_config_restore(void){
   }
 }
 
-boolean mirrored_config_restore_and_validate(void){
+boolean mirrored_config_restore_and_validate(void) {
   boolean integrity_check_passed = false;
-  
-  if(mirrored_config_integrity_check()){
+
+  if (mirrored_config_integrity_check()) {
     mirrored_config_restore();
     integrity_check_passed = checkConfigIntegrity();
-    if(integrity_check_passed){
-      Serial.println(F("Info: Successfully restored to last valid configuration.")); 
+    if (integrity_check_passed) {
+      Serial.println(F("Info: Successfully restored to last valid configuration."));
     }
-    else{
+    else {
       Serial.println(F("Info: Restored last valid configuration, but it's still not valid."));
-    }  
+    }
   }
-  else{
-    Serial.println(F("Error: Mirrored configuration is not valid, cannot restore to last valid configuration.")); 
+  else {
+    Serial.println(F("Error: Mirrored configuration is not valid, cannot restore to last valid configuration."));
   }
-  
+
   return integrity_check_passed;
 }
 
-void mirrored_config_copy_from_eeprom(void){
-  
+void mirrored_config_copy_from_eeprom(void) {
+
   mirrored_config_erase();
   Serial.print(F("Info: Writing mirrored config..."));
 
   // copy each byte from the EEPROM into the Flash
   for (uint16_t ii = 0; ii < EEPROM_CONFIG_MEMORY_SIZE; ii++) {
     uint8_t value = eeprom_read_byte((uint8_t *) (EEPROM_CRC_CHECKSUM + ii));
-    flash.writeByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + ((uint32_t) ii), value);    
+    flash.writeByte(((uint32_t) SECOND_TO_LAST_4K_PAGE_ADDRESS) + ((uint32_t) ii), value);
   }
   Serial.println(F("OK."));
 }
 
-void mirrored_config_erase(void){
-  Serial.print(F("Info: Erasing mirrored config..."));  
+void mirrored_config_erase(void) {
+  Serial.print(F("Info: Erasing mirrored config..."));
   flash.blockErase4K(SECOND_TO_LAST_4K_PAGE_ADDRESS);
-  Serial.println(F("OK."));  
+  Serial.println(F("OK."));
 }
 
 /****** TIMESTAMPING SUPPORT FUNCTIONS ******/
-time_t AQE_now(void){
+time_t AQE_now(void) {
   selectSlot3();
   DateTime t = rtc.now();
   return (time_t) t.unixtime();
 }
 
-void currentTimestamp(char * dst, uint16_t max_len){
+void currentTimestamp(char * dst, uint16_t max_len) {
   time_t n = now();
-  
-  snprintf(dst, max_len, "%02d/%02d/%04d %02d:%02d:%02d", 
-    month(n),
-    day(n),
-    year(n),
-    hour(n),
-    minute(n),
-    second(n));
+
+  snprintf(dst, max_len, "%02d/%02d/%04d %02d:%02d:%02d",
+           month(n),
+           day(n),
+           year(n),
+           hour(n),
+           minute(n),
+           second(n));
 }
 
-void printCurrentTimestamp(char * append_to, uint16_t * append_to_capacity_and_update){
+void printCurrentTimestamp(char * append_to, uint16_t * append_to_capacity_and_update) {
   char datetime[32] = {0};
   currentTimestamp(datetime, 31);
   Serial.print(datetime);
-  
-  appendToString(datetime, append_to, append_to_capacity_and_update);  
+
+  appendToString(datetime, append_to, append_to_capacity_and_update);
 }
 
-void appendToString(char * str, char * append_to, uint16_t * append_to_capacity_and_update){
-  if(append_to != 0){
+void appendToString(char * str, char * append_to, uint16_t * append_to_capacity_and_update) {
+  if (append_to != 0) {
     uint16_t len = strlen(str);
-    if(*append_to_capacity_and_update >= len){
+    if (*append_to_capacity_and_update >= len) {
       strcat(append_to, str);
       *append_to_capacity_and_update -= len;
     }
-  }  
+  }
 }
 
-void appendToString(float val, uint8_t digits_after_decimal_point, char * append_to, uint16_t * append_to_capacity_and_update){
+void appendToString(float val, uint8_t digits_after_decimal_point, char * append_to, uint16_t * append_to_capacity_and_update) {
   char temp[32] = {0};
   safe_dtostrf(val, 0, digits_after_decimal_point, temp, 31);
   appendToString(temp, append_to, append_to_capacity_and_update);
 }
 
-void getNowFilename(char * dst, uint16_t max_len){
+void getNowFilename(char * dst, uint16_t max_len) {
   time_t n = now();
-  snprintf(dst, max_len, "%02d%02d%02d%02d.csv", 
-    year(n) % 100,
-    month(n),
-    day(n),
-    hour(n));
+  snprintf(dst, max_len, "%02d%02d%02d%02d.csv",
+           year(n) % 100,
+           month(n),
+           day(n),
+           hour(n));
 }
 
-void rtcClearOscillatorStopFlag(void){
-    Wire.beginTransmission(DS3231_ADDRESS);
-    Wire.write(DS3231_REG_CONTROL);
-    Wire.endTransmission();
+void rtcClearOscillatorStopFlag(void) {
+  Wire.beginTransmission(DS3231_ADDRESS);
+  Wire.write(DS3231_REG_CONTROL);
+  Wire.endTransmission();
 
-    // control registers
-    Wire.requestFrom(DS3231_ADDRESS, 2);
-    uint8_t creg = Wire.read(); 
-    uint8_t sreg = Wire.read();   
-    
-    sreg &= ~_BV(7); // clear bit 7 (msbit)
-    
-    Wire.beginTransmission(DS3231_ADDRESS);
-    Wire.write((uint8_t) DS3231_REG_STATUS_CTL);
-    Wire.write((uint8_t) sreg);
-    Wire.endTransmission();    
+  // control registers
+  Wire.requestFrom(DS3231_ADDRESS, 2);
+  uint8_t creg = Wire.read();
+  uint8_t sreg = Wire.read();
+
+  sreg &= ~_BV(7); // clear bit 7 (msbit)
+
+  Wire.beginTransmission(DS3231_ADDRESS);
+  Wire.write((uint8_t) DS3231_REG_STATUS_CTL);
+  Wire.write((uint8_t) sreg);
+  Wire.endTransmission();
 }
 
 /*
-void dump_config(uint8_t * buf){    
+void dump_config(uint8_t * buf){
   uint16_t addr = 0;
   uint8_t ii = 0;
   while(addr < EEPROM_CONFIG_MEMORY_SIZE){
     if(ii == 0){
       Serial.print(addr, HEX);
-      Serial.print(F(": ")); 
-    }    
-    
+      Serial.print(F(": "));
+    }
+
     Serial.print(buf[addr], HEX);
     Serial.print(F("\t"));
-    
+
     addr++;
     ii++;
     if(ii == 32){
       Serial.println();
-      ii = 0; 
+      ii = 0;
     }
   }
 }
 */
+
+/* https://github.com/adafruit/Adafruit_CC3000_Library/blob/master/examples/InternetTime/InternetTime.ino */
+// Minimalist time server query; adapted from Adafruit Gutenbird sketch,
+// which in turn has roots in Arduino UdpNTPClient tutorial.
+unsigned long getTime(void) {
+
+  const unsigned long
+  connectTimeout  = 30L * 1000L, // Max time to wait for server connection
+  responseTimeout = 30L * 1000L; // Max time to wait for data from server
+
+  uint8_t       buf[48];
+  unsigned long ip, startTime, t = 0L;
+
+  Serial.print(F("Locating time server..."));
+
+  // Hostname to IP lookup; use NTP pool (rotates through servers)
+  if(cc3000.getHostByName("nl.pool.ntp.org", &ip)) {
+    static const char PROGMEM
+      timeReqA[] = { 227,  0,  6, 236 },
+      timeReqB[] = {  49, 78, 49,  52 };
+
+    Serial.println(F("\r\nAttempting connection..."));
+    startTime = millis();
+    do {
+      wifiClient = cc3000.connectUDP(ip, 123);
+    } while((!wifiClient.connected()) &&
+            ((millis() - startTime) < connectTimeout));
+
+    if(wifiClient.connected()) {
+      Serial.print(F("connected!\r\nIssuing request..."));
+
+      // Assemble and issue request packet
+      memset(buf, 0, sizeof(buf));
+      memcpy_P( buf    , timeReqA, sizeof(timeReqA));
+      memcpy_P(&buf[12], timeReqB, sizeof(timeReqB));
+      wifiClient.write(buf, sizeof(buf));
+
+      Serial.print(F("\r\nAwaiting response..."));
+      memset(buf, 0, sizeof(buf));
+      startTime = millis();
+      while((!wifiClient.available()) &&
+            ((millis() - startTime) < responseTimeout));
+      if(wifiClient.available()) {
+        wifiClient.read(buf, sizeof(buf));
+        t = (((unsigned long)buf[40] << 24) |
+             ((unsigned long)buf[41] << 16) |
+             ((unsigned long)buf[42] <<  8) |
+              (unsigned long)buf[43]) - 2208988800UL;
+        Serial.print(F("OK\r\n"));
+      }
+      wifiClient.close();
+    }
+  }
+  if(!t) Serial.println(F("error"));
+  return t;
+}
