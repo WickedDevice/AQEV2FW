@@ -21,7 +21,7 @@
 // semantic versioning - see http://semver.org/
 #define AQEV2FW_MAJOR_VERSION 2
 #define AQEV2FW_MINOR_VERSION 0
-#define AQEV2FW_PATCH_VERSION 4
+#define AQEV2FW_PATCH_VERSION 5
 
 #define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
 #define DEVICE_NAME "CC3000" // this is used for smart config
@@ -1568,8 +1568,8 @@ void help_menu(char * arg) {
       Serial.println(F("opmode <mode>"));
       Serial.println(F("   <mode> is one of:"));
       Serial.println(F("      normal - publish data to MQTT server over Wi-Fi"));
-      Serial.println(F("      offline - this mode writes data to an installed microSD card, creating one file per day, "));
-      Serial.println(F("                named by convention YYYYMMDD.csv, intended to be used in conjunction with RTC module"));
+      Serial.println(F("      offline - this mode writes data to an installed microSD card, creating one file per hour, "));
+      Serial.println(F("                named by convention YYMMDDHH.csv, intended to be used in conjunction with RTC module"));
     }    
     else if (strncmp("tempunit", arg, 8) == 0) {
       Serial.println(F("tempunit <unit>"));
