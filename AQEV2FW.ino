@@ -1446,6 +1446,8 @@ void help_menu(char * arg) {
     else if (strncmp("delete", arg, 6) == 0) {
       Serial.println(F("delete <filename>"));
       Serial.println(F("   deletes the named file from the SD card."));
+      Serial.println(F("delete <YYMMDDHH> <YYMMDDHH>"));      
+      Serial.println(F("   deletes the files from start to end dates inclusive."));
     }       
     else if (strncmp("force", arg, 5) == 0) {
       Serial.println(F("force <param>"));
@@ -3102,7 +3104,9 @@ void advanceByOneHour(uint8_t src_array[4]){
   src_array[3] = tm.Hour;
 }
 
-void download_command(char * arg){
+// does the behavior of executing the one_file_function on a single file
+// or on each file in a range of files 
+void fileop_command_delegate(char * arg, void (*one_file_function)(char *)){
   char * first_arg = NULL;
   char * second_arg = NULL;
   
@@ -3112,7 +3116,7 @@ void download_command(char * arg){
   second_arg = strtok(NULL, " ");
 
   if(second_arg == NULL){   
-    download_one_file(first_arg);
+    one_file_function(first_arg);
   }
   else{    
     uint8_t cur_date[4] = {0,0,0,0};
@@ -3126,7 +3130,7 @@ void download_command(char * arg){
     while(!finished_last_file){
       memset(cur_date_filename, 0, 16);
       make_datetime_filename(cur_date, cur_date_filename, 15);
-      download_one_file(cur_date_filename);
+      one_file_function(cur_date_filename);
       if(memcmp(cur_date, end_date, 4) == 0){      
         finished_last_file = true;
       }
@@ -3134,23 +3138,32 @@ void download_command(char * arg){
         advanceByOneHour(cur_date);      
       }
     }     
-  }
-  Serial.println();
+  }  
+}
+
+void download_command(char * arg){
+  fileop_command_delegate(arg, download_one_file);
+  Serial.println("Info: Done downloading.");
+}
+
+void delete_one_file(char * filename){
+  if(filename != NULL && init_sdcard_ok){   
+    if (SD.remove(filename)) {
+      Serial.print("Info: Removed file named \"");
+      Serial.print(filename);
+      Serial.println(F("\""));
+    }
+//    else {
+//      Serial.print("Error: Failed to delete file named \"");
+//      Serial.print(filename);
+//      Serial.println(F("\""));
+//    }    
+  }  
 }
 
 void delete_command(char * arg){
-  if(arg != NULL && init_sdcard_ok){
-    if (SD.remove(arg)) {
-      Serial.print("Info: Removed file named \"");
-      Serial.print(arg);
-      Serial.println(F("\""));
-    }
-    else {
-      Serial.print("Error: Failed to delete file named \"");
-      Serial.print(arg);
-      Serial.println(F("\""));
-    }    
-  }
+  fileop_command_delegate(arg, delete_one_file);
+  Serial.println("Info: Done deleting.");
 }
 
 void set_mqtt_password(char * arg) {
