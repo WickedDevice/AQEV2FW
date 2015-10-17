@@ -61,7 +61,7 @@ boolean allowed_to_write_config_eeprom = false;
 unsigned long current_millis = 0;
 char firmware_version[16] = {0};
 uint8_t temperature_units = 'C';
-float reported_temperature_offset_degC = 3.5f;
+float reported_temperature_offset_degC = 0.0f;
 float reported_humidity_offset_percent = 0.0f;
 
 float temperature_degc = 0.0f;
@@ -2302,8 +2302,8 @@ void restore(char * arg) {
   else if (strncmp("temp_off", arg, 8) == 0) {
     if (!BIT_IS_CLEARED(backup_check, BACKUP_STATUS_TEMPERATURE_CALIBRATION_BIT)) {
       Serial.println(F("Error: Temperature reporting offset should be backed up  "));
-      Serial.println(F("       prior to executing a 'restore'. Setting to 3.5"));
-      eeprom_write_float((float *) EEPROM_TEMPERATURE_OFFSET, 3.5f);  
+      Serial.println(F("       prior to executing a 'restore'. Setting to 0.0"));
+      eeprom_write_float((float *) EEPROM_TEMPERATURE_OFFSET, 0.0f);  
     }
     else{
       eeprom_read_block(tmp, (const void *) EEPROM_BACKUP_TEMPERATURE_OFFSET, 4);
@@ -3662,7 +3662,6 @@ void safe_dtostrf(float value, signed char width, unsigned char precision, char 
     snprintf(target_buffer, target_buffer_length - 1, format_string, value);
   }
 
-    
 }
 
 void backlightOn(void) {
@@ -4939,6 +4938,7 @@ void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * 
   *temperature_compensated_value = (volts - co_zero_volts - baseline_offset_voltage_at_temperature) * co_slope_ppm_per_volt 
                                    / signal_scaling_factor_at_temperature
                                    / signal_scaling_factor_at_altitude;
+                                   
   if(*temperature_compensated_value <= 0.0f){
     *temperature_compensated_value = 0.0f;
   }
