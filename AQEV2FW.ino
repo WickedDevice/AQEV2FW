@@ -3135,7 +3135,14 @@ void fileop_command_delegate(char * arg, void (*one_file_function)(char *)){
     // starting from cur_date, download the file with that name
     char cur_date_filename[16] = {0};
     boolean finished_last_file = false;
+    unsigned long previousMillis = millis();
+    const long interval = 1000;
     while(!finished_last_file){
+      unsigned long currentMillis = millis();
+      if(currentMillis - previousMillis >= interval) {        
+        previousMillis = currentMillis;   
+        petWatchdog();
+      }
       memset(cur_date_filename, 0, 16);
       make_datetime_filename(cur_date, cur_date_filename, 15);
       one_file_function(cur_date_filename);
@@ -3145,7 +3152,8 @@ void fileop_command_delegate(char * arg, void (*one_file_function)(char *)){
       else{
         advanceByOneHour(cur_date);      
       }
-    }     
+    } 
+    delayForWatchdog();    
   }  
 }
 
