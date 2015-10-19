@@ -693,8 +693,8 @@ void loop() {
 
   if(current_millis - previous_sensor_sampling_millis >= sampling_interval){
     previous_sensor_sampling_millis = current_millis;    
-    Serial.print(F("Info: Sampling Sensors @ "));
-    Serial.println(millis());
+    //Serial.print(F("Info: Sampling Sensors @ "));
+    //Serial.println(millis());
     collectNO2();
     collectCO();
     collectTemperature();
@@ -724,7 +724,7 @@ void loop() {
   // pet the watchdog
   if (current_millis - previous_tinywdt_millis >= tinywdt_interval) {
     previous_tinywdt_millis = current_millis;
-    Serial.println(F("Info: Watchdog Pet."));
+    //Serial.println(F("Info: Watchdog Pet."));
     delayForWatchdog();
     petWatchdog();
   }
