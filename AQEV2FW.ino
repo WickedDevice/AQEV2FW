@@ -374,6 +374,14 @@ char scratch[1024] = { 0 };  // scratch buffer, for general use
 char converted_value_string[64] = {0};
 char compensated_value_string[64] = {0};
 char raw_value_string[64] = {0};
+
+const char * header_row = "Timestamp,"
+               "Temperature[degC],"
+               "Humidity[percent],"                   
+               "NO2[ppb],"                    
+               "CO[ppm],"      
+               "NO2[V]," 
+               "CO[V]";        
   
 void setup() {
   boolean integrity_check_passed = false;
@@ -3142,6 +3150,7 @@ void fileop_command_delegate(char * arg, void (*one_file_function)(char *)){
 }
 
 void download_command(char * arg){
+  Serial.println(header_row);
   fileop_command_delegate(arg, download_one_file);
   Serial.println("Info: Done downloading.");
 }
@@ -5008,7 +5017,7 @@ void loop_wifi_mqtt_mode(void){
   if(current_millis - previous_mqtt_publish_millis >= reporting_interval){   
     previous_mqtt_publish_millis = current_millis;      
     
-    printCsvDataLine(NULL);
+    printCsvDataLine();
     
     if(connectedToNetwork()){
       num_mqtt_intervals_without_wifi = 0;
@@ -5154,7 +5163,7 @@ void loop_offline_mode(void){
 
   if(current_millis - previous_write_record_millis >= reporting_interval){   
     previous_write_record_millis = current_millis;
-    printCsvDataLine(NULL);
+    printCsvDataLine();
   }  
 }
 
@@ -5169,10 +5178,7 @@ float calculateAverage(float * buf, uint16_t num_samples){
   return average / num_samples;
 }
 
-// if the caller passes an augmented_header to printCsvDataLine
-// it's the caller's responsibility to terminate the line
-// otherwise printCsvDataLine will terminate the line implicitly
-void printCsvDataLine(const char * augmented_header){
+void printCsvDataLine(){
   static boolean first = true;
   static char dataString[512] = {0};  
   memset(dataString, 0, 512);
@@ -5181,28 +5187,10 @@ void printCsvDataLine(const char * augmented_header){
   uint16_t dataStringRemaining = 511;
   
   if(first){
-    char * header_row = "Timestamp,"
-                   "Temperature[degC],"
-                   "Humidity[percent],"                   
-                   "NO2[ppb],"                    
-                   "CO[ppm],"      
-                   "NO2[V]," 
-                   "CO[V]";        
     first = false;      
     Serial.print(F("csv: "));    
-    Serial.print(header_row);
-    appendToString(header_row, dataString, &dataStringRemaining);
-          
-    if(augmented_header != 0){
-      Serial.print(F(","));
-      appendToString(",", dataString, &dataStringRemaining);
-
-      Serial.print(augmented_header);     
-      appendToString((char *) augmented_header, dataString, &dataStringRemaining);     
-    }
-    
-    Serial.println();
-    appendToString("\n", dataString, &dataStringRemaining);  
+    Serial.print(header_row);    
+    Serial.println();    
   }  
   
   Serial.print(F("csv: "));
@@ -5285,14 +5273,8 @@ void printCsvDataLine(const char * augmented_header){
   Serial.print(co_moving_average, 6);
   appendToString(co_moving_average, 6, dataString, &dataStringRemaining);
   
-  if(augmented_header != 0){
-    Serial.print(F(","));
-    appendToString("," , dataString, &dataStringRemaining);
-  }
-  else{
-    Serial.println();
-    appendToString("\n", dataString, &dataStringRemaining);  
-  }
+  Serial.println();
+  appendToString("\n", dataString, &dataStringRemaining);   
   
   if((mode == SUBMODE_OFFLINE) && init_sdcard_ok){
     char filename[16] = {0};
