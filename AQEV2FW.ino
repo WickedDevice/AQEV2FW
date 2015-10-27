@@ -11,7 +11,6 @@
 #include <MCP342x.h>
 #include <LMP91000.h>
 #include <WildFire_SPIFlash.h>
-#include <Time.h>
 #include <CapacitiveSensor.h>
 #include <LiquidCrystal.h>
 #include <PubSubClient.h>
@@ -23,8 +22,6 @@
 #define AQEV2FW_MINOR_VERSION 0
 #define AQEV2FW_PATCH_VERSION 5
 
-#define MQTT_TOPIC_PREFIX "/orgs/wd/aqe/"
-#define DEVICE_NAME "CC3000" // this is used for smart config
 #define WLAN_SEC_AUTO (10) // made up to support auto-config of security
 
 // the start address of the second to last 4k page, where config is backed up off MCU
@@ -142,7 +139,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_CO_CAL_SLOPE       (EEPROM_CO_SENSITIVITY - 4)     // float value, 4-bytes, the slope applied to the sensor
 #define EEPROM_CO_CAL_OFFSET      (EEPROM_CO_CAL_SLOPE - 4)       // float value, 4-bytes, the offset applied to the sensor
 #define EEPROM_PRIVATE_KEY        (EEPROM_CO_CAL_OFFSET - 32)     // 32-bytes of Random Data (256-bits)
-#define EEPROM_MQTT_SERVER_NAME   (EEPROM_PRIVATE_KEY - 32)       // string, the DNS name of the MQTT server (default opensensors.io), up to 32 characters (one of which is a null terminator)
+#define EEPROM_MQTT_SERVER_NAME   (EEPROM_PRIVATE_KEY - 32)       // string, the DNS name of the MQTT server (default mqtt.opensensors.io), up to 32 characters (one of which is a null terminator)
 #define EEPROM_MQTT_USERNAME      (EEPROM_MQTT_SERVER_NAME - 32)  // string, the user name for the MQTT server (default wickeddevice), up to 32 characters (one of which is a null terminator)
 #define EEPROM_MQTT_CLIENT_ID     (EEPROM_MQTT_USERNAME - 32)     // string, the client identifier for the MQTT server (default SHT25 identifier), between 1 and 23 characters long
 #define EEPROM_MQTT_AUTH          (EEPROM_MQTT_CLIENT_ID - 1)     // MQTT authentication enabled, single byte value 0 = disabled or 1 = enabled
@@ -159,6 +156,7 @@ uint8_t mode = MODE_OPERATIONAL;
 #define EEPROM_REPORTING_INTERVAL (EEPROM_SAMPLING_INTERVAL - 2)  // integer value, number of seconds between sensor reports
 #define EEPROM_AVERAGING_INTERVAL (EEPROM_REPORTING_INTERVAL - 2) // integer value, number of seconds of samples averaged
 #define EEPROM_ALTITUDE_METERS    (EEPROM_AVERAGING_INTERVAL - 2) // signed integer value, 2-bytes, the altitude in meters above sea level, where the Egg is located
+#define EEPROM_MQTT_TOPIC_PREFIX  (EEPROM_ALTITUDE_METERS - 64)   // up to 64-character string, prefix prepended to logical sensor topics
 //  /\
 //   L Add values up here by subtracting offsets to previously added values
 //   * ... and make sure the addresses don't collide and start overlapping!
@@ -183,7 +181,6 @@ uint8_t mode = MODE_OPERATIONAL;
 // valid connection methods
 // only DIRECT is supported initially
 #define CONNECT_METHOD_DIRECT        (0)
-#define CONNECT_METHOD_SMARTCONFIG   (1)
 
 // backup status bits
 #define BACKUP_STATUS_MAC_ADDRESS_BIT             (7)
@@ -217,6 +214,7 @@ void set_mqtt_port(char * arg);
 void set_mqtt_username(char * arg);
 void set_mqtt_client_id(char * arg);
 void set_mqtt_authentication(char * arg);
+void set_mqtt_topic_prefix(char * arg);
 void backup(char * arg);
 void set_no2_slope(char * arg);
 void set_no2_offset(char * arg);
@@ -274,6 +272,7 @@ char * commands[] = {
   "mqttpwd    ",  
   "mqttid     ",
   "mqttauth   ",
+  "mqttprefix ",
   "updatesrv  ",
   "backup     ",
   "no2_sen    ",
@@ -316,6 +315,7 @@ void (*command_functions[])(char * arg) = {
   set_mqtt_password,  
   set_mqtt_client_id,
   set_mqtt_authentication,
+  set_mqtt_topic_prefix,
   set_update_server_name,
   backup,
   set_no2_sensitivity,
@@ -374,6 +374,8 @@ char scratch[1024] = { 0 };  // scratch buffer, for general use
 char converted_value_string[64] = {0};
 char compensated_value_string[64] = {0};
 char raw_value_string[64] = {0};
+char MQTT_TOPIC_STRING[128] = {0};
+char MQTT_TOPIC_PREFIX[64] = "/orgs/wd/aqe/";
 
 const char * header_row = "Timestamp,"
                "Temperature[degC],"
@@ -609,11 +611,8 @@ void setup() {
   
   if(mode_requires_wifi(mode)){
     // Scan Networks to show RSSI    
-    uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);    
-    if(connect_method != CONNECT_METHOD_SMARTCONFIG){
-      displayRSSI(); // not sure this will work if Smart Config is used
-    }
-    
+    uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);        
+    displayRSSI();         
     delayForWatchdog();
     petWatchdog();
     
@@ -959,30 +958,16 @@ void initializeHardware(void) {
   Serial.print(F("Info: CC3000 Initialization..."));  
   SUCCESS_MESSAGE_DELAY(); // don't race past the splash screen, and give watchdog some breathing room
   petWatchdog();
-  if(connect_method == CONNECT_METHOD_SMARTCONFIG){
-    setLCD_P(PSTR("  SMART CONFIG  "
-                  "  RECONNECTING  "));
-    if (cc3000.begin(false, true, DEVICE_NAME)){
-      lcdSmiley(15, 1);
-      Serial.println("OK.");
-    }
-    else{
-      Serial.println("Failed.");
-      updateLCD("FAILED", 1);
-      lcdFrownie(15, 1);      
-    }
+    
+  if (cc3000.begin()) {
+    Serial.println(F("OK."));
+    init_cc3000_ok = true;
   }
-  else{
-    if (cc3000.begin()) {
-      Serial.println(F("OK."));
-      init_cc3000_ok = true;
-    }
-    else {
-      Serial.println(F("Failed."));
-      init_cc3000_ok = false;
-    }
-  } 
-
+  else {
+    Serial.println(F("Failed."));
+    init_cc3000_ok = false;
+  }
+  
   updateLCD("NO2 / CO", 0);
   updateLCD("MODEL", 1);
   SUCCESS_MESSAGE_DELAY();  
@@ -991,7 +976,7 @@ void initializeHardware(void) {
 
 /****** CONFIGURATION SUPPORT FUNCTIONS ******/
 void initializeNewConfigSettings(void){
-  static char command_buf[32] = {0};
+  static char command_buf[128] = {0};
   boolean in_config_mode = false; 
   allowed_to_write_config_eeprom = true;
   
@@ -1027,8 +1012,8 @@ void initializeNewConfigSettings(void){
       configInject("aqe\r");
       in_config_mode = true;
     }    
-    memset(command_buf, 0, 32);  
-    snprintf(command_buf, 31, "no2_sen %8.4f\r", sensitivity);
+    memset(command_buf, 0, 128);  
+    snprintf(command_buf, 127, "no2_sen %8.4f\r", sensitivity);
     configInject(command_buf);
     configInject("backup no2\r");
   }
@@ -1041,11 +1026,29 @@ void initializeNewConfigSettings(void){
       configInject("aqe\r");
       in_config_mode = true;
     }    
-    memset(command_buf, 0, 32);  
-    snprintf(command_buf, 31, "co_sen %8.4f\r", sensitivity);
+    memset(command_buf, 0, 128);  
+    snprintf(command_buf, 127, "co_sen %8.4f\r", sensitivity);
     configInject(command_buf);  
     configInject("backup co\r");
   }  
+
+  // if necessary, initialize the default mqtt prefix
+  // if it's never been set, the first byte in memory will be 0xFF
+  uint8_t val = eeprom_read_byte((const uint8_t *) EEPROM_MQTT_TOPIC_PREFIX);  
+  if(val == 0xFF){
+    memset(command_buf, 0, 128);
+    strcat(command_buf, "mqttprefix ");
+    strcat(command_buf, MQTT_TOPIC_PREFIX);
+    strcat(command_buf, "\r");
+    configInject(command_buf);
+  }
+
+  // if the mqtt server is set to opensensors.io, change it to mqtt.opensensors.io
+  memset(command_buf, 0, 128);
+  eeprom_read_block(command_buf, (const void *) EEPROM_MQTT_SERVER_NAME, 31);
+  if(strcmp_P(command_buf, PSTR("opensensors.io")) == 0){
+    configInject("mqttsrv mqtt.opensensors.io\r");
+  }
   
   if(in_config_mode){
     configInject("exit\r");
@@ -1345,7 +1348,6 @@ void help_menu(char * arg) {
       Serial.println(F("   <param> is one of:"));
       Serial.println(F("      mac         - retrieves the mac address from"));
       Serial.println(F("                    the CC3000 and stores it in EEPROM"));
-      Serial.println(F("      smartconfig - initiate the SmartConfig profile creation process"));
     }
     else if (strncmp("restore", arg, 7) == 0) {
       Serial.println(F("restore <param>"));
@@ -1358,10 +1360,11 @@ void help_menu(char * arg) {
       Serial.println(F("                   performs 'altitude -1")); 
       Serial.println(F("                   performs 'backlight 60'"));
       Serial.println(F("                   performs 'backlight initon'"));      
-      Serial.println(F("                   performs 'mqttsrv opensensors.io'"));
+      Serial.println(F("                   performs 'mqttsrv mqtt.opensensors.io'"));
       Serial.println(F("                   performs 'mqttport 1883'"));           
       Serial.println(F("                   performs 'mqttauth enable'"));        
       Serial.println(F("                   performs 'mqttuser wickeddevice'"));  
+      Serial.println(F("                   performs 'mqttprefix /orgs/wd/aqe/'")); 
       Serial.println(F("                   performs 'sampling 5, 160, 5'"));
       Serial.println(F("                   performs 'restore temp_off'"));      
       Serial.println(F("                   performs 'restore hum_off'"));          
@@ -1398,8 +1401,7 @@ void help_menu(char * arg) {
     else if (strncmp("method", arg, 6) == 0) {
       Serial.println(F("method <type>"));
       Serial.println(F("   <type> is one of:"));
-      Serial.println(F("      direct - use parameters entered in CONFIG mode"));
-      Serial.println(F("      smartconfig - use smart config process"));      
+      Serial.println(F("      direct - use parameters entered in CONFIG mode"));      
       warn_could_break_connect();      
     }
     else if (strncmp("ssid", arg, 4) == 0) {
@@ -1500,6 +1502,12 @@ void help_menu(char * arg) {
     else if (strncmp("mqttauth", arg, 8) == 0) {
       Serial.println(F("mqttauth <string>"));
       Serial.println(F("   <string> is the one of 'enable' or 'disable'"));
+      note_know_what_youre_doing();
+      warn_could_break_upload();   
+    }        
+    else if (strncmp("mqttprefix", arg, 10) == 0) {
+      Serial.println(F("mqttprefix <string>"));
+      Serial.println(F("   <string> is pre-pended to the logical topic for each sensor"));
       note_know_what_youre_doing();
       warn_could_break_upload();   
     }        
@@ -1641,9 +1649,6 @@ void print_eeprom_connect_method(void) {
     case CONNECT_METHOD_DIRECT:
       Serial.println(F("Direct Connect"));
       break;
-    case CONNECT_METHOD_SMARTCONFIG:
-      Serial.println(F("Smart Config Connect"));
-      break;
     default:
       Serial.print(F("Error: Unknown connection method code [0x"));
       if (method < 0x10) {
@@ -1659,11 +1664,7 @@ boolean valid_ssid_config(void) {
   char ssid[32] = {0};
   boolean ssid_contains_only_printables = true;
 
-  uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);    
-  if(connect_method == CONNECT_METHOD_SMARTCONFIG){
-    return true; // doesn't need an SSID
-  }
-  
+  uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);      
   eeprom_read_block(ssid, (const void *) EEPROM_SSID, 31);
   for (uint8_t ii = 0; ii < 32; ii++) {
     if (ssid[ii] == '\0') {
@@ -1830,6 +1831,10 @@ void print_eeprom_mqtt_server(){
 
 void print_eeprom_mqtt_client_id(){
   print_eeprom_string((const char *) EEPROM_MQTT_CLIENT_ID);
+}
+
+void print_eeprom_mqtt_topic_prefix(){
+  print_eeprom_string((const char *) EEPROM_MQTT_TOPIC_PREFIX);
 }
 
 void print_eeprom_mqtt_username(){
@@ -2039,12 +2044,10 @@ void print_eeprom_value(char * arg) {
     uint8_t connect_method = eeprom_read_byte((const uint8_t *) EEPROM_CONNECT_METHOD);
     Serial.print(F("    Method: "));    
     print_eeprom_connect_method();
-    if(connect_method != CONNECT_METHOD_SMARTCONFIG){    
-      Serial.print(F("    SSID: "));
-      print_eeprom_ssid();
-      Serial.print(F("    Security Mode: "));
-      print_eeprom_security_type();
-    }
+    Serial.print(F("    SSID: "));
+    print_eeprom_ssid();
+    Serial.print(F("    Security Mode: "));
+    print_eeprom_security_type();    
     Serial.print(F("    IP Mode: "));
     print_eeprom_ipmode();
     Serial.print(F("    Update Server: "));
@@ -2061,6 +2064,8 @@ void print_eeprom_value(char * arg) {
     Serial.print(F("    MQTT Client ID: "));
     print_eeprom_mqtt_client_id();       
     print_eeprom_mqtt_authentication(); 
+    Serial.print(F("    MQTT Topic Prefix: "));
+    print_eeprom_mqtt_topic_prefix();
     Serial.println(F(" +-------------------------------------------------------------+"));
     Serial.println(F(" | Credentials:                                                |"));
     Serial.println(F(" +-------------------------------------------------------------+"));
@@ -2130,31 +2135,6 @@ void initialize_eeprom_value(char * arg) {
       recomputeAndStoreConfigChecksum();
     }
   }
-  else if(strncmp(arg, "smartconfig", 11) == 0){
-    Serial.println(F("Info: Waiting for a SmartConfig connection..."));
-    setLCD_P(PSTR("    STARTING    "    
-                  "  SMART CONFIG  "));
-    delayForWatchdog();
-    petWatchdog();
-    if (!cc3000.startSmartConfig(DEVICE_NAME)){
-      delayForWatchdog();
-      petWatchdog();        
-      Serial.println(F("Error: SmartConfig Create Failed."));
-      lcdFrownie(15, 1);
-      ERROR_MESSAGE_DELAY();
-    }    
-    else{
-      delayForWatchdog();
-      petWatchdog();              
-      Serial.println(F("Info: Saved connection details and connected to AP!"));    
-      configInject("method smartconfig\r");
-      lcdSmiley(15, 1);
-      ERROR_MESSAGE_DELAY();
-    }
-    
-    clearLCD();   
-    setLCD_P(PSTR("  CONFIG MODE"));    
-  }
   else {
     Serial.print(F("Error: Unexpected Variable Name \""));
     Serial.print(arg);
@@ -2190,15 +2170,16 @@ void restore(char * arg) {
     configInject("altitude -1\r");    
     configInject("backlight 60\r");
     configInject("backlight initon\r");
-    configInject("mqttsrv opensensors.io\r");
+    configInject("mqttsrv mqtt.opensensors.io\r");
     configInject("mqttport 1883\r");        
     configInject("mqttauth enable\r");    
     configInject("mqttuser wickeddevice\r");
+    configInject("mqttprefix /orgs/wd/aqe/\r");
     configInject("sampling 5, 160, 5\r");   
     configInject("restore temp_off\r");
     configInject("restore hum_off\r");       
     configInject("restore mqttpwd\r");
-    configInject("restore mqttid\r");
+    configInject("restore mqttid\r");    
     configInject("restore updatesrv\r");
     configInject("restore updatefile\r");    
     configInject("restore key\r");
@@ -2703,14 +2684,11 @@ void set_connection_method(char * arg) {
       Serial.println(F("Failed.")); 
     }
   }
-  else if (strncmp(arg, "smartconfig", 11) == 0) {
-    eeprom_write_byte((uint8_t *) EEPROM_CONNECT_METHOD, CONNECT_METHOD_SMARTCONFIG);
-  }
   else {
     Serial.print(F("Error: Invalid connection method entered - \""));
     Serial.print(arg);
     Serial.println(F("\""));
-    Serial.println(F("       valid options are: 'direct' or 'smartconfig'"));
+    Serial.println(F("       valid options are: 'direct'"));
     valid = false;
   }
 
@@ -3199,6 +3177,25 @@ void set_mqtt_password(char * arg) {
   }
   else {
     Serial.println(F("Error: MQTT password must be less than 32 characters in length"));
+  }
+}
+
+void set_mqtt_topic_prefix(char * arg) {
+  if(!configMemoryUnlocked(__LINE__)){
+    return;
+  }
+  
+  // we've reserved 64-bytes of EEPROM for a MQTT prefix
+  // so the argument's length must be <= 63
+  char prefix[64] = {0};
+  uint16_t len = strlen(arg);
+  if (len < 64) {
+    strncpy(prefix, arg, len);
+    eeprom_write_block(prefix, (void *) EEPROM_MQTT_TOPIC_PREFIX, 64);
+    recomputeAndStoreConfigChecksum();
+  }
+  else {
+    Serial.println(F("Error: MQTT prefix must be less than 64 characters in length"));
   }
 }
 
@@ -4290,14 +4287,7 @@ void reconnectToAccessPoint(void){
       updateLCD("CONNECTED", 1);
       lcdSmiley(15, 1);
       SUCCESS_MESSAGE_DELAY();
-      break;
-    case CONNECT_METHOD_SMARTCONFIG:
-      Serial.print(F("Info: Waiting for SmartConfig to Reconnect..."));
-      while(!connectedToNetwork()){
-        ; //TODO: implement timeout, though the watchdog is an implied timeout...
-      }
-      Serial.println(F("OK."));
-      break;    
+      break;   
     default:
       Serial.println(F("Error: Connection method not currently supported"));
       break;
@@ -4430,6 +4420,7 @@ void clearTempBuffers(void){
   memset(compensated_value_string, 0, 64);
   memset(raw_value_string, 0, 64);
   memset(scratch, 0, 512);
+  memset(MQTT_TOPIC_STRING, 0, 128);
 }
 
 boolean mqttResolve(void){
@@ -4490,6 +4481,7 @@ boolean mqttReconnect(void){
      eeprom_read_block(mqtt_username, (const void *) EEPROM_MQTT_USERNAME, 31);
      eeprom_read_block(mqtt_client_id, (const void *) EEPROM_MQTT_CLIENT_ID, 31);
      eeprom_read_block(mqtt_password, (const void *) EEPROM_MQTT_PASSWORD, 31);
+     eeprom_read_block(MQTT_TOPIC_PREFIX, (const void *) EEPROM_MQTT_TOPIC_PREFIX, 63);
      mqtt_auth_enabled = eeprom_read_byte((const uint8_t *) EEPROM_MQTT_AUTH);
      mqtt_port = eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT);
 
@@ -4555,9 +4547,9 @@ boolean mqttPublish(char * topic, char *str){
 
 
 boolean publishHeartbeat(){
+  clearTempBuffers();
   static uint32_t post_counter = 0;  
   uint8_t sample = pgm_read_byte(&heartbeat_waveform[heartbeat_waveform_index++]);
-  memset(scratch, 0, 512);
   snprintf(scratch, 511, 
   "{"
   "\"serial-number\":\"%s\","
@@ -4571,7 +4563,9 @@ boolean publishHeartbeat(){
      heartbeat_waveform_index = 0;
   }
   
-  return mqttPublish(MQTT_TOPIC_PREFIX "heartbeat", scratch); 
+  strcat(MQTT_TOPIC_STRING, MQTT_TOPIC_PREFIX);
+  strcat(MQTT_TOPIC_STRING, "heartbeat");    
+  return mqttPublish(MQTT_TOPIC_STRING, scratch);
 }
 
 float toFahrenheit(float degC){
@@ -4602,7 +4596,9 @@ boolean publishTemperature(){
     "\"sensor-part-number\":\"SHT25\""
     "}", mqtt_client_id, converted_value_string, temperature_units, raw_value_string, temperature_units);
     
-  return mqttPublish(MQTT_TOPIC_PREFIX "temperature", scratch);
+  strcat(MQTT_TOPIC_STRING, MQTT_TOPIC_PREFIX);
+  strcat(MQTT_TOPIC_STRING, "temperature");    
+  return mqttPublish(MQTT_TOPIC_STRING, scratch);
 }
 
 boolean publishHumidity(){
@@ -4625,7 +4621,10 @@ boolean publishHumidity(){
     "\"raw-units\":\"percent\","  
     "\"sensor-part-number\":\"SHT25\""
     "}", mqtt_client_id, converted_value_string, raw_value_string);  
-  return mqttPublish(MQTT_TOPIC_PREFIX "humidity", scratch);
+
+  strcat(MQTT_TOPIC_STRING, MQTT_TOPIC_PREFIX);
+  strcat(MQTT_TOPIC_STRING, "humidity");    
+  return mqttPublish(MQTT_TOPIC_STRING, scratch);
 }
 
 void collectTemperature(void){
@@ -4886,7 +4885,10 @@ boolean publishNO2(){
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
-  return mqttPublish(MQTT_TOPIC_PREFIX "no2", scratch);     
+  
+  strcat(MQTT_TOPIC_STRING, MQTT_TOPIC_PREFIX);
+  strcat(MQTT_TOPIC_STRING, "no2");    
+  return mqttPublish(MQTT_TOPIC_STRING, scratch);      
 }
 
 void co_convert_from_volts_to_ppm(float volts, float * converted_value, float * temperature_compensated_value){
@@ -4987,7 +4989,10 @@ boolean publishCO(){
     raw_value_string, 
     converted_value_string, 
     compensated_value_string);  
-  return mqttPublish(MQTT_TOPIC_PREFIX "co", scratch);
+
+  strcat(MQTT_TOPIC_STRING, MQTT_TOPIC_PREFIX);
+  strcat(MQTT_TOPIC_STRING, "co");    
+  return mqttPublish(MQTT_TOPIC_STRING, scratch);      
 }
 
 void petWatchdog(void){
