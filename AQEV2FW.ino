@@ -1036,6 +1036,10 @@ void initializeNewConfigSettings(void){
   // if it's never been set, the first byte in memory will be 0xFF
   uint8_t val = eeprom_read_byte((const uint8_t *) EEPROM_MQTT_TOPIC_PREFIX);  
   if(val == 0xFF){
+    if(!in_config_mode){
+      configInject("aqe\r");
+      in_config_mode = true;
+    }    
     memset(command_buf, 0, 128);
     strcat(command_buf, "mqttprefix ");
     strcat(command_buf, MQTT_TOPIC_PREFIX);
@@ -1047,6 +1051,10 @@ void initializeNewConfigSettings(void){
   memset(command_buf, 0, 128);
   eeprom_read_block(command_buf, (const void *) EEPROM_MQTT_SERVER_NAME, 31);
   if(strcmp_P(command_buf, PSTR("opensensors.io")) == 0){
+    if(!in_config_mode){
+      configInject("aqe\r");
+      in_config_mode = true;
+    }    
     configInject("mqttsrv mqtt.opensensors.io\r");
   }
   
