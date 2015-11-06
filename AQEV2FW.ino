@@ -1519,7 +1519,6 @@ void help_menu(char * arg) {
       Serial.println(F("use <param>"));
       get_help_indent(); Serial.println(F("<param> is one of:"));
       get_help_indent(); Serial.println(F("dhcp - wipes the Static IP address from the EEPROM"));
-      get_help_indent(); Serial.println(F("ntp - enables NTP capabilities"));
       warn_could_break_connect();      
     }
     else if (strncmp("list", arg, 4) == 0) {
@@ -6186,12 +6185,14 @@ void getNetworkTime(void){
     t += eeprom_read_float((float *) EEPROM_NTP_TZ_OFFSET_HRS) * 60UL * 60UL; // convert offset to seconds
     tmElements_t tm;
     breakTime(t, tm);
-    setTime(t);
-    if(init_rtc_ok){
-      DateTime datetime(t);
-      rtc.adjust(datetime);
-    }
-
+    setTime(t);   
+          
+    selectSlot3();     
+    DateTime datetime(t);
+    rtc.adjust(datetime);
+    rtcClearOscillatorStopFlag();
+    selectNoSlot();
+    
     memset(buf, 0, 48);
     snprintf((char *) buf, 47, 
       "%d/%d/%d",
