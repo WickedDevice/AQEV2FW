@@ -257,6 +257,7 @@ void sampling_command(char * arg);
 void altitude_command(char * arg);
 void set_ntp_server(char * arg);
 void set_ntp_timezone_offset(char * arg);
+void set_update_server_name(char * arg);
 
 // Note to self:
 //   When implementing a new parameter, ask yourself:
@@ -4653,9 +4654,8 @@ boolean mqttReconnect(void){
      eeprom_read_block(MQTT_TOPIC_PREFIX, (const void *) EEPROM_MQTT_TOPIC_PREFIX, 63);
      mqtt_auth_enabled = eeprom_read_byte((const uint8_t *) EEPROM_MQTT_AUTH);
      mqtt_port = eeprom_read_dword((const uint32_t *) EEPROM_MQTT_PORT);
-
-     mqtt_client.setBrokerIP(mqtt_server_ip);
-     mqtt_client.setPort(mqtt_port);
+     
+     mqtt_client.setServer(mqtt_server_ip, mqtt_port);
      mqtt_client.setClient(wifiClient);          
    }
    else{
